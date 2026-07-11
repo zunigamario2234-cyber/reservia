@@ -6,6 +6,7 @@
 <title>Reservia</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -157,6 +158,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .ag-ctx-menu button{display:flex;align-items:center;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer}
 .ag-ctx-menu button:hover{background:var(--bg4)}
 .ag-ctx-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;flex-shrink:0}
+.chart-wrap{position:relative;height:220px}
+.chart-wrap.chart-sm{height:200px}
 @media(max-width:768px){.sidebar{width:52px}.sidebar .nav-item span,.sidebar .nav-section,.sidebar .logo-text,.sidebar .user-info{display:none}.main{margin-left:52px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.content{padding:14px}.cal-hcell,.cal-col{width:140px}}
 </style>
 </head>
@@ -261,20 +264,34 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- DASHBOARD -->
 <div id="p-dashboard" class="page active">
+  <div class="tabs" id="d-periodo-tabs">
+    <div class="tab active" data-p="dia" onclick="setDashPeriodo('dia')">Diario</div>
+    <div class="tab" data-p="semana" onclick="setDashPeriodo('semana')">Semanal</div>
+    <div class="tab" data-p="mes" onclick="setDashPeriodo('mes')">Mensual</div>
+    <div class="tab" data-p="anio" onclick="setDashPeriodo('anio')">Anual</div>
+  </div>
   <div class="g4">
-    <div class="mc"><div class="mc-label">Clientes totales</div><div class="mc-val" id="d-clientes">—</div><div class="mc-sub">Base activa</div></div>
-    <div class="mc"><div class="mc-label">Citas este mes</div><div class="mc-val" id="d-citas">—</div><div class="mc-sub" id="d-citas-sub">—</div></div>
-    <div class="mc"><div class="mc-label">Ventas del mes</div><div class="mc-val" id="d-ventas">—</div><div class="mc-sub" id="d-ventas-neto">—</div></div>
+    <div class="mc"><div class="mc-label">Clientes totales</div><div class="mc-val" id="d-clientes">—</div><div class="mc-sub" id="d-clientes-sub">Base activa</div></div>
+    <div class="mc"><div class="mc-label" id="d-citas-label">Citas</div><div class="mc-val" id="d-citas">—</div><div class="mc-sub" id="d-citas-sub">—</div></div>
+    <div class="mc"><div class="mc-label" id="d-ventas-label">Ventas</div><div class="mc-val" id="d-ventas">—</div><div class="mc-sub" id="d-ventas-neto">—</div></div>
     <div class="mc"><div class="mc-label">Clientes VIP</div><div class="mc-val gold" id="d-vip">—</div><div class="mc-sub">Plata · Oro · Diamante</div></div>
   </div>
   <div class="g4">
     <div class="mc"><div class="mc-label">Inactivos +30d</div><div class="mc-val down" id="d-inactivos">—</div><div class="mc-sub">Sin citar</div></div>
     <div class="mc"><div class="mc-label">Cumpleaños próx.</div><div class="mc-val" id="d-cumples">—</div><div class="mc-sub">Próximos 7 días</div></div>
-    <div class="mc"><div class="mc-label">Ticket promedio</div><div class="mc-val" id="d-ticket">—</div><div class="mc-sub">Por cita del mes</div></div>
+    <div class="mc"><div class="mc-label" id="d-ticket-label">Ticket promedio</div><div class="mc-val" id="d-ticket">—</div><div class="mc-sub" id="d-ticket-sub">—</div></div>
     <div class="mc"><div class="mc-label">Stock crítico</div><div class="mc-val down" id="d-critico">—</div><div class="mc-sub">Productos bajo mínimo</div></div>
   </div>
   <div class="g2">
-    <div class="card"><div class="card-hdr"><span class="card-title">Ventas por profesional (mes)</span></div><div id="d-chart-bar"></div></div>
+    <div class="card"><div class="card-hdr"><span class="card-title" id="d-ing-title">Ingresos</span></div><div class="chart-wrap"><canvas id="d-chart-ingresos"></canvas></div></div>
+    <div class="card"><div class="card-hdr"><span class="card-title">Citas/reservas por estado</span></div><div class="chart-wrap"><canvas id="d-chart-estados"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="card"><div class="card-hdr"><span class="card-title">Servicios más solicitados</span></div><div class="chart-wrap chart-sm"><canvas id="d-chart-servicios"></canvas></div></div>
+    <div class="card"><div class="card-hdr"><span class="card-title">Clientes nuevos vs. recurrentes</span></div><div class="chart-wrap chart-sm"><canvas id="d-chart-nuevos"></canvas></div></div>
+  </div>
+  <div class="g2">
+    <div class="card"><div class="card-hdr"><span class="card-title" id="d-bar-title">Ventas por profesional</span></div><div id="d-chart-bar"></div></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Alertas operativas</span></div><div id="d-alertas"></div></div>
   </div>
   <div class="g2">
@@ -1204,38 +1221,221 @@ function editarCliente(id){
 async function doLogout(){ await sb.auth.signOut(); window.location.href='index.html'; }
 
 // ─── RENDERS ───
+// ─── DASHBOARD: período ───
+let DASH_PERIODO='dia';
+const DASH_CHARTS={};
+function fmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDias(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function enRango(fecha,from,to){ return !!fecha&&fecha>=from&&fecha<=to; }
+
+function setDashPeriodo(p){
+  DASH_PERIODO=p;
+  document.querySelectorAll('#d-periodo-tabs .tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
+  renderDashboard();
+}
+
+function getPeriodoRange(periodo){
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  if(periodo==='dia'){
+    const ayer=addDias(hoy,-1);
+    return {curFrom:fmtDateLocal(hoy),curTo:fmtDateLocal(hoy),prevFrom:fmtDateLocal(ayer),prevTo:fmtDateLocal(ayer),nombre:'hoy',nombrePrev:'ayer',tituloCorto:'hoy'};
+  }
+  if(periodo==='semana'){
+    const curFrom=addDias(hoy,-6);
+    const prevTo=addDias(curFrom,-1), prevFrom=addDias(prevTo,-6);
+    return {curFrom:fmtDateLocal(curFrom),curTo:fmtDateLocal(hoy),prevFrom:fmtDateLocal(prevFrom),prevTo:fmtDateLocal(prevTo),nombre:'esta semana',nombrePrev:'semana anterior',tituloCorto:'esta semana'};
+  }
+  if(periodo==='anio'){
+    const y=hoy.getFullYear();
+    return {curFrom:y+'-01-01',curTo:y+'-12-31',prevFrom:(y-1)+'-01-01',prevTo:(y-1)+'-12-31',nombre:'este año',nombrePrev:'año anterior',tituloCorto:String(y)};
+  }
+  const y=hoy.getFullYear(), m=hoy.getMonth();
+  const curFrom=new Date(y,m,1), curTo=new Date(y,m+1,0);
+  const prevFrom=new Date(y,m-1,1), prevTo=new Date(y,m,0);
+  return {curFrom:fmtDateLocal(curFrom),curTo:fmtDateLocal(curTo),prevFrom:fmtDateLocal(prevFrom),prevTo:fmtDateLocal(prevTo),nombre:'este mes',nombrePrev:'mes anterior',tituloCorto:'este mes'};
+}
+
+function deltaHtml(cur,prev,nombrePrev){
+  if(!prev&&!cur)return `<span style="color:var(--text3)">Sin datos en ${nombrePrev}</span>`;
+  if(!prev)return `<span class="up">▲ Nuevo</span> vs ${nombrePrev}`;
+  const pct=Math.round(((cur-prev)/prev)*100);
+  const cls=pct>=0?'up':'down', arrow=pct>=0?'▲':'▼';
+  return `<span class="${cls}">${arrow} ${Math.abs(pct)}%</span> vs ${nombrePrev}`;
+}
+
+function sumValorDia(fechaStr){ return S.visitas.filter(v=>v.fecha===fechaStr).reduce((s,v)=>s+(v.valor||0),0); }
+
+function buildIngresosBuckets(periodo){
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  if(periodo==='dia'){
+    const ayer=addDias(hoy,-1);
+    return {labels:['Ayer','Hoy'],curData:[sumValorDia(fmtDateLocal(ayer)),sumValorDia(fmtDateLocal(hoy))],prevData:null,curLabel:'Ingresos',prevLabel:null,tipo:'bar'};
+  }
+  if(periodo==='semana'){
+    const diasCorta=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const labels=[],curData=[],prevData=[];
+    for(let i=6;i>=0;i--){
+      const d=addDias(hoy,-i);
+      labels.push(diasCorta[d.getDay()]+' '+d.getDate());
+      curData.push(sumValorDia(fmtDateLocal(d)));
+      prevData.push(sumValorDia(fmtDateLocal(addDias(d,-7))));
+    }
+    return {labels,curData,prevData,curLabel:'Esta semana',prevLabel:'Semana anterior',tipo:'line'};
+  }
+  if(periodo==='anio'){
+    const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const y=hoy.getFullYear();
+    const curData=meses.map((_,i)=>S.visitas.filter(v=>v.fecha&&v.fecha.startsWith(y+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
+    const prevData=meses.map((_,i)=>S.visitas.filter(v=>v.fecha&&v.fecha.startsWith((y-1)+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
+    return {labels:meses,curData,prevData,curLabel:String(y),prevLabel:String(y-1),tipo:'bar'};
+  }
+  const y=hoy.getFullYear(), m=hoy.getMonth();
+  const diasMes=new Date(y,m+1,0).getDate();
+  const diasMesPrev=new Date(y,m,0).getDate();
+  const labels=[],curData=[],prevData=[];
+  for(let day=1;day<=diasMes;day++){
+    labels.push(String(day));
+    curData.push(sumValorDia(fmtDateLocal(new Date(y,m,day))));
+    prevData.push(day<=diasMesPrev?sumValorDia(fmtDateLocal(new Date(y,m-1,day))):null);
+  }
+  return {labels,curData,prevData,curLabel:'Mes actual',prevLabel:'Mes anterior',tipo:'line'};
+}
+
+function mkChart(canvasId,config){
+  const el=document.getElementById(canvasId);
+  if(!el)return;
+  if(DASH_CHARTS[canvasId])DASH_CHARTS[canvasId].destroy();
+  DASH_CHARTS[canvasId]=new Chart(el.getContext('2d'),config);
+}
+
+const CHART_GRID={color:'#1e2030'};
+const CHART_TICKS={color:'#888',font:{size:10}};
+
+function renderChartIngresos(periodo){
+  const b=buildIngresosBuckets(periodo);
+  document.getElementById('d-ing-title').textContent='Ingresos — '+({dia:'hoy vs. ayer',semana:'esta semana',mes:'mes actual',anio:'este año'}[periodo]);
+  const datasets=[{label:b.curLabel,data:b.curData,borderColor:'#7c6af7',backgroundColor:b.tipo==='bar'?'#7c6af7':'rgba(124,106,247,0.15)',tension:0.3,fill:b.tipo==='line'}];
+  if(b.prevData)datasets.push({label:b.prevLabel,data:b.prevData,borderColor:'#3a3a5a',backgroundColor:'#3a3a5a',borderDash:b.tipo==='line'?[5,4]:undefined,tension:0.3,fill:false});
+  mkChart('d-chart-ingresos',{
+    type:b.tipo,
+    data:{labels:b.labels,datasets},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:!!b.prevData,labels:{color:'#888',font:{size:11}}}},
+      scales:{x:{grid:CHART_GRID,ticks:CHART_TICKS},y:{grid:CHART_GRID,ticks:{...CHART_TICKS,callback:v=>fmt(v)}}}
+    }
+  });
+}
+
+function renderChartEstados(range){
+  const items=[
+    ...S.reservas.filter(r=>enRango(r.fecha,range.curFrom,range.curTo)).map(r=>({...r,_tipo:'reserva'})),
+    ...S.visitas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo)).map(v=>({...v,_tipo:'visita'}))
+  ];
+  const conteo={};
+  items.forEach(it=>{
+    const e=resolveEstado(it);
+    conteo[e]=(conteo[e]||0)+1;
+  });
+  const labels=ESTADOS.filter(e=>conteo[e]>0);
+  const data=labels.map(e=>conteo[e]);
+  if(!labels.length){
+    if(DASH_CHARTS['d-chart-estados']){DASH_CHARTS['d-chart-estados'].destroy();delete DASH_CHARTS['d-chart-estados'];}
+    return;
+  }
+  mkChart('d-chart-estados',{
+    type:'doughnut',
+    data:{labels,datasets:[{data,backgroundColor:labels.map(e=>ESTADO_HEX[e]),borderColor:'#0f1020',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#888',font:{size:10},boxWidth:10}}}}
+  });
+}
+
+function renderChartServicios(range){
+  const items=[
+    ...S.reservas.filter(r=>enRango(r.fecha,range.curFrom,range.curTo)),
+    ...S.visitas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo))
+  ];
+  const conteo={};
+  items.forEach(it=>{
+    const nombre=resolveServicioInfo(it.servicio).nombre;
+    conteo[nombre]=(conteo[nombre]||0)+1;
+  });
+  const top=Object.entries(conteo).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  mkChart('d-chart-servicios',{
+    type:'bar',
+    data:{labels:top.map(t=>t[0]),datasets:[{label:'Citas',data:top.map(t=>t[1]),backgroundColor:'#5b8def',borderRadius:5}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{x:{grid:CHART_GRID,ticks:{...CHART_TICKS,stepSize:1}},y:{grid:{display:false},ticks:CHART_TICKS}}
+    }
+  });
+}
+
+function renderChartNuevos(range){
+  const idsEnPeriodo=new Set([
+    ...S.reservas.filter(r=>enRango(r.fecha,range.curFrom,range.curTo)).map(r=>r.whatsapp_cliente),
+    ...S.visitas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo)).map(v=>v.cliente_id)
+  ].filter(Boolean));
+  let nuevos=0,recurrentes=0;
+  const clientesEnPeriodo=S.clientes.filter(c=>idsEnPeriodo.has(c.id)||idsEnPeriodo.has(c.whatsapp));
+  clientesEnPeriodo.forEach(c=>{
+    const f=c.created_at?c.created_at.split('T')[0]:(c.fecha_registro||null);
+    if(f&&enRango(f,range.curFrom,range.curTo))nuevos++; else recurrentes++;
+  });
+  mkChart('d-chart-nuevos',{
+    type:'doughnut',
+    data:{labels:['Nuevos','Recurrentes'],datasets:[{data:[nuevos,recurrentes],backgroundColor:['#00e096','#5b8def'],borderColor:'#0f1020',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#888',font:{size:11},boxWidth:10}}}}
+  });
+}
+
 function renderDashboard(){
-  const mes=mesActual();
-  const vMes=S.visitas.filter(v=>v.fecha?.startsWith(mes));
-  const ventas=vMes.reduce((s,v)=>s+(v.valor||0),0);
+  const range=getPeriodoRange(DASH_PERIODO);
+  const vCur=S.visitas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo));
+  const vPrev=S.visitas.filter(v=>enRango(v.fecha,range.prevFrom,range.prevTo));
+  const ventas=vCur.reduce((s,v)=>s+(v.valor||0),0);
+  const ventasPrev=vPrev.reduce((s,v)=>s+(v.valor||0),0);
   const iva=Math.round(ventas*0.19);
-  const ticket=vMes.length?Math.round(ventas/vMes.length):0;
+  const ticket=vCur.length?Math.round(ventas/vCur.length):0;
+  const ticketPrev=vPrev.length?Math.round(ventasPrev/vPrev.length):0;
+  const nuevosClientes=S.clientes.filter(c=>{const f=c.created_at?c.created_at.split('T')[0]:(c.fecha_registro||null);return f&&enRango(f,range.curFrom,range.curTo);}).length;
+
   const vips=S.clientes.filter(c=>getNivel(getCitas(c.id))!=='Sin nivel').length;
   const inact=S.clientes.filter(c=>getEstado(c.id)==='Inactivo').length;
   const hoy=new Date();
   const cumples=S.clientes.filter(c=>{if(!c.cumpleanos)return false;const b=new Date(c.cumpleanos);const nx=new Date(hoy.getFullYear(),b.getMonth(),b.getDate());if(nx<hoy)nx.setFullYear(hoy.getFullYear()+1);return(nx-hoy)/86400000<=7;}).length;
   const critico=S.inventario.filter(p=>p.stock<=p.stock_min).length;
 
+  const etiquetas={dia:'Citas hoy',semana:'Citas esta semana',mes:'Citas este mes',anio:'Citas este año'};
+  const etiquetasVenta={dia:'Ventas de hoy',semana:'Ventas de la semana',mes:'Ventas del mes',anio:'Ventas del año'};
+
+  document.getElementById('d-citas-label').textContent=etiquetas[DASH_PERIODO];
+  document.getElementById('d-ventas-label').textContent=etiquetasVenta[DASH_PERIODO];
+  document.getElementById('d-ticket-label').textContent='Ticket promedio ('+range.tituloCorto+')';
+  document.getElementById('d-bar-title').textContent='Ventas por profesional ('+range.tituloCorto+')';
+
   document.getElementById('d-clientes').textContent=fmtN(S.clientes.length);
-  document.getElementById('d-citas').textContent=fmtN(vMes.length);
+  document.getElementById('d-clientes-sub').innerHTML=nuevosClientes>0?`+${nuevosClientes} nuevos ${range.nombre}`:'Base activa';
+  document.getElementById('d-citas').textContent=fmtN(vCur.length);
+  document.getElementById('d-citas-sub').innerHTML=deltaHtml(vCur.length,vPrev.length,range.nombrePrev);
   document.getElementById('d-ventas').textContent=fmt(ventas+iva);
-  document.getElementById('d-ventas-neto').textContent='Neto: '+fmt(ventas);
+  document.getElementById('d-ventas-neto').innerHTML='Neto: '+fmt(ventas)+' · '+deltaHtml(ventas,ventasPrev,range.nombrePrev);
   document.getElementById('d-vip').textContent=fmtN(vips);
   document.getElementById('d-inactivos').textContent=fmtN(inact);
   document.getElementById('d-cumples').textContent=fmtN(cumples);
   document.getElementById('d-ticket').textContent=fmt(ticket);
+  document.getElementById('d-ticket-sub').innerHTML=deltaHtml(ticket,ticketPrev,range.nombrePrev);
   document.getElementById('d-critico').textContent=fmtN(critico);
 
-  // Chart profesionals
+  // Chart profesionals (período seleccionado)
   const byBar={};
-  vMes.forEach(v=>{byBar[v.profesional_nombre]=(byBar[v.profesional_nombre]||0)+(v.valor||0);});
+  vCur.forEach(v=>{byBar[v.profesional_nombre]=(byBar[v.profesional_nombre]||0)+(v.valor||0);});
   const maxBar=Math.max(...Object.values(byBar),1);
   document.getElementById('d-chart-bar').innerHTML=Object.keys(byBar).length?Object.entries(byBar).map(([b,v])=>`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px">
       <span style="min-width:80px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b}</span>
       <div style="flex:1"><div class="bar-h"><div class="bar-fill" style="width:${(v/maxBar*100).toFixed(0)}%"></div></div></div>
       <span style="color:#d4a853;min-width:60px;text-align:right">${fmt(v)}</span>
-    </div>`).join(''):'<div class="empty">Sin ventas este mes.</div>';
+    </div>`).join(''):`<div class="empty">Sin ventas ${range.nombre}.</div>`;
 
   // Alertas
   const als=[];
@@ -1264,6 +1464,11 @@ function renderDashboard(){
     <div style="padding:7px 0;border-bottom:0.5px solid #1a1a1a;display:flex;justify-content:space-between;font-size:12px"><span>🥇 Oro</span><span class="badge b-gold">${no}</span></div>
     <div style="padding:7px 0;border-bottom:0.5px solid #1a1a1a;display:flex;justify-content:space-between;font-size:12px"><span>💎 Diamante</span><span class="badge b-blue">${nd}</span></div>
     <div style="padding:7px 0;display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--text3)">Sin nivel</span><span style="color:var(--text3)">${S.clientes.length-np-no-nd}</span></div>`;
+
+  renderChartIngresos(DASH_PERIODO);
+  renderChartEstados(range);
+  renderChartServicios(range);
+  renderChartNuevos(range);
 }
 
 function renderClientes(){
