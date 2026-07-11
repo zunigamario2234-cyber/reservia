@@ -123,7 +123,41 @@ input[readonly]{background:#111;color:#666;cursor:default}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading-overlay{position:fixed;inset:0;background:rgba(10,10,10,0.9);display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:12px}
 .loading-overlay p{color:var(--text3);font-size:13px}
-@media(max-width:768px){.sidebar{width:52px}.sidebar .nav-item span,.sidebar .nav-section,.sidebar .logo-text,.sidebar .user-info{display:none}.main{margin-left:52px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.content{padding:14px}}
+/* Agenda calendar */
+.ag-toolbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.ag-nav{display:flex;align-items:center;gap:6px}
+.ag-nav button{background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.ag-nav button:hover{color:var(--text);border-color:var(--p1)}
+.ag-nav input[type=date]{width:150px}
+.cal-wrap{overflow-x:auto;border:0.5px solid var(--border2);border-radius:12px;background:linear-gradient(135deg,var(--bg3),var(--bg))}
+.cal-grid{min-width:max-content}
+.cal-head{display:flex;border-bottom:0.5px solid var(--border2)}
+.cal-hcell{width:180px;flex-shrink:0;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text);border-left:0.5px solid var(--border);display:flex;align-items:center;gap:6px}
+.cal-gutter-head{width:52px;flex-shrink:0;border-left:none}
+.cal-body{display:flex;position:relative}
+.cal-gutter{width:52px;flex-shrink:0;position:relative}
+.cal-hourlabel{position:absolute;left:0;right:0;transform:translateY(-50%);font-size:10px;color:var(--text3);text-align:right;padding-right:8px}
+.cal-col{width:180px;flex-shrink:0;position:relative;border-left:0.5px solid var(--border);cursor:pointer;transition:background-color .15s}
+.cal-col.drop-target{background-color:rgba(124,106,247,0.08)}
+.cal-block{position:absolute;left:3px;right:3px;border-radius:7px;padding:4px 7px;font-size:11px;overflow:hidden;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,0.35);border:0.5px solid;box-sizing:border-box;touch-action:none}
+.cal-block:hover{box-shadow:0 4px 14px rgba(0,0,0,0.5)}
+.cal-block.dragging{opacity:0.8;cursor:grabbing;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+.cal-block .cb-t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-block .cb-s{opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
+.cal-block .cb-badge{position:absolute;top:3px;right:5px;font-size:9px}
+.cal-now{position:absolute;left:0;right:0;height:1px;background:#ff5555;z-index:4;pointer-events:none}
+.cal-now::before{content:'';position:absolute;left:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:#ff5555}
+.cal-block.estado-curso{animation:pulseCurso 1.6s ease-in-out infinite}
+@keyframes pulseCurso{0%,100%{box-shadow:0 2px 8px rgba(0,0,0,0.35)}50%{box-shadow:0 0 0 4px rgba(124,106,247,0.28)}}
+.cal-block.estado-cancelada{opacity:0.55;text-decoration:line-through}
+.cb-menu-btn{position:absolute;top:2px;right:2px;width:16px;height:16px;line-height:14px;text-align:center;background:rgba(0,0,0,0.25);border:none;border-radius:4px;color:inherit;font-size:11px;cursor:pointer;padding:0}
+.cb-menu-btn:hover{background:rgba(0,0,0,0.45)}
+.cb-estado{opacity:0.9}
+.ag-ctx-menu{position:fixed;z-index:300;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,0.5);min-width:150px}
+.ag-ctx-menu button{display:flex;align-items:center;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer}
+.ag-ctx-menu button:hover{background:var(--bg4)}
+.ag-ctx-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;flex-shrink:0}
+@media(max-width:768px){.sidebar{width:52px}.sidebar .nav-item span,.sidebar .nav-section,.sidebar .logo-text,.sidebar .user-info{display:none}.main{margin-left:52px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.content{padding:14px}.cal-hcell,.cal-col{width:140px}}
 </style>
 </head>
 <body>
@@ -475,12 +509,19 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- AGENDA -->
 <div id="p-agenda" class="page">
-  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-    <input type="date" id="ag-fecha" onchange="renderAgenda()">
-    <select id="ag-profesional" onchange="renderAgenda()" style="max-width:180px"><option value="">Todos los profesionals</option></select>
-    <button class="btn btn-primary" onclick="openM('m-reserva')">+ Nueva reserva</button>
+  <div class="ag-toolbar">
+    <div class="ag-nav">
+      <button onclick="agendaDia(-1)" title="Día anterior">‹</button>
+      <input type="date" id="ag-fecha" onchange="renderAgenda()">
+      <button onclick="agendaDia(1)" title="Día siguiente">›</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="agendaHoy()">Hoy</button>
+    <select id="ag-profesional" onchange="renderAgenda()" style="max-width:180px"><option value="">Todos los profesionales</option></select>
+    <button class="btn btn-primary" onclick="openM('m-reserva')" style="margin-left:auto">+ Nueva reserva</button>
   </div>
-  <div id="agenda-container"></div>
+  <div class="cal-wrap"><div id="agenda-container"></div></div>
+  <div id="agenda-sinhora"></div>
+  <div id="ag-ctx-menu" class="ag-ctx-menu" style="display:none"></div>
 </div>
 
 
@@ -596,12 +637,14 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <!-- Cita -->
 <div class="overlay" id="m-cita">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">Registrar cita</span><button class="xbtn" onclick="closeM('m-cita')">×</button></div>
+    <div class="modal-hdr"><span class="modal-title" id="m-cita-title">Registrar cita</span><button class="xbtn" onclick="closeM('m-cita')">×</button></div>
+    <input type="hidden" id="v-id">
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="v-fecha" type="date"></div><div class="fg"><label>Hora</label><input id="v-hora" type="time"></div></div>
     <div class="fr"><div class="fg"><label>Cliente *</label><select id="v-cliente"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional *</label><select id="v-profesional"><option value="">Seleccionar...</option></select></div></div>
     <div class="fr"><div class="fg"><label>Servicio *</label><select id="v-servicio" onchange="autoValor()"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Valor neto ($)</label><input id="v-valor" type="number" placeholder="0" oninput="calcIvaV()"></div></div>
     <div class="fr"><div class="fg"><label>IVA 19%</label><input id="v-iva-calc" readonly></div><div class="fg"><label>Total con IVA</label><input id="v-total-calc" readonly style="color:#d4a853"></div></div>
     <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Setmore</option><option>WhatsApp</option><option>Instagram</option></select></div></div>
+    <div class="fg"><label>Estado</label><select id="v-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="v-notas" rows="2"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCita()">Registrar</button>
@@ -613,7 +656,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <!-- Reserva -->
 <div class="overlay" id="m-reserva">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">Nueva reserva</span><button class="xbtn" onclick="closeM('m-reserva')">x</button></div>
+    <div class="modal-hdr"><span class="modal-title" id="m-reserva-title">Nueva reserva</span><button class="xbtn" onclick="closeM('m-reserva')">x</button></div>
+    <input type="hidden" id="r-id">
     <div class="fg" style="position:relative;margin-bottom:12px">
       <label>Buscar cliente existente</label>
       <input id="r-buscar" type="text" placeholder="Escribe nombre o WhatsApp..." oninput="buscarClienteReserva(this.value)" autocomplete="off">
@@ -622,6 +666,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="r-fecha" type="date"></div><div class="fg"><label>Hora *</label><input id="r-hora" type="time"></div></div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
     <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Cualquiera</option></select></div></div>
+    <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarReserva()">Guardar reserva</button>
@@ -827,15 +872,28 @@ function mesActual(){ return new Date().toISOString().slice(0,7); }
 function initModal(id){
   const hoy=new Date().toISOString().split('T')[0];
   if(id==='m-cita'){
+    document.getElementById('v-id').value='';
+    document.getElementById('m-cita-title').textContent='Registrar cita';
     document.getElementById('v-fecha').value=hoy;
+    document.getElementById('v-hora').value='';
+    document.getElementById('v-valor').value='';
+    document.getElementById('v-notas').value='';
     document.getElementById('v-iva-calc').value='';
     document.getElementById('v-total-calc').value='';
+    document.getElementById('v-estado').value='Atendida';
     sel('v-cliente',S.clientes.map(c=>({v:c.id,t:c.nombre+' '+(c.apellido||'')})));
     sel('v-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})));
     sel('v-servicio',S.servicios.map(s=>({v:s.id+'|'+s.precio,t:s.nombre+' ('+fmt(s.precio)+')'})),true);
   }
   if(id==='m-reserva'){
+    document.getElementById('r-id').value='';
+    document.getElementById('m-reserva-title').textContent='Nueva reserva';
     document.getElementById('r-fecha').value=hoy;
+    document.getElementById('r-hora').value='';
+    document.getElementById('r-nombre').value='';
+    document.getElementById('r-wsp').value='';
+    document.getElementById('r-notas').value='';
+    document.getElementById('r-estado').value='Pendiente';
     sel('r-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
     sel('r-servicio',S.servicios.map(s=>({v:s.nombre,t:s.nombre})),true);
   }
@@ -889,6 +947,7 @@ async function guardarCliente(){
 }
 
 async function guardarCita(){
+  const id=document.getElementById('v-id').value;
   const cid=document.getElementById('v-cliente').value;
   const bar=document.getElementById('v-profesional').value;
   const sv=document.getElementById('v-servicio').value;
@@ -896,47 +955,68 @@ async function guardarCita(){
   const fecha=document.getElementById('v-fecha').value;
   if(!cid||!bar||!sv||!fecha){notify('Completa los campos obligatorios','warn');return;}
   const sName=sv.split('|')[0];
-  const {data,error}=await sb.from('visitas').insert({
-    barberia_id:S.barberia.id,cliente_id:cid,profesional_nombre:bar,servicio:sName,valor:val,
+  const payload={
+    cliente_id:cid,profesional_nombre:bar,servicio:sName,valor:val,
     fecha,hora:document.getElementById('v-hora').value||null,
     metodo_pago:document.getElementById('v-pago').value,fuente:document.getElementById('v-fuente').value,
+    estado:document.getElementById('v-estado').value||'Atendida',
     notas:document.getElementById('v-notas').value
-  }).select().single();
+  };
+  let error;
+  if(id){
+    ({error}=await sb.from('visitas').update(payload).eq('id',id));
+  } else {
+    ({error}=await sb.from('visitas').insert({barberia_id:S.barberia.id,...payload}));
+  }
   if(error){notify(error.message,'err');return;}
   await loadVisitas();
-  // Chequear subida VIP
-  const totalV=getCitas(cid);
-  const antes=getNivel(totalV-1); const ahora=getNivel(totalV);
-  if(antes!==ahora&&ahora!=='Sin nivel'){
-    const cl=S.clientes.find(c=>c.id===cid);
-    const ben=ahora==='Plata'?'10% descuento':ahora==='Oro'?'Servicio gratis':'VIP total';
-    const expires=new Date(); expires.setDate(expires.getDate()+30);
-    await sb.from('vip_historial').insert({barberia_id:S.barberia.id,cliente_id:cid,nivel:ahora,beneficio:ben,fecha_ganado:fecha,fecha_expira:expires.toISOString().split('T')[0]});
-    await loadVIP();
-    notify('🏆 '+cl?.nombre+' alcanzó nivel '+ahora+'!','warn');
-    if(cl){const msg=buildMsg('Club '+ahora,{nombre:cl.nombre});if(msg)abrirWA(cl.whatsapp,msg);}
+  if(!id){
+    // Chequear subida VIP (solo al registrar una cita nueva)
+    const totalV=getCitas(cid);
+    const antes=getNivel(totalV-1); const ahora=getNivel(totalV);
+    if(antes!==ahora&&ahora!=='Sin nivel'){
+      const cl=S.clientes.find(c=>c.id===cid);
+      const ben=ahora==='Plata'?'10% descuento':ahora==='Oro'?'Servicio gratis':'VIP total';
+      const expires=new Date(); expires.setDate(expires.getDate()+30);
+      await sb.from('vip_historial').insert({barberia_id:S.barberia.id,cliente_id:cid,nivel:ahora,beneficio:ben,fecha_ganado:fecha,fecha_expira:expires.toISOString().split('T')[0]});
+      await loadVIP();
+      notify('🏆 '+cl?.nombre+' alcanzó nivel '+ahora+'!','warn');
+      if(cl){const msg=buildMsg('Club '+ahora,{nombre:cl.nombre});if(msg)abrirWA(cl.whatsapp,msg);}
+    }
   }
-  closeM('m-cita');notify('Cita registrada ✓');
+  closeM('m-cita');notify(id?'Cita actualizada ✓':'Cita registrada ✓');
   renderVisitas();renderDashboard();
+  if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
 }
 
 async function guardarReserva(){
+  const id=document.getElementById('r-id').value;
   const n=document.getElementById('r-nombre').value.trim();
   const w=document.getElementById('r-wsp').value.trim();
   const f=document.getElementById('r-fecha').value;
   const h=document.getElementById('r-hora').value;
   if(!n||!w||!f||!h){notify('Nombre, WhatsApp, fecha y hora son obligatorios','warn');return;}
-  const {error}=await sb.from('reservas').insert({
-    barberia_id:S.barberia.id,nombre_cliente:n,whatsapp_cliente:w,fecha:f,hora:h,
+  const payload={
+    nombre_cliente:n,whatsapp_cliente:w,fecha:f,hora:h,
     servicio:document.getElementById('r-servicio').value||null,
     profesional_nombre:document.getElementById('r-profesional').value||null,
-    notas:document.getElementById('r-notas').value,fuente:'Manual'
-  });
+    estado:document.getElementById('r-estado').value||'Pendiente',
+    notas:document.getElementById('r-notas').value
+  };
+  let error;
+  if(id){
+    ({error}=await sb.from('reservas').update(payload).eq('id',id));
+  } else {
+    ({error}=await sb.from('reservas').insert({barberia_id:S.barberia.id,...payload,fuente:'Manual'}));
+  }
   if(error){notify(error.message,'err');return;}
-  await loadReservas();closeM('m-reserva');notify('Reserva guardada ✓');
-  const msg=buildMsg('Confirmación reserva',{nombre:n,fecha:f,hora:h,servicio:document.getElementById('r-servicio').value||'',profesional:document.getElementById('r-profesional').value||''});
-  if(msg)abrirWA(w,msg);
+  await loadReservas();closeM('m-reserva');notify(id?'Reserva actualizada ✓':'Reserva guardada ✓');
+  if(!id){
+    const msg=buildMsg('Confirmación reserva',{nombre:n,fecha:f,hora:h,servicio:document.getElementById('r-servicio').value||'',profesional:document.getElementById('r-profesional').value||''});
+    if(msg)abrirWA(w,msg);
+  }
   renderReservas();
+  if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
 }
 
 async function guardarCosto(){
@@ -1089,9 +1169,10 @@ async function procesarReserva(id){
     const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Setmore',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.profesional_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva'});
-  await sb.from('reservas').update({procesado:true}).eq('id',id);
+  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.profesional_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida'});
+  await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
   await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva procesada ✓');
+  if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
 }
 
 async function procesarTodas(){
@@ -1507,88 +1588,294 @@ function renderConfig(){
 }
 
 
+// ─── AGENDA (calendario por columnas) ───
+const AG_START_HOUR=8, AG_END_HOUR=20, AG_PX_MIN=1.6, AG_SLOT_MIN=30;
+
+function agendaDia(delta){
+  const inp=document.getElementById('ag-fecha');
+  const cur=inp.value?new Date(inp.value+'T12:00:00'):new Date();
+  cur.setDate(cur.getDate()+delta);
+  inp.value=cur.toISOString().split('T')[0];
+  renderAgenda();
+}
+function agendaHoy(){
+  document.getElementById('ag-fecha').value=new Date().toISOString().split('T')[0];
+  renderAgenda();
+}
+
+function resolveServicioInfo(servicioRaw){
+  let s=null;
+  if(servicioRaw) s=S.servicios.find(x=>x.id===servicioRaw)||S.servicios.find(x=>x.nombre===servicioRaw);
+  const nombre=s?s.nombre:(servicioRaw||'Sin servicio');
+  const dur=s?.duracion_min||30;
+  return {nombre,dur};
+}
+
+const ESTADOS=['Pendiente','Confirmada','En curso','Atendida','No asistió','Cancelada'];
+const ESTADO_HEX={
+  'Pendiente':'#d4a853','Confirmada':'#5b8def','En curso':'#7c6af7',
+  'Atendida':'#00e096','No asistió':'#ff9944','Cancelada':'#ff5555'
+};
+function resolveEstado(it){
+  return it.estado || (it._tipo==='reserva'?'Pendiente':'Atendida');
+}
+function hexToRgba(hex,a){
+  const n=parseInt(hex.slice(1),16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+function estadoColor(estado){
+  const hex=ESTADO_HEX[estado]||ESTADO_HEX['Pendiente'];
+  return {bg:hexToRgba(hex,0.16),border:hex,text:hex};
+}
+
 function renderAgenda(){
   const fecha=document.getElementById('ag-fecha').value||new Date().toISOString().split('T')[0];
   document.getElementById('ag-fecha').value=fecha;
   const bf=document.getElementById('ag-profesional').value;
-  // populate profesional filter
-  const sel=document.getElementById('ag-profesional');
-  const curVal=sel.value;
-  while(sel.options.length>1)sel.remove(1);
-  S.barberos.forEach(b=>sel.add(new Option(b.nombre,b.nombre)));
-  sel.value=curVal;
+  const selP=document.getElementById('ag-profesional');
+  const curVal=selP.value;
+  while(selP.options.length>1)selP.remove(1);
+  S.barberos.forEach(b=>selP.add(new Option(b.nombre,b.nombre)));
+  selP.value=curVal;
 
-  const reservasDia=S.reservas.filter(r=>r.fecha===fecha&&(!bf||r.profesional_nombre===bf)).sort((a,b)=>a.hora>b.hora?1:-1);
-  const citasDia=S.visitas.filter(v=>v.fecha===fecha&&(!bf||v.profesional_nombre===bf)).sort((a,b)=>a.hora>b.hora?1:-1);
-  const d=new Date(fecha+'T12:00:00');
-  const dias=['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
-  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const fechaStr=`${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
+  const cont=document.getElementById('agenda-container');
+  const sinHoraCont=document.getElementById('agenda-sinhora');
 
-  // Group by profesional
-  const profesionals=bf?[bf]:[...new Set([...reservasDia.map(r=>r.profesional_nombre||'Sin asignar'),...citasDia.map(v=>v.profesional_nombre||'Sin asignar')])];
-  if(!profesionals.length){
-    document.getElementById('agenda-container').innerHTML=`<div class="card"><div class="empty">Sin reservas ni citas para ${fechaStr}</div></div>`;
+  if(!S.barberos.length){
+    cont.innerHTML=`<div class="card"><div class="empty">Agrega profesionales en "Equipo" para ver la agenda</div></div>`;
+    sinHoraCont.innerHTML='';
     return;
   }
 
-  const HORARIOS=['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
+  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).map(r=>({...r,_tipo:'reserva'}));
+  const visitasDia=S.visitas.filter(v=>v.fecha===fecha).map(v=>({...v,_tipo:'visita'}));
+  let todas=[...reservasDia,...visitasDia];
+  if(bf) todas=todas.filter(x=>(x.profesional_nombre||'Sin asignar')===bf);
 
-  document.getElementById('agenda-container').innerHTML=profesionals.map(barb=>{
-    const rBarb=reservasDia.filter(r=>(r.profesional_nombre||'Sin asignar')===barb);
-    const vBarb=citasDia.filter(v=>(v.profesional_nombre||'Sin asignar')===barb);
-    const slots=HORARIOS.map(h=>{
-      const res=rBarb.find(r=>r.hora&&r.hora.startsWith(h));
-      const vis=vBarb.find(v=>v.hora&&v.hora.startsWith(h));
-      if(vis){
-        const cl=S.clientes.find(c=>c.id===vis.cliente_id);
-        return`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:0.5px solid #1a1a1a">
-          <span style="font-size:11px;color:var(--text3);min-width:42px">${h}</span>
-          <div style="flex:1;background:#0f2a1e;border:0.5px solid #4caf87;border-radius:6px;padding:6px 10px">
-            <div style="font-size:12px;font-weight:600;color:#4caf87">✓ ${cl?cl.nombre+' '+(cl.apellido||''):'Cliente'}</div>
-            <div style="font-size:11px;color:var(--text3)">${vis.servicio||''} · $${(vis.valor||0).toLocaleString()}</div>
-          </div>
-        </div>`;
-      }
-      if(res){
-        return`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:0.5px solid #1a1a1a">
-          <span style="font-size:11px;color:var(--text3);min-width:42px">${h}</span>
-          <div style="flex:1;background:#1a1a18;border:0.5px solid #d4a853;border-radius:6px;padding:6px 10px;display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-size:12px;font-weight:600;color:#d4a853">${res.nombre_cliente}</div>
-              <div style="font-size:11px;color:var(--text3)">${res.servicio||''} · ${res.whatsapp_cliente||''}</div>
-            </div>
-            <div style="display:flex;gap:4px">
-              <button class="btn-wa btn-sm" onclick="enviarConfirm('${res.id}')">📱</button>
-              <button class="btn btn-ghost btn-sm" onclick="procesarReserva('${res.id}')">✓</button>
-            </div>
-          </div>
-        </div>`;
-      }
-      return`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:0.5px solid #1a1a1a">
-        <span style="font-size:11px;color:var(--text3);min-width:42px">${h}</span>
-        <div style="flex:1;height:28px;border-radius:6px;cursor:pointer" onclick="crearReservaHora('${fecha}','${h}','${barb}')" title="Agregar reserva"></div>
+  const conHora=todas.filter(x=>x.hora);
+  const sinHora=todas.filter(x=>!x.hora);
+
+  let cols=bf?[bf]:S.barberos.map(b=>b.nombre);
+  const extra=[...new Set(todas.map(x=>x.profesional_nombre||'Sin asignar'))].filter(n=>!cols.includes(n));
+  cols=cols.concat(extra);
+
+  const totalMin=(AG_END_HOUR-AG_START_HOUR)*60;
+  const gridH=totalMin*AG_PX_MIN;
+  const slotH=AG_SLOT_MIN*AG_PX_MIN;
+  const horas=[]; for(let hr=AG_START_HOUR;hr<=AG_END_HOUR;hr++) horas.push(hr);
+
+  const head=`<div class="cal-head"><div class="cal-hcell cal-gutter-head"></div>${cols.map(c=>{
+    const cnt=conHora.filter(x=>(x.profesional_nombre||'Sin asignar')===c).length+sinHora.filter(x=>(x.profesional_nombre||'Sin asignar')===c).length;
+    return `<div class="cal-hcell">👤 ${c}<span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">${cnt}</span></div>`;
+  }).join('')}</div>`;
+
+  const gutter=`<div class="cal-gutter" style="height:${gridH}px">${horas.map(hr=>`<div class="cal-hourlabel" style="top:${(hr-AG_START_HOUR)*60*AG_PX_MIN}px">${String(hr).padStart(2,'0')}:00</div>`).join('')}</div>`;
+
+  const hoyStr=new Date().toISOString().split('T')[0];
+  let nowLine='';
+  if(fecha===hoyStr){
+    const now=new Date();
+    const mins=now.getHours()*60+now.getMinutes();
+    if(mins>=AG_START_HOUR*60&&mins<=AG_END_HOUR*60) nowLine=`<div class="cal-now" style="top:${(mins-AG_START_HOUR*60)*AG_PX_MIN}px"></div>`;
+  }
+
+  const colsHtml=cols.map(barb=>{
+    const items=conHora.filter(x=>(x.profesional_nombre||'Sin asignar')===barb);
+    const blocks=items.map(it=>{
+      const info=resolveServicioInfo(it.servicio);
+      const [hh,mm]=it.hora.split(':').map(Number);
+      let startMin=hh*60+mm-AG_START_HOUR*60;
+      startMin=Math.max(0,Math.min(startMin,totalMin-5));
+      const top=startMin*AG_PX_MIN;
+      const height=Math.max(info.dur*AG_PX_MIN,22);
+      const label=it._tipo==='reserva'?(it.nombre_cliente||'Reserva'):(S.clientes.find(c=>c.id===it.cliente_id)?.nombre||'Cliente');
+      const estado=resolveEstado(it);
+      const ecolor=estadoColor(estado);
+      const extraClass=(estado==='En curso'?' estado-curso':'')+(estado==='Cancelada'?' estado-cancelada':'');
+      return `<div class="cal-block${extraClass}" data-tipo="${it._tipo}" data-id="${it.id}" style="top:${top}px;height:${height}px;background:${ecolor.bg};border-color:${ecolor.border};color:${ecolor.text}" title="${it.hora} · ${label} · ${info.nombre} · ${estado}">
+        <button class="cb-menu-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();toggleAgendaMenu(event,'${it._tipo}','${it.id}')">⋮</button>
+        <div class="cb-t">${it.hora} · ${label}</div>
+        <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
-
-    return`<div class="card" style="margin-bottom:14px">
-      <div class="card-hdr">
-        <span class="card-title">👤 ${barb}</span>
-        <span style="font-size:11px;color:var(--text3)">${rBarb.length} reservas · ${vBarb.length} atendidos</span>
-      </div>
-      ${slots}
-    </div>`;
+    return `<div class="cal-col" data-barbero="${barb}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,#16172a ${slotH-1}px,#16172a ${slotH}px)" onclick="agendaColClick(event)">${nowLine}${blocks}</div>`;
   }).join('');
+
+  cont.innerHTML=`<div class="cal-grid">${head}<div class="cal-body">${gutter}${colsHtml}</div></div>`;
+
+  if(sinHora.length){
+    sinHoraCont.innerHTML=`<div class="card" style="margin-top:14px">
+      <div class="card-hdr"><span class="card-title">Sin hora asignada</span></div>
+      ${sinHora.map(it=>{
+        const info=resolveServicioInfo(it.servicio);
+        const estado=resolveEstado(it);
+        const ecolor=estadoColor(estado);
+        const label=it._tipo==='reserva'?(it.nombre_cliente||'Reserva'):(S.clientes.find(c=>c.id===it.cliente_id)?.nombre||'Cliente');
+        const abrir=it._tipo==='reserva'?`abrirEditarReserva('${it.id}')`:`abrirEditarCita('${it.id}')`;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:0.5px solid #1a1a1a;cursor:pointer" onclick="${abrir}">
+          <span style="width:8px;height:8px;border-radius:50%;background:${ecolor.border};flex-shrink:0"></span>
+          <div style="flex:1"><div style="font-size:12px;font-weight:600">${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.profesional_nombre||'Sin asignar'}</div></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  } else {
+    sinHoraCont.innerHTML='';
+  }
+
+  initAgendaDrag();
+}
+
+function agendaColClick(e){
+  if(e.target.closest('.cal-block'))return;
+  const col=e.currentTarget;
+  const rect=col.getBoundingClientRect();
+  const relY=e.clientY-rect.top;
+  let minutos=Math.round(relY/AG_PX_MIN/15)*15;
+  minutos=Math.max(0,Math.min(minutos,(AG_END_HOUR-AG_START_HOUR)*60));
+  const totalM=AG_START_HOUR*60+minutos;
+  const hh=String(Math.floor(totalM/60)).padStart(2,'0');
+  const mm=String(totalM%60).padStart(2,'0');
+  crearReservaHora(document.getElementById('ag-fecha').value,`${hh}:${mm}`,col.dataset.barbero);
 }
 
 function crearReservaHora(fecha,hora,profesional){
   openM('m-reserva');
   document.getElementById('r-fecha').value=fecha;
   document.getElementById('r-hora').value=hora;
-  setTimeout(()=>{
-    const sel=document.getElementById('r-profesional');
-    for(let o of sel.options){if(o.value===profesional)o.selected=true;}
-  },100);
+  const sel=document.getElementById('r-profesional');
+  for(let o of sel.options){if(o.value===profesional)o.selected=true;}
+}
+
+// ─── Menú rápido de estado ───
+const QUICK_ESTADOS=['Confirmada','Atendida','No asistió','Cancelada'];
+function toggleAgendaMenu(e,tipo,id){
+  const menu=document.getElementById('ag-ctx-menu');
+  const wasOpenForSame=menu.dataset.tipo===tipo&&menu.dataset.id===id&&menu.style.display==='block';
+  closeAgendaMenu();
+  if(wasOpenForSame)return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  menu.innerHTML=QUICK_ESTADOS.map(es=>{
+    const c=estadoColor(es).border;
+    return `<button onclick="event.stopPropagation();cambiarEstado('${tipo}','${id}','${es}')"><span class="ag-ctx-dot" style="background:${c}"></span>${es}</button>`;
+  }).join('');
+  menu.dataset.tipo=tipo; menu.dataset.id=id;
+  menu.style.display='block';
+  menu.style.top=Math.min(rect.bottom+4,window.innerHeight-170)+'px';
+  menu.style.left=Math.min(rect.left,window.innerWidth-170)+'px';
+}
+function closeAgendaMenu(){
+  const menu=document.getElementById('ag-ctx-menu');
+  if(!menu)return;
+  menu.style.display='none'; menu.dataset.tipo=''; menu.dataset.id='';
+}
+document.addEventListener('click',closeAgendaMenu);
+
+async function cambiarEstado(tipo,id,estado){
+  closeAgendaMenu();
+  const tabla=tipo==='reserva'?'reservas':'visitas';
+  const {error}=await sb.from(tabla).update({estado}).eq('id',id);
+  if(error){notify(error.message,'err');return;}
+  notify('Estado actualizado a "'+estado+'" ✓');
+  if(tabla==='reservas')await loadReservas(); else await loadVisitas();
+  renderAgenda();
+}
+
+function abrirEditarReserva(id){
+  const r=S.reservas.find(x=>x.id===id); if(!r)return;
+  openM('m-reserva');
+  document.getElementById('m-reserva-title').textContent='Editar reserva';
+  document.getElementById('r-id').value=r.id;
+  document.getElementById('r-fecha').value=r.fecha||'';
+  document.getElementById('r-hora').value=r.hora||'';
+  document.getElementById('r-nombre').value=r.nombre_cliente||'';
+  document.getElementById('r-wsp').value=r.whatsapp_cliente||'';
+  document.getElementById('r-notas').value=r.notas||'';
+  document.getElementById('r-estado').value=r.estado||'Pendiente';
+  const selS=document.getElementById('r-servicio'); if(r.servicio)selS.value=r.servicio;
+  const selP=document.getElementById('r-profesional'); if(r.profesional_nombre)selP.value=r.profesional_nombre;
+}
+
+function abrirEditarCita(id){
+  const v=S.visitas.find(x=>x.id===id); if(!v)return;
+  openM('m-cita');
+  document.getElementById('m-cita-title').textContent='Editar cita';
+  document.getElementById('v-id').value=v.id;
+  document.getElementById('v-fecha').value=v.fecha||'';
+  document.getElementById('v-hora').value=v.hora||'';
+  document.getElementById('v-valor').value=v.valor||0;
+  document.getElementById('v-notas').value=v.notas||'';
+  document.getElementById('v-pago').value=v.metodo_pago||'Efectivo';
+  document.getElementById('v-fuente').value=v.fuente||'Presencial';
+  document.getElementById('v-estado').value=v.estado||'Atendida';
+  document.getElementById('v-cliente').value=v.cliente_id||'';
+  document.getElementById('v-profesional').value=v.profesional_nombre||'';
+  if(v.servicio){
+    const selS=document.getElementById('v-servicio');
+    for(let o of selS.options){if(o.value.split('|')[0]===v.servicio){o.selected=true;break;}}
+  }
+  calcIvaV();
+}
+
+// ─── Drag & drop de bloques de agenda ───
+let AG_DRAG=null;
+function initAgendaDrag(){
+  document.querySelectorAll('.cal-block').forEach(el=>{
+    el.addEventListener('pointerdown',onBlockPointerDown);
+  });
+}
+function onBlockPointerDown(e){
+  if(e.button!==0)return;
+  const el=e.currentTarget;
+  AG_DRAG={el,tipo:el.dataset.tipo,id:el.dataset.id,startX:e.clientX,startY:e.clientY,origTop:parseFloat(el.style.top),moved:false,hoverCol:el.closest('.cal-col')};
+  el.setPointerCapture(e.pointerId);
+  el.addEventListener('pointermove',onBlockPointerMove);
+  el.addEventListener('pointerup',onBlockPointerUp);
+  e.stopPropagation();
+}
+function onBlockPointerMove(e){
+  if(!AG_DRAG)return;
+  const dx=e.clientX-AG_DRAG.startX, dy=e.clientY-AG_DRAG.startY;
+  if(!AG_DRAG.moved&&Math.hypot(dx,dy)<6)return;
+  AG_DRAG.moved=true;
+  AG_DRAG.el.classList.add('dragging');
+  const totalMin=(AG_END_HOUR-AG_START_HOUR)*60;
+  let newTop=AG_DRAG.origTop+dy;
+  newTop=Math.max(0,Math.min(newTop,totalMin*AG_PX_MIN-10));
+  AG_DRAG.el.style.top=newTop+'px';
+  AG_DRAG.el.style.pointerEvents='none';
+  const under=document.elementFromPoint(e.clientX,e.clientY);
+  AG_DRAG.el.style.pointerEvents='';
+  const col=under?.closest('.cal-col');
+  document.querySelectorAll('.cal-col.drop-target').forEach(c=>c.classList.remove('drop-target'));
+  if(col){col.classList.add('drop-target');AG_DRAG.hoverCol=col;}
+}
+async function onBlockPointerUp(e){
+  if(!AG_DRAG)return;
+  const d=AG_DRAG; AG_DRAG=null;
+  d.el.releasePointerCapture(e.pointerId);
+  d.el.removeEventListener('pointermove',onBlockPointerMove);
+  d.el.removeEventListener('pointerup',onBlockPointerUp);
+  document.querySelectorAll('.cal-col.drop-target').forEach(c=>c.classList.remove('drop-target'));
+  d.el.classList.remove('dragging');
+  if(!d.moved){
+    if(d.tipo==='reserva')abrirEditarReserva(d.id); else abrirEditarCita(d.id);
+    return;
+  }
+  const top=parseFloat(d.el.style.top);
+  let minutos=Math.round(top/AG_PX_MIN/15)*15;
+  minutos=Math.max(0,Math.min(minutos,(AG_END_HOUR-AG_START_HOUR)*60-5));
+  const totalM=AG_START_HOUR*60+minutos;
+  const hh=String(Math.floor(totalM/60)).padStart(2,'0');
+  const mm=String(totalM%60).padStart(2,'0');
+  await moverCita(d.tipo,d.id,`${hh}:${mm}`,d.hoverCol.dataset.barbero);
+}
+async function moverCita(tipo,id,hora,profesional){
+  const tabla=tipo==='reserva'?'reservas':'visitas';
+  const {error}=await sb.from(tabla).update({hora,profesional_nombre:profesional}).eq('id',id);
+  if(error){notify(error.message,'err');renderAgenda();return;}
+  notify('Movido a las '+hora+' ✓');
+  if(tabla==='reservas')await loadReservas(); else await loadVisitas();
+  renderAgenda();
 }
 
 
