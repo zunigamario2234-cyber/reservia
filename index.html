@@ -82,6 +82,14 @@ input:focus{outline:none;border-color:#7c6af7;box-shadow:0 0 0 3px rgba(124,106,
         <div class="fg"><label>Nombre del negocio *</label><input type="text" id="r-neg" placeholder="Mi Negocio"></div>
         <div class="fg"><label>Dirección</label><input type="text" id="r-dir" placeholder="Calle 123, Ciudad"></div>
         <div class="fg"><label>WhatsApp *</label><input type="text" id="r-wsp" placeholder="+56 9 XXXX XXXX"></div>
+        <div class="fg"><label>Rubro del negocio *</label>
+          <select id="r-rubro">
+            <option value="Barbería / Peluquería / Centro de estética">Barbería / Peluquería / Centro de estética</option>
+            <option value="Salud">Salud (médico, dental, kinesiología, psicología, etc.)</option>
+            <option value="Legal">Legal (abogados, notarías)</option>
+            <option value="Otro">Otro servicio con agenda</option>
+          </select>
+        </div>
         <button class="btn btn-p" onclick="s1()">Continuar →</button>
       </div>
 
@@ -149,7 +157,7 @@ function s1(){
   const n=document.getElementById('r-neg').value.trim();
   const w=document.getElementById('r-wsp').value.trim();
   if(!n||!w){showAlert('alert-reg','Nombre y WhatsApp son obligatorios');return;}
-  RD.neg=n;RD.dir=document.getElementById('r-dir').value.trim();RD.wsp=w;
+  RD.neg=n;RD.dir=document.getElementById('r-dir').value.trim();RD.wsp=w;RD.rubro=document.getElementById('r-rubro').value;
   hideAlert('alert-reg');goS(2);
 }
 function s2(){
@@ -170,7 +178,7 @@ async function doReg(){
   try{
     const{data:auth,error:e1}=await sb.auth.signUp({email:RD.email,password:RD.pass,options:{data:{nombre:RD.nombre,rol:'dueno'}}});
     if(e1)throw e1;
-    const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,plan:document.getElementById('r-plan').value}).select().single();
+    const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,rubro:RD.rubro,plan:document.getElementById('r-plan').value}).select().single();
     if(e2)throw e2;
     await sb.from('perfiles').upsert({id:auth.user.id,barberia_id:barb.id,nombre:RD.nombre,rol:'dueno'});
     await sb.from('servicios').insert([

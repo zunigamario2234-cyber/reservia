@@ -160,6 +160,10 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .ag-ctx-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;flex-shrink:0}
 .chart-wrap{position:relative;height:220px}
 .chart-wrap.chart-sm{height:200px}
+.no-vip .vip-only{display:none!important}
+.no-vip .g4-vip{grid-template-columns:repeat(3,1fr)}
+.no-vip .g2-vip{grid-template-columns:1fr}
+.no-vip .g3-vip{grid-template-columns:repeat(2,1fr)}
 @media(max-width:768px){.sidebar{width:52px}.sidebar .nav-item span,.sidebar .nav-section,.sidebar .logo-text,.sidebar .user-info{display:none}.main{margin-left:52px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.content{padding:14px}.cal-hcell,.cal-col{width:140px}}
 </style>
 </head>
@@ -217,7 +221,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <span>Reservas</span>
     </div>
     <div class="nav-section">Negocio</div>
-    <div class="nav-item" data-page="vip" onclick="nav('vip')">
+    <div class="nav-item vip-only" data-page="vip" onclick="nav('vip')">
       <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
       <span>Club VIP</span>
     </div>
@@ -270,11 +274,11 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab" data-p="mes" onclick="setDashPeriodo('mes')">Mensual</div>
     <div class="tab" data-p="anio" onclick="setDashPeriodo('anio')">Anual</div>
   </div>
-  <div class="g4">
+  <div class="g4 g4-vip">
     <div class="mc"><div class="mc-label">Clientes totales</div><div class="mc-val" id="d-clientes">—</div><div class="mc-sub" id="d-clientes-sub">Base activa</div></div>
     <div class="mc"><div class="mc-label" id="d-citas-label">Citas</div><div class="mc-val" id="d-citas">—</div><div class="mc-sub" id="d-citas-sub">—</div></div>
     <div class="mc"><div class="mc-label" id="d-ventas-label">Ventas</div><div class="mc-val" id="d-ventas">—</div><div class="mc-sub" id="d-ventas-neto">—</div></div>
-    <div class="mc"><div class="mc-label">Clientes VIP</div><div class="mc-val gold" id="d-vip">—</div><div class="mc-sub">Plata · Oro · Diamante</div></div>
+    <div class="mc vip-only"><div class="mc-label">Clientes VIP</div><div class="mc-val gold" id="d-vip">—</div><div class="mc-sub">Plata · Oro · Diamante</div></div>
   </div>
   <div class="g4">
     <div class="mc"><div class="mc-label">Inactivos +30d</div><div class="mc-val down" id="d-inactivos">—</div><div class="mc-sub">Sin citar</div></div>
@@ -294,9 +298,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card"><div class="card-hdr"><span class="card-title" id="d-bar-title">Ventas por profesional</span></div><div id="d-chart-bar"></div></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Alertas operativas</span></div><div id="d-alertas"></div></div>
   </div>
-  <div class="g2">
+  <div class="g2 g2-vip">
     <div class="card"><div class="card-hdr"><span class="card-title">Últimas citas</span></div><div id="d-ult-citas"></div></div>
-    <div class="card"><div class="card-hdr"><span class="card-title">Distribución Club VIP</span></div><div id="d-vip-dist"></div></div>
+    <div class="card vip-only"><div class="card-hdr"><span class="card-title">Distribución Club VIP</span></div><div id="d-vip-dist"></div></div>
   </div>
 </div>
 
@@ -311,7 +315,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
   <div class="card">
     <div class="tbl-wrap">
-      <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Citas</th><th>Última cita</th><th>Nivel VIP</th><th>Estado</th><th></th></tr></thead>
+      <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Citas</th><th>Última cita</th><th class="vip-only">Nivel VIP</th><th>Estado</th><th></th></tr></thead>
       <tbody id="t-clientes"></tbody></table>
     </div>
     <div id="e-clientes" class="empty">Sin clientes registrados aún.</div>
@@ -356,7 +360,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 </div>
 
 <!-- VIP -->
-<div id="p-vip" class="page">
+<div id="p-vip" class="page vip-only">
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'tv-estado')">Estado clientes</div>
     <div class="tab" onclick="switchTab(this,'tv-niveles')">Niveles</div>
@@ -401,13 +405,13 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab active" onclick="switchTab(this,'tm-cumple')">🎂 Cumpleaños</div>
     <div class="tab" onclick="switchTab(this,'tm-confirm')">✅ Confirmaciones</div>
     <div class="tab" onclick="switchTab(this,'tm-inact')">👋 Inactivos</div>
-    <div class="tab" onclick="switchTab(this,'tm-vip')">⭐ VIP</div>
+    <div class="tab vip-only" onclick="switchTab(this,'tm-vip')">⭐ VIP</div>
     <div class="tab" onclick="switchTab(this,'tm-plantillas')">📝 Plantillas</div>
   </div>
   <div id="tm-cumple"><div id="l-cumples"></div></div>
   <div id="tm-confirm" style="display:none"><div id="l-confirm"></div></div>
   <div id="tm-inact" style="display:none"><div id="l-inact"></div></div>
-  <div id="tm-vip" style="display:none"><div id="l-vip-msg"></div></div>
+  <div id="tm-vip" class="vip-only" style="display:none"><div id="l-vip-msg"></div></div>
   <div id="tm-plantillas" style="display:none"><div id="l-plantillas"></div></div>
 </div>
 
@@ -546,7 +550,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <div id="p-reportes" class="page">
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'rep-resumen')">📊 Resumen</div>
-    <div class="tab" onclick="switchTab(this,'rep-profesional')">👤 Por profesional</div>
+    <div class="tab" onclick="switchTab(this,'rep-profesional');renderReporteProfesional()">👤 Por profesional</div>
     <div class="tab" onclick="switchTab(this,'rep-cliente')">🙋 Por cliente</div>
     <div class="tab" onclick="switchTab(this,'rep-servicios')">✂ Por servicio</div>
   </div>
@@ -571,19 +575,31 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
   </div>
 
-  <!-- POR PROFESIONAL -->
+  <!-- POR PROFESIONAL / COMISIONES -->
   <div id="rep-profesional" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-ghost btn-sm" onclick="repProfRango('semana')">Esta semana</button>
+      <button class="btn btn-ghost btn-sm" onclick="repProfRango('mes')">Este mes</button>
+      <button class="btn btn-ghost btn-sm" onclick="repProfRango('mesant')">Mes anterior</button>
+      <button class="btn btn-ghost btn-sm" onclick="repProfRango('anio')">Este año</button>
+    </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <select id="rep-sel-prof" style="max-width:200px" onchange="renderReporteProfesional()"><option value="">Todos</option></select>
-      <input type="month" id="rep-mes-prof" style="max-width:160px" onchange="renderReporteProfesional()">
+      <input type="date" id="rep-prof-desde" style="max-width:160px" onchange="renderReporteProfesional()">
+      <span style="color:var(--text3);font-size:13px">hasta</span>
+      <input type="date" id="rep-prof-hasta" style="max-width:160px" onchange="renderReporteProfesional()">
       <button class="btn btn-ghost" onclick="exportarExcel('profesional')">📥 Exportar Excel</button>
     </div>
     <div class="g3" id="rep-prof-metrics"></div>
-    <div class="card"><div class="card-hdr"><span class="card-title">Citas por profesional</span></div>
+    <div class="card"><div class="card-hdr"><span class="card-title">Comisiones por profesional</span></div>
       <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
     </div>
-    <div class="card" style="margin-top:0"><div class="card-hdr"><span class="card-title">Historial detallado</span></div>
+    <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Desglose por servicio</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Servicio</th><th>Veces</th><th>Ingresos</th><th>Comisión</th></tr></thead>
+      <tbody id="rep-tabla-prof-srv"></tbody></table></div>
+    </div>
+    <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Historial detallado</span></div>
       <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Valor</th><th>Comisión</th></tr></thead>
       <tbody id="rep-tabla-prof-det"></tbody></table></div>
     </div>
@@ -599,7 +615,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <button class="btn btn-ghost" onclick="exportarExcel('clientes')">📥 Exportar Excel</button>
     </div>
     <div class="card"><div class="tbl-wrap">
-      <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Total citas</th><th>Última cita</th><th>Valor histórico</th><th>Ticket prom.</th><th>Nivel VIP</th><th>Estado</th><th></th></tr></thead>
+      <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Total citas</th><th>Última cita</th><th>Valor histórico</th><th>Ticket prom.</th><th class="vip-only">Nivel VIP</th><th>Estado</th><th></th></tr></thead>
       <tbody id="rep-tabla-cl"></tbody></table>
     </div></div>
     <!-- Detalle cliente -->
@@ -789,6 +805,8 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
 let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[] };
+let VIP_HABILITADO=true;
+const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
 
 // ─── INIT ───
 async function init(){
@@ -823,7 +841,11 @@ async function loadAll(){
     sb.from('barberias').select('*').limit(1).single()
   ]);
   S.perfil = p; S.barberia = b;
-  await Promise.all([loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadVIP(),loadPlantillas()]);
+  VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
+  document.body.classList.toggle('no-vip', !VIP_HABILITADO);
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas()];
+  if(VIP_HABILITADO)cargas.push(loadVIP());
+  await Promise.all(cargas);
 }
 
 async function loadClientes(){ const {data}=await sb.from('clientes').select('*').order('created_at',{ascending:false}); S.clientes=data||[]; }
@@ -987,8 +1009,8 @@ async function guardarCita(){
   }
   if(error){notify(error.message,'err');return;}
   await loadVisitas();
-  if(!id){
-    // Chequear subida VIP (solo al registrar una cita nueva)
+  if(!id&&VIP_HABILITADO){
+    // Chequear subida VIP (solo al registrar una cita nueva, y solo si el rubro usa Club VIP)
     const totalV=getCitas(cid);
     const antes=getNivel(totalV-1); const ahora=getNivel(totalV);
     if(antes!==ahora&&ahora!=='Sin nivel'){
@@ -1487,7 +1509,7 @@ function renderClientes(){
       <td><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong><br><span style="font-size:10px;color:var(--text3)">${c.canal||''}</span></td>
       <td><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')">${c.whatsapp}</a></td>
       <td>${vis}</td><td style="color:var(--text3);font-size:11px">${uv||'—'}</td>
-      <td>${badgeNivel(nv)}</td><td><span class="badge ${eb}">${est}</span></td>
+      <td class="vip-only">${badgeNivel(nv)}</td><td><span class="badge ${eb}">${est}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="verCliente('${c.id}')">Ver</button>
         <button class="btn btn-ghost btn-sm" onclick="editarCliente('${c.id}')">Editar</button>
@@ -1517,12 +1539,12 @@ function verCliente(id){
       <div><label>Cumpleaños</label><span style="font-size:12px">${c.cumpleanos||'—'}</span></div>
       <div><label>Canal</label><span style="font-size:12px">${c.canal||'—'}</span></div>
     </div>
-    <div class="g3" style="margin-bottom:14px">
+    <div class="g3 g3-vip" style="margin-bottom:14px">
       <div class="mc"><div class="mc-label">Citas</div><div class="mc-val">${vis}</div></div>
-      <div class="mc"><div class="mc-label">Nivel VIP</div><div class="mc-val" style="font-size:18px">${nv}</div></div>
+      <div class="mc vip-only"><div class="mc-label">Nivel VIP</div><div class="mc-val" style="font-size:18px">${nv}</div></div>
       <div class="mc"><div class="mc-label">Valor histórico</div><div class="mc-val" style="font-size:18px">${fmt(totalVal)}</div></div>
     </div>
-    <div style="margin-bottom:14px">
+    <div class="vip-only" style="margin-bottom:14px">
       <div style="font-size:11px;color:var(--text3);margin-bottom:5px">Progreso VIP — ${vis}/${next} citas</div>
       <div class="bar-h"><div class="bar-fill" style="width:${pct.toFixed(0)}%"></div></div>
     </div>
@@ -1644,15 +1666,17 @@ function renderMensajes(){
       ${msg?`<button class="btn-wa" onclick="abrirWA('${c.whatsapp}',\`${msg.replace(/`/g,"'")}\`)">📱 Recuperar</button>`:''}
     </div>`;}).join(''):'<div class="empty">Sin clientes inactivos 🎉</div>';
 
-  // VIP pendientes
-  const vipPend=S.vipHist.filter(h=>!h.msg_enviado);
-  document.getElementById('l-vip-msg').innerHTML=vipPend.length?vipPend.map(h=>{
-    const cl=S.clientes.find(c=>c.id===h.cliente_id);
-    const msg=cl?buildMsg('Club '+h.nivel,{nombre:cl.nombre}):null;
-    return`<div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div><strong style="color:var(--text)">${h.clientes?.nombre||'—'}</strong> ${badgeNivel(h.nivel)} <span style="font-size:11px;color:var(--text3)">desde ${h.fecha_ganado}</span></div>
-      ${cl&&msg?`<button class="btn-wa" onclick="marcarVIPMsg('${h.id}');abrirWA('${cl.whatsapp}',\`${msg.replace(/`/g,"'")}\`)">📱 Enviar beneficio</button>`:''}
-    </div>`;}).join(''):'<div class="empty">Sin mensajes VIP pendientes ✓</div>';
+  // VIP pendientes (solo si el rubro usa Club VIP)
+  if(VIP_HABILITADO){
+    const vipPend=S.vipHist.filter(h=>!h.msg_enviado);
+    document.getElementById('l-vip-msg').innerHTML=vipPend.length?vipPend.map(h=>{
+      const cl=S.clientes.find(c=>c.id===h.cliente_id);
+      const msg=cl?buildMsg('Club '+h.nivel,{nombre:cl.nombre}):null;
+      return`<div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><strong style="color:var(--text)">${h.clientes?.nombre||'—'}</strong> ${badgeNivel(h.nivel)} <span style="font-size:11px;color:var(--text3)">desde ${h.fecha_ganado}</span></div>
+        ${cl&&msg?`<button class="btn-wa" onclick="marcarVIPMsg('${h.id}');abrirWA('${cl.whatsapp}',\`${msg.replace(/`/g,"'")}\`)">📱 Enviar beneficio</button>`:''}
+      </div>`;}).join(''):'<div class="empty">Sin mensajes VIP pendientes ✓</div>';
+  }
 
   // Plantillas
   document.getElementById('l-plantillas').innerHTML=S.plantillas.map(p=>`
@@ -2096,6 +2120,27 @@ function getRepCitas(mesIni, mesFin, profNombre){
   });
 }
 
+// Comisiones por profesional: filtra por fecha completa (no solo mes) y por el campo real profesional_nombre.
+function getRepCitasRango(desde, hasta, profNombre){
+  return S.visitas.filter(v=>{
+    const fOk=(!desde||v.fecha>=desde)&&(!hasta||v.fecha<=hasta);
+    const pOk=!profNombre||v.profesional_nombre===profNombre;
+    return fOk&&pOk;
+  });
+}
+
+function repProfRango(tipo){
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  let desde,hasta;
+  if(tipo==='semana'){ desde=addDias(hoy,-6); hasta=hoy; }
+  else if(tipo==='mesant'){ const y=hoy.getFullYear(),m=hoy.getMonth(); desde=new Date(y,m-1,1); hasta=new Date(y,m,0); }
+  else if(tipo==='anio'){ desde=new Date(hoy.getFullYear(),0,1); hasta=new Date(hoy.getFullYear(),11,31); }
+  else { const y=hoy.getFullYear(),m=hoy.getMonth(); desde=new Date(y,m,1); hasta=new Date(y,m+1,0); }
+  document.getElementById('rep-prof-desde').value=fmtDateLocal(desde);
+  document.getElementById('rep-prof-hasta').value=fmtDateLocal(hasta);
+  renderReporteProfesional();
+}
+
 function renderReporteResumen(){
   const mesIni=document.getElementById('rep-mes-ini').value;
   const mesFin=document.getElementById('rep-mes-fin').value;
@@ -2149,17 +2194,20 @@ function renderReporteProfesional(){
   S.barberos.forEach(b=>sel.add(new Option(b.nombre,b.nombre)));
   if(cur)sel.value=cur;
 
-  const mes=document.getElementById('rep-mes-prof').value;
+  const desde=document.getElementById('rep-prof-desde').value;
+  const hasta=document.getElementById('rep-prof-hasta').value;
   const prof=document.getElementById('rep-sel-prof').value;
-  const citas=getRepCitas(mes,mes,prof||null);
+  const citas=getRepCitasRango(desde,hasta,prof||null);
 
   // By profesional stats
   const byP={};
   citas.forEach(v=>{
-    const p=v.barbero_nombre||'Sin asignar';
+    const p=v.profesional_nombre||'Sin asignar';
+    const sNombre=resolveServicioInfo(v.servicio).nombre;
     if(!byP[p])byP[p]={citas:0,ventas:0,servicios:{}};
     byP[p].citas++;byP[p].ventas+=(v.valor||0);
-    byP[p].servicios[v.servicio||'?']=(byP[p].servicios[v.servicio||'?']||0)+1;
+    if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0};
+    byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);
   });
 
   const totalV=citas.reduce((s,v)=>s+(v.valor||0),0);
@@ -2173,17 +2221,30 @@ function renderReporteProfesional(){
     const bar=S.barberos.find(b=>b.nombre===p);
     const pct=bar?.comision_pct||50;
     const com=Math.round(d.ventas*pct/100);
-    const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';
+    const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
     return`<tr><td><strong style="color:var(--text)">${p}</strong></td><td>${d.citas}</td><td>${fmt(d.ventas)}</td><td>${pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td><td><span class="badge b-purple">${topSrv}</span></td></tr>`;
-  }).join('')||'<tr><td colspan="7" class="empty">Sin datos</td></tr>';
+  }).join('')||'<tr><td colspan="7" class="empty">Sin datos en este rango</td></tr>';
+
+  // Desglose por servicio (por profesional)
+  const filasSrv=[];
+  Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).forEach(([p,d])=>{
+    const bar=S.barberos.find(b=>b.nombre===p);
+    const pct=bar?.comision_pct||50;
+    Object.entries(d.servicios).sort((a,b)=>b[1].val-a[1].val).forEach(([sNombre,sd])=>{
+      filasSrv.push({profesional:p,servicio:sNombre,cnt:sd.cnt,val:sd.val,com:Math.round(sd.val*pct/100)});
+    });
+  });
+  document.getElementById('rep-tabla-prof-srv').innerHTML=filasSrv.map(f=>
+    `<tr><td>${f.profesional}</td><td>${f.servicio}</td><td>${f.cnt}</td><td>${fmt(f.val)}</td><td class="gold">${fmt(f.com)}</td></tr>`
+  ).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 
   // Historial detallado
   document.getElementById('rep-tabla-prof-det').innerHTML=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
-    const bar=S.barberos.find(b=>b.nombre===v.barbero_nombre);
+    const bar=S.barberos.find(b=>b.nombre===v.profesional_nombre);
     const com=Math.round((v.valor||0)*((bar?.comision_pct||50)/100));
-    return`<tr><td>${v.fecha}</td><td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td>${v.servicio||'—'}</td><td>${fmt(v.valor)}</td><td class="gold">${fmt(com)}</td></tr>`;
-  }).join('')||'<tr><td colspan="5" class="empty">Sin datos</td></tr>';
+    return`<tr><td>${v.fecha}</td><td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td>${resolveServicioInfo(v.servicio).nombre}</td><td>${fmt(v.valor)}</td><td class="gold">${fmt(com)}</td></tr>`;
+  }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 }
 
 function renderReporteCliente(){
@@ -2199,7 +2260,7 @@ function renderReporteCliente(){
     const citas=S.visitas.filter(v=>v.cliente_id===c.id);
     const total=citas.reduce((s,v)=>s+(v.valor||0),0);
     const ticket=citas.length?Math.round(total/citas.length):0;
-    const uv=getUltVisita(c.id);
+    const uv=getUltCita(c.id);
     const nv=getNivel(citas.length);
     const est=getEstado(c.id);
     const eb=est==='Activo'?'b-green':est==='En riesgo'?'b-orange':'b-red';
@@ -2210,7 +2271,7 @@ function renderReporteCliente(){
       <td style="color:var(--text3);font-size:11px">${uv||'—'}</td>
       <td>${fmt(total)}</td>
       <td>${fmt(ticket)}</td>
-      <td>${badgeNivel(nv)}</td>
+      <td class="vip-only">${badgeNivel(nv)}</td>
       <td><span class="badge ${eb}">${est}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="verDetalleCliente('${c.id}')">Ver detalle</button></td>
     </tr>`;
@@ -2275,22 +2336,43 @@ function exportarExcel(tipo){
     nombre='citas_'+new Date().toISOString().slice(0,10);
   }
   else if(tipo==='profesional'){
-    const mes=document.getElementById('rep-mes-prof')?.value||'';
+    const desde=document.getElementById('rep-prof-desde')?.value||'';
+    const hasta=document.getElementById('rep-prof-hasta')?.value||'';
     const prof=document.getElementById('rep-sel-prof')?.value||'';
-    const citas=getRepCitas(mes,mes,prof||null);
+    const citas=getRepCitasRango(desde,hasta,prof||null);
+    if(!citas.length){notify('Sin datos para exportar','warn');return;}
     const byP={};
-    citas.forEach(v=>{const p=v.barbero_nombre||'Sin asignar';if(!byP[p])byP[p]={citas:0,ventas:0};byP[p].citas++;byP[p].ventas+=(v.valor||0);});
-    data=Object.entries(byP).map(([p,d])=>{
+    citas.forEach(v=>{
+      const p=v.profesional_nombre||'Sin asignar';
+      const sNombre=resolveServicioInfo(v.servicio).nombre;
+      if(!byP[p])byP[p]={citas:0,ventas:0,servicios:{}};
+      byP[p].citas++;byP[p].ventas+=(v.valor||0);
+      if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0};
+      byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);
+    });
+    const resumen=Object.entries(byP).map(([p,d])=>{
       const bar=S.barberos.find(b=>b.nombre===p);const pct=bar?.comision_pct||50;const com=Math.round(d.ventas*pct/100);
       return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':pct,'Comisión $':com,'Para negocio':d.ventas-com};
     });
-    nombre='reporte_profesionales_'+mes;
+    const desglose=[];
+    Object.entries(byP).forEach(([p,d])=>{
+      const bar=S.barberos.find(b=>b.nombre===p);const pct=bar?.comision_pct||50;
+      Object.entries(d.servicios).forEach(([sNombre,sd])=>{
+        desglose.push({Profesional:p,Servicio:sNombre,Veces:sd.cnt,Ingresos:sd.val,'Comisión $':Math.round(sd.val*pct/100)});
+      });
+    });
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(resumen),'Resumen');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(desglose),'Desglose por servicio');
+    XLSX.writeFile(wb,'comisiones_'+(desde||'inicio')+'_a_'+(hasta||'hoy')+'.xlsx');
+    notify('Excel descargado ✓');
+    return;
   }
   else if(tipo==='clientes'){
     data=S.clientes.map(c=>{
       const citas=S.visitas.filter(v=>v.cliente_id===c.id);
       const total=citas.reduce((s,v)=>s+(v.valor||0),0);
-      return{Nombre:c.nombre+' '+(c.apellido||''),WhatsApp:c.whatsapp||'',Email:c.email||'','Total citas':citas.length,'Valor histórico':total,'Ticket promedio':citas.length?Math.round(total/citas.length):0,'Nivel VIP':getNivel(citas.length),Estado:getEstado(c.id),'Fecha registro':c.fecha_registro||''};
+      return{Nombre:c.nombre+' '+(c.apellido||''),WhatsApp:c.whatsapp||'',Email:c.email||'','Total citas':citas.length,'Valor histórico':total,'Ticket promedio':citas.length?Math.round(total/citas.length):0,...(VIP_HABILITADO?{'Nivel VIP':getNivel(citas.length)}:{}),Estado:getEstado(c.id),'Fecha registro':c.fecha_registro||''};
     });
     nombre='clientes_'+new Date().toISOString().slice(0,10);
   }
