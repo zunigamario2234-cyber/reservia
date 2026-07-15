@@ -278,7 +278,7 @@ async function selFecha(fecha){
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   document.getElementById('horarios-titulo').textContent = `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
   // Cargar reservas existentes para ese día y profesional
-  let query = sb.from('reservas').select('hora,profesional_nombre').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha).eq('procesado',false);
+  let query = sb.from('reservas').select('hora,barbero_nombre').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha).eq('procesado',false);
   const {data:ocupadas} = await query;
   B.reservasOcupadas = ocupadas||[];
   renderHorarios();
@@ -289,7 +289,7 @@ function renderHorarios(){
   const slotsNec = Math.ceil(durMin/30);
   document.getElementById('lista-horarios').innerHTML = HORARIOS_BASE.map(h=>{
     const ocupado = B.reservasOcupadas.some(r=>{
-      if(SEL.profesional && r.profesional_nombre!==SEL.profesional.nombre) return false;
+      if(SEL.profesional && r.barbero_nombre!==SEL.profesional.nombre) return false;
       return r.hora && r.hora.startsWith(h);
     });
     const sel = h===SEL.hora;
@@ -356,7 +356,7 @@ async function confirmarReserva(){
       fecha:SEL.fecha,
       hora:SEL.hora,
       servicio:SEL.servicio?.nombre,
-      profesional_nombre:SEL.profesional?.nombre||'Por asignar',
+      barbero_nombre:SEL.profesional?.nombre||'Por asignar',
       estado:'Confirmada',
       procesado:false,
       notas:notas,

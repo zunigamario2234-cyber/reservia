@@ -1038,7 +1038,7 @@ async function guardarReserva(){
   const payload={
     nombre_cliente:n,whatsapp_cliente:w,fecha:f,hora:h,
     servicio:document.getElementById('r-servicio').value||null,
-    profesional_nombre:document.getElementById('r-profesional').value||null,
+    barbero_nombre:document.getElementById('r-profesional').value||null,
     estado:document.getElementById('r-estado').value||'Pendiente',
     notas:document.getElementById('r-notas').value
   };
@@ -1208,7 +1208,7 @@ async function procesarReserva(id){
     const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Setmore',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.profesional_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida'});
+  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida'});
   await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
   await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva procesada ✓');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
@@ -1599,7 +1599,7 @@ function renderReservas(){
     <td>${r.fecha} ${r.hora||''}</td>
     <td>${r.nombre_cliente}</td>
     <td><a class="btn-wa" onclick="abrirWA('${r.whatsapp_cliente}','Hola ${r.nombre_cliente}')">${r.whatsapp_cliente}</a></td>
-    <td>${r.servicio||'—'}</td><td>${r.profesional_nombre||'—'}</td>
+    <td>${r.servicio||'—'}</td><td>${r.barbero_nombre||'—'}</td>
     <td><span class="badge b-green">${r.estado}</span></td>
     <td>${r.procesado?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
     <td style="white-space:nowrap">
@@ -1610,7 +1610,7 @@ function renderReservas(){
 
 function enviarConfirm(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
-  const msg=buildMsg('Confirmación reserva',{nombre:r.nombre_cliente,fecha:r.fecha,hora:r.hora||'',servicio:r.servicio||'',profesional:r.profesional_nombre||''});
+  const msg=buildMsg('Confirmación reserva',{nombre:r.nombre_cliente,fecha:r.fecha,hora:r.hora||'',servicio:r.servicio||'',profesional:r.barbero_nombre||''});
   if(msg)abrirWA(r.whatsapp_cliente,msg);
 }
 
@@ -1876,7 +1876,7 @@ function renderAgenda(){
     return;
   }
 
-  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).map(r=>({...r,_tipo:'reserva'}));
+  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).map(r=>({...r,_tipo:'reserva',profesional_nombre:r.barbero_nombre}));
   const visitasDia=S.visitas.filter(v=>v.fecha===fecha).map(v=>({...v,_tipo:'visita'}));
   let todas=[...reservasDia,...visitasDia];
   if(bf) todas=todas.filter(x=>(x.profesional_nombre||'Sin asignar')===bf);
@@ -2021,7 +2021,7 @@ function abrirEditarReserva(id){
   document.getElementById('r-notas').value=r.notas||'';
   document.getElementById('r-estado').value=r.estado||'Pendiente';
   const selS=document.getElementById('r-servicio'); if(r.servicio)selS.value=r.servicio;
-  const selP=document.getElementById('r-profesional'); if(r.profesional_nombre)selP.value=r.profesional_nombre;
+  const selP=document.getElementById('r-profesional'); if(r.barbero_nombre)selP.value=r.barbero_nombre;
 }
 
 function abrirEditarCita(id){
@@ -2100,7 +2100,8 @@ async function onBlockPointerUp(e){
 }
 async function moverCita(tipo,id,hora,profesional){
   const tabla=tipo==='reserva'?'reservas':'visitas';
-  const {error}=await sb.from(tabla).update({hora,profesional_nombre:profesional}).eq('id',id);
+  const campo=tipo==='reserva'?'barbero_nombre':'profesional_nombre';
+  const {error}=await sb.from(tabla).update({hora,[campo]:profesional}).eq('id',id);
   if(error){notify(error.message,'err');renderAgenda();return;}
   notify('Movido a las '+hora+' ✓');
   if(tabla==='reservas')await loadReservas(); else await loadVisitas();
