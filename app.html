@@ -537,7 +537,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
   <div id="cfg-srv" style="display:none">
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-servicio')">+ Servicio</button></div>
-    <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-servicios"></tbody></table></div></div>
   </div>
   <div id="cfg-int" style="display:none">
@@ -807,7 +807,19 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <!-- Servicio -->
 <div class="overlay" id="m-servicio">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">Agregar servicio</span><button class="xbtn" onclick="closeM('m-servicio')">×</button></div>
+    <div class="modal-hdr"><span class="modal-title" id="m-srv-title">Agregar servicio</span><button class="xbtn" onclick="closeM('m-servicio')">×</button></div>
+    <input type="hidden" id="sv-id">
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg2);border-radius:10px">
+      <div id="sv-foto-preview" style="width:72px;height:72px;border-radius:10px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;border:2px solid var(--p1)">✂️</div>
+      <div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Foto del servicio</div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg4);border:0.5px solid var(--p1);border-radius:7px;cursor:pointer;font-size:12px;color:var(--p1)">
+          📷 Seleccionar foto
+          <input type="file" id="sv-foto" accept="image/jpeg,image/png,image/webp" onchange="previewFotoSrv(this)" style="display:none">
+        </label>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">JPG, PNG — máx 2MB</div>
+      </div>
+    </div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="sv-nombre" type="text" placeholder="Corte Clásico"></div><div class="fg"><label>Precio ($)</label><input id="sv-precio" type="number" value="0"></div></div>
     <div class="fr"><div class="fg"><label>Duración (min)</label><input id="sv-dur" type="number" value="30"></div><div class="fg"><label>Comisión %</label><input id="sv-com" type="number" value="50"></div></div>
     <div style="display:flex;gap:8px;margin-top:6px">
@@ -1048,6 +1060,7 @@ function initModal(id){
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
+  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
 }
 function sel(id,opts,addEmpty=false){
   const s=document.getElementById(id); if(!s)return;
@@ -1214,6 +1227,34 @@ function previewFotoPro(input){
   }
 }
 
+function previewFotoSrv(input){
+  if(input.files&&input.files[0]){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const prev=document.getElementById('sv-foto-preview');
+      prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+function editarServicio(id){
+  const s=S.servicios.find(x=>x.id===id);if(!s)return;
+  openM('m-servicio');
+  document.getElementById('m-srv-title').textContent='Editar servicio';
+  document.getElementById('sv-id').value=s.id;
+  document.getElementById('sv-nombre').value=s.nombre||'';
+  document.getElementById('sv-precio').value=s.precio||0;
+  document.getElementById('sv-dur').value=s.duracion_min||30;
+  document.getElementById('sv-com').value=s.comision_pct||50;
+  const prev=document.getElementById('sv-foto-preview');
+  if(s.foto_url){
+    prev.innerHTML=`<img src="${s.foto_url}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+  } else {
+    prev.innerHTML='✂️';
+  }
+}
+
 function editarProfesional(id){
   const b=S.barberos.find(x=>x.id===id);if(!b)return;
   openM('m-profesional');
@@ -1278,9 +1319,36 @@ async function guardarProfesional(){
 async function guardarServicio(){
   const n=document.getElementById('sv-nombre').value.trim();
   if(!n){notify('El nombre es obligatorio','warn');return;}
-  const {error}=await sb.from('servicios').insert({barberia_id:S.barberia.id,nombre:n,precio:parseFloat(document.getElementById('sv-precio').value)||0,duracion_min:parseInt(document.getElementById('sv-dur').value)||30,comision_pct:parseFloat(document.getElementById('sv-com').value)||50});
-  if(error){notify(error.message,'err');return;}
-  await loadServicios();closeM('m-servicio');notify('Servicio agregado ✓');renderConfig();
+  const btn=document.querySelector('#m-servicio .btn-primary');
+  btn.disabled=true;btn.textContent='Guardando...';
+  let foto_url=null;
+  const fotoFile=document.getElementById('sv-foto').files[0];
+  if(fotoFile){
+    const ext=fotoFile.name.split('.').pop();
+    const fname=`servicios/${S.barberia.id}/${Date.now()}.${ext}`;
+    const {error:upErr}=await sb.storage.from('fotos').upload(fname,fotoFile,{upsert:true});
+    if(!upErr){
+      const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
+      foto_url=url.publicUrl;
+    }
+  }
+  const id=document.getElementById('sv-id').value;
+  const payload={
+    barberia_id:S.barberia.id,nombre:n,
+    precio:parseFloat(document.getElementById('sv-precio').value)||0,
+    duracion_min:parseInt(document.getElementById('sv-dur').value)||30,
+    comision_pct:parseFloat(document.getElementById('sv-com').value)||50,
+    ...(foto_url&&{foto_url})
+  };
+  let error;
+  if(id){
+    ({error}=await sb.from('servicios').update(payload).eq('id',id));
+  } else {
+    ({error}=await sb.from('servicios').insert(payload));
+  }
+  if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
+  await loadServicios();closeM('m-servicio');notify('Servicio guardado ✓');renderConfig();
+  btn.disabled=false;btn.textContent='Guardar';
 }
 
 async function guardarConfig(){
@@ -1911,11 +1979,16 @@ function renderConfig(){
     actualizarEjemploComision();
     document.getElementById('cfg-link-reservas').value=location.origin+'/reservar.html?id='+S.barberia.id;
   }
-  document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>`<tr>
-    <td>${s.nombre}</td><td>${fmt(s.precio)}</td><td>${s.duracion_min} min</td>
+  document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>{
+    const avatar=s.foto_url
+      ?`<img src="${s.foto_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
+      :`<div style="width:32px;height:32px;border-radius:7px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:14px">✂️</div>`;
+    return `<tr>
+    <td>${avatar}</td><td>${s.nombre}</td><td>${fmt(s.precio)}</td><td>${s.duracion_min} min</td>
     <td>${s.comision_pct}%</td><td>${s.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
-    <td><button class="btn btn-danger btn-sm" onclick="eliminar('servicios','${s.id}',loadServicios,renderConfig)">×</button></td>
-  </tr>`).join('');
+    <td><button class="btn btn-ghost btn-sm" onclick="editarServicio('${s.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('servicios','${s.id}',loadServicios,renderConfig)">×</button></td>
+  </tr>`;
+  }).join('');
 }
 
 
