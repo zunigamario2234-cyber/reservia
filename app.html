@@ -481,7 +481,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'cfg-neg')">Negocio</div>
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
-    <div class="tab" onclick="switchTab(this,'cfg-int')">Integraciones</div>
+    <div class="tab" onclick="switchTab(this,'cfg-int')" style="display:none">Integraciones</div>
   </div>
   <div id="cfg-neg">
     <!-- LOGO Y COLORES -->
@@ -517,7 +517,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="card-hdr"><span class="card-title">Datos del negocio</span></div>
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
       <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
-      <div class="fr"><div class="fg"><label>Link Setmore</label><input id="cfg-setmore" type="url"></div><div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div></div>
+      <div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div>
+      <div style="display:none"><input id="cfg-setmore" type="url"></div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
     </div>
     <div class="card" style="margin-top:14px">
@@ -928,6 +929,7 @@ function switchTab(el,tid){
 }
 function fmt(n){ return '$'+(Math.round(n)||0).toLocaleString('es-CL'); }
 function fmtN(n){ return (Math.round(n)||0).toLocaleString('es-CL'); }
+function fmtHora(h){ return h?h.slice(0,5):''; }
 
 // Comisión: modo 'total' (default) = % sobre el precio completo.
 // Modo 'neto_iva' = % sobre el precio menos el IVA incluido, usando el % de IVA configurado del negocio.
@@ -1666,7 +1668,7 @@ function renderVisitas(){
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
     const iv=Math.round((v.valor||0)*0.19);
     return`<tr>
-      <td>${v.fecha}${v.hora?' '+v.hora:''}</td>
+      <td>${v.fecha}${v.hora?' '+fmtHora(v.hora):''}</td>
       <td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td>
       <td>${v.servicio||'—'}</td><td>${v.profesional_nombre||'—'}</td>
       <td>${fmt(v.valor)}</td><td class="gold">${fmt(iv)}</td><td>${fmt((v.valor||0)+iv)}</td>
@@ -1680,7 +1682,7 @@ function renderReservas(){
   const tb=document.getElementById('t-reservas');
   document.getElementById('e-reservas').style.display=S.reservas.length?'none':'';
   tb.innerHTML=S.reservas.map(r=>`<tr>
-    <td>${r.fecha} ${r.hora||''}</td>
+    <td>${r.fecha} ${fmtHora(r.hora)}</td>
     <td>${r.nombre_cliente}</td>
     <td><a class="btn-wa" onclick="abrirWA('${r.whatsapp_cliente}','Hola ${r.nombre_cliente}')">${r.whatsapp_cliente}</a></td>
     <td>${r.servicio||'—'}</td><td>${r.barbero_nombre||'—'}</td>
@@ -1694,7 +1696,7 @@ function renderReservas(){
 
 function enviarConfirm(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
-  const msg=buildMsg('Confirmación reserva',{nombre:r.nombre_cliente,fecha:r.fecha,hora:r.hora||'',servicio:r.servicio||'',profesional:r.barbero_nombre||''});
+  const msg=buildMsg('Confirmación reserva',{nombre:r.nombre_cliente,fecha:r.fecha,hora:fmtHora(r.hora),servicio:r.servicio||'',profesional:r.barbero_nombre||''});
   if(msg)abrirWA(r.whatsapp_cliente,msg);
 }
 
@@ -1736,7 +1738,7 @@ function renderMensajes(){
   const pend=S.reservas.filter(r=>!r.procesado);
   document.getElementById('l-confirm').innerHTML=pend.length?pend.map(r=>`
     <div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div><strong style="color:var(--text)">${r.nombre_cliente}</strong><br><span style="font-size:11px;color:var(--text3)">📅 ${r.fecha} ${r.hora||''} · ${r.whatsapp_cliente}</span></div>
+      <div><strong style="color:var(--text)">${r.nombre_cliente}</strong><br><span style="font-size:11px;color:var(--text3)">📅 ${r.fecha} ${fmtHora(r.hora)} · ${r.whatsapp_cliente}</span></div>
       <button class="btn-wa" onclick="enviarConfirm('${r.id}')">📱 Confirmar</button>
     </div>`).join(''):'<div class="empty">Todas las reservas confirmadas ✓</div>';
 
@@ -2003,9 +2005,9 @@ function renderAgenda(){
       const estado=resolveEstado(it);
       const ecolor=estadoColor(estado);
       const extraClass=(estado==='En curso'?' estado-curso':'')+(estado==='Cancelada'?' estado-cancelada':'');
-      return `<div class="cal-block${extraClass}" data-tipo="${it._tipo}" data-id="${it.id}" style="top:${top}px;height:${height}px;background:${ecolor.bg};border-color:${ecolor.border};color:${ecolor.text}" title="${it.hora} · ${label} · ${info.nombre} · ${estado}">
+      return `<div class="cal-block${extraClass}" data-tipo="${it._tipo}" data-id="${it.id}" style="top:${top}px;height:${height}px;background:${ecolor.bg};border-color:${ecolor.border};color:${ecolor.text}" title="${fmtHora(it.hora)} · ${label} · ${info.nombre} · ${estado}">
         <button class="cb-menu-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();toggleAgendaMenu(event,'${it._tipo}','${it.id}')">⋮</button>
-        <div class="cb-t">${it.hora} · ${label}</div>
+        <div class="cb-t">${fmtHora(it.hora)} · ${label}</div>
         <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
