@@ -202,10 +202,12 @@ async function init(){
   document.title = 'Reservar — ' + barb.nombre;
   const [{data:sv},{data:ba}] = await Promise.all([
     sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('precio'),
-    sb.from('perfiles').select('*').eq('barberia_id',BARBERIA_ID).eq('rol','profesional').eq('activo',true)
+    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).order('nombre')
   ]);
   B.servicios = sv||[]; B.profesionals = ba||[];
   renderServicios(); renderProfesionals(); renderCalendario();
+  const profParam = params.get('profesional');
+  if(profParam && B.profesionals.some(b=>b.id===profParam)) selProfesional(profParam);
 }
 
 function renderServicios(){

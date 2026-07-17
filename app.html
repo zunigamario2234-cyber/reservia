@@ -505,6 +505,14 @@ input[readonly]{background:#111;color:#666;cursor:default}
         </div>
       </div>
     </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Tu link de reservas</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Compartilo con tus clientes para que reserven online.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="cfg-link-reservas" type="text" readonly style="flex:1;min-width:200px">
+        <button class="btn btn-primary" onclick="copiarLinkReservas()">📋 Copiar link</button>
+      </div>
+    </div>
     <div class="card">
       <div class="card-hdr"><span class="card-title">Datos del negocio</span></div>
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
@@ -877,6 +885,21 @@ function notify(msg,type='ok'){
   n.textContent=msg; n.className='notif '+type; n.classList.add('show');
   setTimeout(()=>n.classList.remove('show'),3000);
 }
+async function copiarAlPortapapeles(texto){
+  try{
+    await navigator.clipboard.writeText(texto);
+    notify('Link copiado ✓');
+  }catch(e){
+    const tmp=document.createElement('textarea');
+    tmp.value=texto; tmp.style.position='fixed'; tmp.style.opacity='0';
+    document.body.appendChild(tmp); tmp.select();
+    try{ document.execCommand('copy'); notify('Link copiado ✓'); }
+    catch(e2){ notify('No se pudo copiar. Copia el link manualmente.','err'); }
+    document.body.removeChild(tmp);
+  }
+}
+function copiarLinkReservas(){ copiarAlPortapapeles(document.getElementById('cfg-link-reservas').value); }
+function copiarLinkProfesional(id){ copiarAlPortapapeles(location.origin+'/reservar.html?id='+S.barberia.id+'&profesional='+id); }
 function openM(id){ document.getElementById(id).classList.add('open'); initModal(id); }
 function closeM(id){ document.getElementById(id).classList.remove('open'); }
 function nav(page){
@@ -1847,8 +1870,9 @@ function renderProfesionals(){
       <div class="bar-h"><div class="bar-fill" style="width:${pct.toFixed(0)}%"></div></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Ventas netas</span><span>${fmt(ventas)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Comisión</span><span class="gold">${fmt(com)}</span></div>
-      <div style="display:flex;gap:6px;margin-top:12px">
+      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
         ${b.whatsapp?`<a class="btn-wa" href="https://wa.me/${(b.whatsapp||'').replace(/[^0-9]/g,'')}" target="_blank">📱 WhatsApp</a>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="copiarLinkProfesional('${b.id}')" title="Copiar link de reserva individual">🔗 Link individual</button>
       </div>
     </div>`;
   }).join('')||'<div class="empty" style="grid-column:1/-1">Agrega tu primer profesional.</div>';
@@ -1865,6 +1889,7 @@ function renderConfig(){
     document.getElementById('cfg-reviews').value=S.barberia.link_reviews||'';
     document.getElementById('cfg-modo-comision').value=S.barberia.modo_comision||'total';
     actualizarEjemploComision();
+    document.getElementById('cfg-link-reservas').value=location.origin+'/reservar.html?id='+S.barberia.id;
   }
   document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>`<tr>
     <td>${s.nombre}</td><td>${fmt(s.precio)}</td><td>${s.duracion_min} min</td>
