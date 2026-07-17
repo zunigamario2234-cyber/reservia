@@ -3,12 +3,20 @@
 // endpoints en Vercel — solo se pueden importar desde otras funciones.
 
 const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+// Las funciones serverless usan la service_role key, nunca la anon key: con
+// RLS activado, la anon key solo ve los datos del negocio dueño de cada fila
+// (o nada, si nadie inició sesión), pero estas funciones necesitan leer la
+// reserva/visita puntual que el navegador les pasó por id, sea de quien sea.
+// Es tráfico servidor-a-servidor de confianza; esta key nunca llega al navegador.
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
 
 async function supabaseGet(path) {
+  if (!SUPABASE_SERVICE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY no configurada en el servidor');
+  }
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
   });
   if (!res.ok) throw new Error(`Supabase ${path} respondió ${res.status}`);
   return res.json();
@@ -53,4 +61,4 @@ function emailShell({ nombreNegocio, contenidoHtml }) {
 </html>`;
 }
 
-module.exports = { SUPABASE_URL, SUPABASE_KEY, supabaseGet, enviarEmail, emailShell };
+module.exports = { SUPABASE_URL, supabaseGet, enviarEmail, emailShell };

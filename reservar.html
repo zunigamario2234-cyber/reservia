@@ -300,8 +300,10 @@ async function selFecha(fecha){
   const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   document.getElementById('horarios-titulo').textContent = `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
-  // Cargar reservas existentes para ese día y profesional
-  let query = sb.from('reservas').select('hora,barbero_nombre').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha).eq('procesado',false);
+  // Cargar reservas existentes para ese día y profesional. Se usa la vista
+  // pública reservas_disponibilidad (no la tabla real) para no exponer datos
+  // del cliente a visitantes anónimos — solo expone hora/profesional/estado.
+  let query = sb.from('reservas_disponibilidad').select('hora,barbero_nombre').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha).eq('procesado',false);
   const {data:ocupadas} = await query;
   B.reservasOcupadas = ocupadas||[];
   renderHorarios();

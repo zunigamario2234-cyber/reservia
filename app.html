@@ -858,11 +858,10 @@ async function init(){
 
 async function loadAll(){
   const uid = S.user.id;
-  const [{data:p},{data:b}] = await Promise.all([
-    sb.from('perfiles').select('*').eq('id',uid).single(),
-    sb.from('barberias').select('*').limit(1).single()
-  ]);
-  S.perfil = p; S.barberia = b;
+  const {data:p} = await sb.from('perfiles').select('*').eq('id',uid).single();
+  S.perfil = p;
+  const {data:b} = await sb.from('barberias').select('*').eq('id',p.barberia_id).single();
+  S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
   const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas()];
@@ -870,15 +869,15 @@ async function loadAll(){
   await Promise.all(cargas);
 }
 
-async function loadClientes(){ const {data}=await sb.from('clientes').select('*').order('created_at',{ascending:false}); S.clientes=data||[]; }
-async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').order('fecha',{ascending:false}); S.visitas=data||[]; }
-async function loadReservas(){ const {data}=await sb.from('reservas').select('*').order('fecha',{ascending:false}); S.reservas=data||[]; }
-async function loadServicios(){ const {data}=await sb.from('servicios').select('*').order('nombre'); S.servicios=data||[]; }
+async function loadClientes(){ const {data}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.clientes=data||[]; }
+async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; }
+async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
+async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.servicios=data||[]; }
 async function loadBarberos(){ const {data}=await sb.from('barberos').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.barberos=data||[]; }
-async function loadInventario(){ const {data}=await sb.from('inventario').select('*').order('nombre'); S.inventario=data||[]; }
-async function loadCostos(){ const {data}=await sb.from('costos').select('*').order('fecha',{ascending:false}); S.costos=data||[]; }
-async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').order('created_at',{ascending:false}); S.vipHist=data||[]; }
-async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').order('evento'); S.plantillas=data||[]; }
+async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
+async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
+async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
+async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').eq('barberia_id',S.barberia.id).order('evento'); S.plantillas=data||[]; }
 
 // ─── HELPERS ───
 function notify(msg,type='ok'){
