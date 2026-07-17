@@ -345,7 +345,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- RESERVAS -->
 <div id="p-reservas" class="page">
-  <div class="alert al-info" style="margin-bottom:14px">Reservas manuales o desde Setmore. Procesarlas crea la cita y el cliente automáticamente.</div>
+  <div class="alert al-info" style="margin-bottom:14px">Reservas manuales o desde tu link público de reservas. Procesarlas crea la cita y el cliente automáticamente.</div>
   <div style="display:flex;gap:8px;margin-bottom:14px">
     <button class="btn btn-primary" onclick="openM('m-reserva')">+ Nueva reserva</button>
     <button class="btn btn-ghost" onclick="procesarTodas()">Procesar todas pendientes</button>
@@ -680,7 +680,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="cl-nombre" type="text" placeholder="Juan"></div><div class="fg"><label>Apellido</label><input id="cl-apellido" type="text" placeholder="Pérez"></div></div>
     <div class="fr"><div class="fg"><label>WhatsApp *</label><input id="cl-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div><div class="fg"><label>Correo</label><input id="cl-email" type="email" placeholder="juan@correo.com"></div></div>
     <div class="fr"><div class="fg"><label>Cumpleaños</label><input id="cl-cumple" type="date"></div><div class="fg"><label>Profesional preferido</label><select id="cl-profesional"><option value="">Sin preferencia</option></select></div></div>
-    <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="cl-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Setmore</option><option>Directo</option><option>Otro</option></select></div><div class="fg"></div></div>
+    <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="cl-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Reserva Web</option><option>Directo</option><option>Otro</option><option value="Setmore">Setmore (antiguo)</option></select></div><div class="fg"></div></div>
     <div class="fg"><label>Notas</label><textarea id="cl-notas" rows="2" placeholder="Observaciones..."></textarea></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCliente()">Guardar</button>
@@ -698,7 +698,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Cliente *</label><select id="v-cliente"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional *</label><select id="v-profesional"><option value="">Seleccionar...</option></select></div></div>
     <div class="fr"><div class="fg"><label>Servicio *</label><select id="v-servicio" onchange="autoValor()"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Valor neto ($)</label><input id="v-valor" type="number" placeholder="0" oninput="calcIvaV()"></div></div>
     <div class="fr"><div class="fg"><label>IVA 19%</label><input id="v-iva-calc" readonly></div><div class="fg"><label>Total con IVA</label><input id="v-total-calc" readonly style="color:#d4a853"></div></div>
-    <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Setmore</option><option>WhatsApp</option><option>Instagram</option></select></div></div>
+    <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Reserva Web</option><option>WhatsApp</option><option>Instagram</option><option value="Setmore">Setmore (antiguo)</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="v-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="v-notas" rows="2"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:6px">
@@ -1016,7 +1016,8 @@ function buildMsg(evento, vars={}){
   const t=S.plantillas.find(p=>p.evento===evento&&p.activo);
   if(!t)return null;
   let m=t.mensaje;
-  const all={barberia:S.barberia?.nombre||'',setmore:S.barberia?.link_setmore||'',reviews:S.barberia?.link_reviews||'',direccion:S.barberia?.direccion||'',...vars};
+  const linkReservas=S.barberia?.id?(location.origin+'/reservar.html?id='+S.barberia.id):'';
+  const all={barberia:S.barberia?.nombre||'',link_reservas:linkReservas,setmore:linkReservas,reviews:S.barberia?.link_reviews||'',direccion:S.barberia?.direccion||'',...vars};
   Object.entries(all).forEach(([k,v])=>{ m=m.replace(new RegExp('{'+k+'}','g'),v||''); });
   return m;
 }
@@ -1377,7 +1378,7 @@ async function procesarReserva(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   let cl=S.clientes.find(c=>c.whatsapp===r.whatsapp_cliente);
   if(!cl){
-    const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Setmore',fecha_registro:r.fecha}).select().single();
+    const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
   await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto:0});
@@ -1860,7 +1861,7 @@ function renderMensajes(){
         </label>
       </div>
       <textarea style="width:100%;height:72px;font-size:11px" onchange="editPlantilla('${p.id}',this.value)">${p.mensaje}</textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px">Variables: {nombre} {barberia} {setmore} {reviews} {fecha} {hora} {servicio} {profesional} {dias} {direccion}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Variables: {nombre} {barberia} {link_reservas} {reviews} {fecha} {hora} {servicio} {profesional} {dias} {direccion}</div>
     </div>`).join('');
 }
 
