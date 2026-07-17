@@ -174,7 +174,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       <div class="success-icon">✅</div>
       <div class="success-title">¡Reserva confirmada!</div>
       <div class="success-sub" id="success-msg"></div>
-      <button class="btn btn-wa" id="btn-wa-confirmar" style="max-width:260px;margin-left:auto;margin-right:auto" onclick="confirmarPorWhatsApp()">📱 Avisar por WhatsApp</button>
+      <button class="btn btn-wa" id="btn-wa-confirmar" style="max-width:260px;margin-left:auto;margin-right:auto" onclick="confirmarPorWhatsApp()">📱 Confirmar por WhatsApp a la barbería</button>
       <button class="btn btn-ghost" style="margin-top:12px;max-width:260px;margin-left:auto;margin-right:auto" onclick="nuevaReserva()">Hacer otra reserva</button>
     </div>
   </div>
@@ -389,6 +389,9 @@ async function confirmarReserva(){
     ULTIMO_NOMBRE=(nombre+' '+apellido).trim();
     // Enviar correos via edge function (si está configurada)
     await enviarCorreos({nombre,apellido,email,wsp,reserva:data});
+    // Email de confirmación automático (Vercel + Resend). No bloquea la UI ni
+    // muestra error al cliente si falla — el servidor decide con qué datos reales.
+    fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:data.id})}).catch(()=>{});
     // Mostrar éxito
     document.querySelectorAll('.step-content').forEach(s=>s.classList.remove('active'));
     document.getElementById('sc-exito').classList.add('active');
