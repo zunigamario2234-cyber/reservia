@@ -993,7 +993,7 @@ function actualizarEjemploComision(){
 function agregarComisionesPorProfesional(citas){
   const byP={};
   citas.forEach(v=>{
-    const p=v.profesional_nombre||'Sin asignar';
+    const p=v.barbero_nombre||'Sin asignar';
     const bar=S.barberos.find(b=>b.nombre===p);
     const pct=bar?.comision_pct||50;
     const com=v.comision_monto??calcularComision(v.valor,pct);
@@ -1082,7 +1082,7 @@ async function guardarCliente(){
   const n=document.getElementById('cl-nombre').value.trim();
   const w=document.getElementById('cl-wsp').value.trim();
   if(!n||!w){notify('Nombre y WhatsApp son obligatorios','warn');return;}
-  const payload={nombre:n,apellido:document.getElementById('cl-apellido').value.trim(),whatsapp:w,email:document.getElementById('cl-email').value.trim(),cumpleanos:document.getElementById('cl-cumple').value||null,profesional_preferido:document.getElementById('cl-profesional').value||null,canal:document.getElementById('cl-canal').value,notas:document.getElementById('cl-notas').value,barberia_id:S.barberia.id};
+  const payload={nombre:n,apellido:document.getElementById('cl-apellido').value.trim(),whatsapp:w,email:document.getElementById('cl-email').value.trim(),cumpleanos:document.getElementById('cl-cumple').value||null,barbero_preferido:document.getElementById('cl-profesional').value||null,canal:document.getElementById('cl-canal').value,notas:document.getElementById('cl-notas').value,barberia_id:S.barberia.id};
   let err;
   if(id){
     const r=await sb.from('clientes').update(payload).eq('id',id);err=r.error;
@@ -1111,7 +1111,7 @@ async function guardarCita(){
   const sName=sv.split('|')[0];
   const barObj=S.barberos.find(b=>b.nombre===bar);
   const payload={
-    cliente_id:cid,profesional_nombre:bar,servicio:sName,valor:val,
+    cliente_id:cid,barbero_nombre:bar,servicio:sName,valor:val,
     fecha,hora:document.getElementById('v-hora').value||null,
     metodo_pago:document.getElementById('v-pago').value,fuente:document.getElementById('v-fuente').value,
     estado:document.getElementById('v-estado').value||'Atendida',
@@ -1381,7 +1381,7 @@ async function procesarReserva(id){
     const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto:0});
+  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto:0});
   await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
   await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva procesada ✓');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
@@ -1623,7 +1623,7 @@ function renderDashboard(){
 
   // Chart profesionals (período seleccionado)
   const byBar={};
-  vCur.forEach(v=>{byBar[v.profesional_nombre]=(byBar[v.profesional_nombre]||0)+(v.valor||0);});
+  vCur.forEach(v=>{byBar[v.barbero_nombre]=(byBar[v.barbero_nombre]||0)+(v.valor||0);});
   const maxBar=Math.max(...Object.values(byBar),1);
   document.getElementById('d-chart-bar').innerHTML=Object.keys(byBar).length?Object.entries(byBar).map(([b,v])=>`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px">
@@ -1730,7 +1730,7 @@ function verCliente(id){
     <div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">Historial</div>
       <div style="max-height:180px;overflow-y:auto">
-        ${histVis.length?`<table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Valor</th></tr></thead><tbody>${histVis.map(v=>`<tr><td>${v.fecha}</td><td>${v.servicio||'—'}</td><td>${v.profesional_nombre||'—'}</td><td>${fmt(v.valor)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Sin citas.</div>'}
+        ${histVis.length?`<table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Valor</th></tr></thead><tbody>${histVis.map(v=>`<tr><td>${v.fecha}</td><td>${v.servicio||'—'}</td><td>${v.barbero_nombre||'—'}</td><td>${fmt(v.valor)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Sin citas.</div>'}
       </div>
     </div>
   </div>`;
@@ -1741,9 +1741,9 @@ function verCliente(id){
 function renderVisitas(){
   const mes=document.getElementById('f-mes-vis').value;
   const bf=document.getElementById('f-bar-vis').value;
-  sel('f-bar-vis',[...new Set(S.visitas.map(v=>v.profesional_nombre).filter(Boolean))].map(b=>({v:b,t:b})),true);
+  sel('f-bar-vis',[...new Set(S.visitas.map(v=>v.barbero_nombre).filter(Boolean))].map(b=>({v:b,t:b})),true);
   if(bf)document.getElementById('f-bar-vis').value=bf;
-  const list=S.visitas.filter(v=>(!mes||v.fecha?.startsWith(mes))&&(!bf||v.profesional_nombre===bf)).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+  const list=S.visitas.filter(v=>(!mes||v.fecha?.startsWith(mes))&&(!bf||v.barbero_nombre===bf)).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   const total=list.reduce((s,v)=>s+(v.valor||0),0);
   const iva=Math.round(total*0.19);
   document.getElementById('v-cnt').textContent=fmtN(list.length);
@@ -1757,7 +1757,7 @@ function renderVisitas(){
     return`<tr>
       <td>${v.fecha}${v.hora?' '+fmtHora(v.hora):''}</td>
       <td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td>
-      <td>${v.servicio||'—'}</td><td>${v.profesional_nombre||'—'}</td>
+      <td>${v.servicio||'—'}</td><td>${v.barbero_nombre||'—'}</td>
       <td>${fmt(v.valor)}</td><td class="gold">${fmt(iv)}</td><td>${fmt((v.valor||0)+iv)}</td>
       <td><span class="badge b-green">${v.metodo_pago||'—'}</span></td>
       <td><button class="btn btn-danger btn-sm" onclick="eliminar('citas','${v.id}',loadVisitas,renderVisitas)">×</button></td>
@@ -1935,7 +1935,7 @@ function renderCostos(){
 function renderProfesionals(){
   const mes=mesActual();
   document.getElementById('cards-profesionals').innerHTML=S.barberos.map(b=>{
-    const vs=S.visitas.filter(v=>v.profesional_nombre===b.nombre&&v.fecha?.startsWith(mes));
+    const vs=S.visitas.filter(v=>v.barbero_nombre===b.nombre&&v.fecha?.startsWith(mes));
     const ventas=vs.reduce((s,v)=>s+(v.valor||0),0);
     const com=Math.round(vs.reduce((s,v)=>s+(v.comision_monto??calcularComision(v.valor,b.comision_pct||50)),0));
     const meta=b.meta_citas||80;
@@ -2052,16 +2052,16 @@ function renderAgenda(){
     return;
   }
 
-  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).map(r=>({...r,_tipo:'reserva',profesional_nombre:r.barbero_nombre}));
+  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).map(r=>({...r,_tipo:'reserva'}));
   const visitasDia=S.visitas.filter(v=>v.fecha===fecha).map(v=>({...v,_tipo:'visita'}));
   let todas=[...reservasDia,...visitasDia];
-  if(bf) todas=todas.filter(x=>(x.profesional_nombre||'Sin asignar')===bf);
+  if(bf) todas=todas.filter(x=>(x.barbero_nombre||'Sin asignar')===bf);
 
   const conHora=todas.filter(x=>x.hora);
   const sinHora=todas.filter(x=>!x.hora);
 
   let cols=bf?[bf]:S.barberos.map(b=>b.nombre);
-  const extra=[...new Set(todas.map(x=>x.profesional_nombre||'Sin asignar'))].filter(n=>!cols.includes(n));
+  const extra=[...new Set(todas.map(x=>x.barbero_nombre||'Sin asignar'))].filter(n=>!cols.includes(n));
   cols=cols.concat(extra);
 
   const totalMin=(AG_END_HOUR-AG_START_HOUR)*60;
@@ -2070,7 +2070,7 @@ function renderAgenda(){
   const horas=[]; for(let hr=AG_START_HOUR;hr<=AG_END_HOUR;hr++) horas.push(hr);
 
   const head=`<div class="cal-head"><div class="cal-hcell cal-gutter-head"></div>${cols.map(c=>{
-    const cnt=conHora.filter(x=>(x.profesional_nombre||'Sin asignar')===c).length+sinHora.filter(x=>(x.profesional_nombre||'Sin asignar')===c).length;
+    const cnt=conHora.filter(x=>(x.barbero_nombre||'Sin asignar')===c).length+sinHora.filter(x=>(x.barbero_nombre||'Sin asignar')===c).length;
     return `<div class="cal-hcell">👤 ${c}<span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">${cnt}</span></div>`;
   }).join('')}</div>`;
 
@@ -2085,7 +2085,7 @@ function renderAgenda(){
   }
 
   const colsHtml=cols.map(barb=>{
-    const items=conHora.filter(x=>(x.profesional_nombre||'Sin asignar')===barb);
+    const items=conHora.filter(x=>(x.barbero_nombre||'Sin asignar')===barb);
     const blocks=items.map(it=>{
       const info=resolveServicioInfo(it.servicio);
       const [hh,mm]=it.hora.split(':').map(Number);
@@ -2119,7 +2119,7 @@ function renderAgenda(){
         const abrir=it._tipo==='reserva'?`abrirEditarReserva('${it.id}')`:`abrirEditarCita('${it.id}')`;
         return `<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:0.5px solid #1a1a1a;cursor:pointer" onclick="${abrir}">
           <span style="width:8px;height:8px;border-radius:50%;background:${ecolor.border};flex-shrink:0"></span>
-          <div style="flex:1"><div style="font-size:12px;font-weight:600">${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.profesional_nombre||'Sin asignar'}</div></div>
+          <div style="flex:1"><div style="font-size:12px;font-weight:600">${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.barbero_nombre||'Sin asignar'}</div></div>
         </div>`;
       }).join('')}
     </div>`;
@@ -2213,7 +2213,7 @@ function abrirEditarCita(id){
   document.getElementById('v-fuente').value=v.fuente||'Presencial';
   document.getElementById('v-estado').value=v.estado||'Atendida';
   document.getElementById('v-cliente').value=v.cliente_id||'';
-  document.getElementById('v-profesional').value=v.profesional_nombre||'';
+  document.getElementById('v-profesional').value=v.barbero_nombre||'';
   if(v.servicio){
     const selS=document.getElementById('v-servicio');
     for(let o of selS.options){if(o.value.split('|')[0]===v.servicio){o.selected=true;break;}}
@@ -2276,7 +2276,7 @@ async function onBlockPointerUp(e){
 }
 async function moverCita(tipo,id,hora,profesional){
   const tabla=tipo==='reserva'?'reservas':'visitas';
-  const campo=tipo==='reserva'?'barbero_nombre':'profesional_nombre';
+  const campo='barbero_nombre';
   const payload={hora,[campo]:profesional};
   if(tabla==='visitas'){
     // Cambió el profesional asignado: recalcula la comisión guardada con el % del nuevo profesional.
@@ -2304,11 +2304,11 @@ function getRepCitas(mesIni, mesFin, profNombre){
   });
 }
 
-// Comisiones por profesional: filtra por fecha completa (no solo mes) y por el campo real profesional_nombre.
+// Comisiones por profesional: filtra por fecha completa (no solo mes) y por el campo real barbero_nombre.
 function getRepCitasRango(desde, hasta, profNombre){
   return S.visitas.filter(v=>{
     const fOk=(!desde||v.fecha>=desde)&&(!hasta||v.fecha<=hasta);
-    const pOk=!profNombre||v.profesional_nombre===profNombre;
+    const pOk=!profNombre||v.barbero_nombre===profNombre;
     return fOk&&pOk;
   });
 }
@@ -2413,7 +2413,7 @@ function renderReporteProfesional(){
   // Historial detallado
   document.getElementById('rep-tabla-prof-det').innerHTML=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
-    const bar=S.barberos.find(b=>b.nombre===v.profesional_nombre);
+    const bar=S.barberos.find(b=>b.nombre===v.barbero_nombre);
     const com=Math.round(v.comision_monto??calcularComision(v.valor,bar?.comision_pct||50));
     return`<tr><td>${v.fecha}</td><td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td>${resolveServicioInfo(v.servicio).nombre}</td><td>${fmt(v.valor)}</td><td class="gold">${fmt(com)}</td></tr>`;
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
@@ -2752,9 +2752,9 @@ function selClienteReserva(id){
   document.getElementById('r-wsp').value=c.whatsapp||'';
   document.getElementById('r-buscar').value=c.nombre+' '+(c.apellido||'');
   document.getElementById('r-sugerencias').style.display='none';
-  if(c.profesional_preferido){
+  if(c.barbero_preferido){
     const sel=document.getElementById('r-profesional');
-    for(let o of sel.options){if(o.value===c.profesional_preferido)o.selected=true;}
+    for(let o of sel.options){if(o.value===c.barbero_preferido)o.selected=true;}
   }
 }
 
