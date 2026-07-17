@@ -852,15 +852,34 @@ async function init(){
   document.getElementById('sb-barberia').textContent = S.barberia?.nombre || '—';
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
   nav('dashboard');cargarTemaGuardado();
-  }catch(e){console.error(e);window.location.replace('index.html');}
+  }catch(e){
+    console.error(e);
+    // Si ya había una sesión válida, redirigir a index.html solo rebota de
+    // vuelta para acá (index.html ve la sesión activa) — eso es el loop
+    // silencioso. En vez de eso, mostramos el error acá mismo.
+    mostrarErrorCarga(e.message||'Ocurrió un error inesperado al cargar tu cuenta.');
+  }
   setInterval(()=>{ if(document.getElementById('p-dashboard').classList.contains('active')) renderDashboard(); }, 60000);
+}
+
+function mostrarErrorCarga(mensaje){
+  const el=document.getElementById('loading-screen');
+  if(!el)return;
+  el.innerHTML=`
+    <div style="max-width:360px;text-align:center;padding:20px">
+      <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+      <p style="color:var(--text);font-size:14px;margin-bottom:18px;line-height:1.6">${mensaje}</p>
+      <button class="btn btn-ghost" onclick="window.location.href='app.html?logout=1'">Cerrar sesión</button>
+    </div>`;
 }
 
 async function loadAll(){
   const uid = S.user.id;
-  const {data:p} = await sb.from('perfiles').select('*').eq('id',uid).single();
+  const {data:p,error:ep} = await sb.from('perfiles').select('*').eq('id',uid).single();
+  if(ep||!p) throw new Error('No encontramos tu perfil de usuario en la base de datos. Si tu cuenta es nueva, puede que el registro no haya terminado de crearse — contacta al soporte.');
   S.perfil = p;
-  const {data:b} = await sb.from('barberias').select('*').eq('id',p.barberia_id).single();
+  const {data:b,error:eb} = await sb.from('barberias').select('*').eq('id',p.barberia_id).single();
+  if(eb||!b) throw new Error('No encontramos el negocio asociado a tu cuenta. Contacta al soporte.');
   S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
