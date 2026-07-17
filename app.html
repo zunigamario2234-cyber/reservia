@@ -508,8 +508,21 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card">
       <div class="card-hdr"><span class="card-title">Datos del negocio</span></div>
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
-      <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100"></div></div>
+      <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
       <div class="fr"><div class="fg"><label>Link Setmore</label><input id="cfg-setmore" type="url"></div><div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div></div>
+      <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="card-hdr"><span class="card-title">Modo de cálculo de comisión</span></div>
+      <div class="fg">
+        <label>¿Cómo se calcula la comisión de los profesionales?</label>
+        <select id="cfg-modo-comision" onchange="actualizarEjemploComision()">
+          <option value="total">Negocio cubre el IVA — comisión sobre el precio completo</option>
+          <option value="neto_iva">IVA se descuenta antes de repartir — comisión sobre el neto</option>
+        </select>
+      </div>
+      <div id="cfg-comision-ejemplo" class="alert al-info" style="line-height:1.7"></div>
+      <div class="alert al-warn" style="margin-top:10px">⚠️ Este cambio afecta el monto que se paga a los profesionales <strong>desde ahora en adelante</strong>. No se recalculan comisiones de citas ya atendidas.</div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
     </div>
   </div>
@@ -892,6 +905,51 @@ function switchTab(el,tid){
 }
 function fmt(n){ return '$'+(Math.round(n)||0).toLocaleString('es-CL'); }
 function fmtN(n){ return (Math.round(n)||0).toLocaleString('es-CL'); }
+
+// Comisión: modo 'total' (default) = % sobre el precio completo.
+// Modo 'neto_iva' = % sobre el precio menos el IVA incluido, usando el % de IVA configurado del negocio.
+function calcularComision(valor,pct){
+  const v=valor||0, p=pct||0;
+  let base=v;
+  if(S.barberia?.modo_comision==='neto_iva'){
+    const ivaPct=S.barberia?.iva_pct||19;
+    base=v-(v*ivaPct/(100+ivaPct));
+  }
+  return Math.round(base*p/100);
+}
+function actualizarEjemploComision(){
+  const sel=document.getElementById('cfg-modo-comision');
+  const el=document.getElementById('cfg-comision-ejemplo');
+  if(!sel||!el)return;
+  const modo=sel.value;
+  const ivaPct=parseFloat(document.getElementById('cfg-iva')?.value)||S.barberia?.iva_pct||19;
+  const precio=18600, pct=50;
+  const comA=Math.round(precio*pct/100);
+  const baseNeta=precio-(precio*ivaPct/(100+ivaPct));
+  const comB=Math.round(baseNeta*pct/100);
+  el.innerHTML=`<strong>Ejemplo</strong> — servicio de ${fmt(precio)}, IVA ${ivaPct}%, comisión 50%:<br>
+    · Negocio cubre el IVA: comisión = <strong>${fmt(comA)}</strong><br>
+    · IVA se descuenta antes de repartir: comisión = <strong>${fmt(comB)}</strong> (${fmt(comA-comB)} menos)<br>
+    <span style="color:var(--text3)">Modo seleccionado: ${modo==='neto_iva'?'IVA se descuenta antes de repartir':'Negocio cubre el IVA'}</span>`;
+}
+// Agrupa citas por profesional, sumando ventas y comisión (usa el monto guardado en
+// cada visita si existe -congelado al momento de atenderla-, o lo calcula al vuelo
+// como respaldo para visitas anteriores a esta funcionalidad).
+function agregarComisionesPorProfesional(citas){
+  const byP={};
+  citas.forEach(v=>{
+    const p=v.profesional_nombre||'Sin asignar';
+    const bar=S.barberos.find(b=>b.nombre===p);
+    const pct=bar?.comision_pct||50;
+    const com=v.comision_monto??calcularComision(v.valor,pct);
+    const sNombre=resolveServicioInfo(v.servicio).nombre;
+    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,pct,servicios:{}};
+    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;
+    if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0,com:0};
+    byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);byP[p].servicios[sNombre].com+=com;
+  });
+  return byP;
+}
 function getCitas(cid){ return S.visitas.filter(v=>v.cliente_id===cid).length; }
 function getUltCita(cid){ const vs=S.visitas.filter(v=>v.cliente_id===cid).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)); return vs[0]?.fecha||null; }
 function diasDesde(f){ if(!f)return 9999; return Math.floor((Date.now()-new Date(f))/86400000); }
@@ -994,11 +1052,13 @@ async function guardarCita(){
   const fecha=document.getElementById('v-fecha').value;
   if(!cid||!bar||!sv||!fecha){notify('Completa los campos obligatorios','warn');return;}
   const sName=sv.split('|')[0];
+  const barObj=S.barberos.find(b=>b.nombre===bar);
   const payload={
     cliente_id:cid,profesional_nombre:bar,servicio:sName,valor:val,
     fecha,hora:document.getElementById('v-hora').value||null,
     metodo_pago:document.getElementById('v-pago').value,fuente:document.getElementById('v-fuente').value,
     estado:document.getElementById('v-estado').value||'Atendida',
+    comision_monto:calcularComision(val,barObj?.comision_pct||50),
     notas:document.getElementById('v-notas').value
   };
   let error;
@@ -1187,7 +1247,8 @@ async function guardarConfig(){
     direccion:document.getElementById('cfg-dir').value,
     iva_pct:parseFloat(document.getElementById('cfg-iva').value)||19,
     link_setmore:document.getElementById('cfg-setmore').value,
-    link_reviews:document.getElementById('cfg-reviews').value
+    link_reviews:document.getElementById('cfg-reviews').value,
+    modo_comision:document.getElementById('cfg-modo-comision').value||'total'
   }).eq('id',S.barberia.id);
   if(error){notify(error.message,'err');return;}
   await sb.from('barberias').select('*').eq('id',S.barberia.id).single().then(({data})=>S.barberia=data);
@@ -1208,7 +1269,7 @@ async function procesarReserva(id){
     const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Setmore',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida'});
+  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,profesional_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto:0});
   await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
   await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva procesada ✓');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
@@ -1752,16 +1813,10 @@ function renderCostos(){
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
   // Comisiones
   const mes2=mesActual();
-  const byB={};
-  S.visitas.filter(v=>v.fecha?.startsWith(mes2)).forEach(v=>{
-    if(!byB[v.profesional_nombre])byB[v.profesional_nombre]={vis:0,ventas:0};
-    byB[v.profesional_nombre].vis++;byB[v.profesional_nombre].ventas+=(v.valor||0);
-  });
+  const byB=agregarComisionesPorProfesional(S.visitas.filter(v=>v.fecha?.startsWith(mes2)));
   document.getElementById('t-comisiones').innerHTML=Object.entries(byB).map(([b,d])=>{
-    const bar=S.barberos.find(x=>x.nombre===b);
-    const pct=bar?.comision_pct||50;
-    const com=Math.round(d.ventas*pct/100);
-    return`<tr><td>${b}</td><td>${d.vis}</td><td>${fmt(d.ventas)}</td><td>${pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td></tr>`;
+    const com=Math.round(d.comision);
+    return`<tr><td>${b}</td><td>${d.citas}</td><td>${fmt(d.ventas)}</td><td>${d.pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td></tr>`;
   }).join('')||'<tr><td colspan="6" class="empty">Sin ventas este mes.</td></tr>';
 }
 
@@ -1770,7 +1825,7 @@ function renderProfesionals(){
   document.getElementById('cards-profesionals').innerHTML=S.barberos.map(b=>{
     const vs=S.visitas.filter(v=>v.profesional_nombre===b.nombre&&v.fecha?.startsWith(mes));
     const ventas=vs.reduce((s,v)=>s+(v.valor||0),0);
-    const com=Math.round(ventas*(b.comision_pct||50)/100);
+    const com=Math.round(vs.reduce((s,v)=>s+(v.comision_monto??calcularComision(v.valor,b.comision_pct||50)),0));
     const meta=b.meta_citas||80;
     const pct=Math.min(100,(vs.length/meta*100));
     const avatar=b.foto_url
@@ -1808,6 +1863,8 @@ function renderConfig(){
     document.getElementById('cfg-iva').value=S.barberia.iva_pct||19;
     document.getElementById('cfg-setmore').value=S.barberia.link_setmore||'';
     document.getElementById('cfg-reviews').value=S.barberia.link_reviews||'';
+    document.getElementById('cfg-modo-comision').value=S.barberia.modo_comision||'total';
+    actualizarEjemploComision();
   }
   document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>`<tr>
     <td>${s.nombre}</td><td>${fmt(s.precio)}</td><td>${s.duracion_min} min</td>
@@ -2101,7 +2158,14 @@ async function onBlockPointerUp(e){
 async function moverCita(tipo,id,hora,profesional){
   const tabla=tipo==='reserva'?'reservas':'visitas';
   const campo=tipo==='reserva'?'barbero_nombre':'profesional_nombre';
-  const {error}=await sb.from(tabla).update({hora,[campo]:profesional}).eq('id',id);
+  const payload={hora,[campo]:profesional};
+  if(tabla==='visitas'){
+    // Cambió el profesional asignado: recalcula la comisión guardada con el % del nuevo profesional.
+    const v=S.visitas.find(x=>x.id===id);
+    const barObj=S.barberos.find(b=>b.nombre===profesional);
+    payload.comision_monto=calcularComision(v?.valor||0,barObj?.comision_pct||50);
+  }
+  const {error}=await sb.from(tabla).update(payload).eq('id',id);
   if(error){notify(error.message,'err');renderAgenda();return;}
   notify('Movido a las '+hora+' ✓');
   if(tabla==='reservas')await loadReservas(); else await loadVisitas();
@@ -2200,16 +2264,8 @@ function renderReporteProfesional(){
   const prof=document.getElementById('rep-sel-prof').value;
   const citas=getRepCitasRango(desde,hasta,prof||null);
 
-  // By profesional stats
-  const byP={};
-  citas.forEach(v=>{
-    const p=v.profesional_nombre||'Sin asignar';
-    const sNombre=resolveServicioInfo(v.servicio).nombre;
-    if(!byP[p])byP[p]={citas:0,ventas:0,servicios:{}};
-    byP[p].citas++;byP[p].ventas+=(v.valor||0);
-    if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0};
-    byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);
-  });
+  // By profesional stats (usa el monto de comisión guardado por visita, con respaldo al vuelo)
+  const byP=agregarComisionesPorProfesional(citas);
 
   const totalV=citas.reduce((s,v)=>s+(v.valor||0),0);
   const totalC=citas.length;
@@ -2219,20 +2275,16 @@ function renderReporteProfesional(){
     <div class="mc"><div class="mc-label">Profesionales activos</div><div class="mc-val">${Object.keys(byP).length}</div></div>`;
 
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
-    const bar=S.barberos.find(b=>b.nombre===p);
-    const pct=bar?.comision_pct||50;
-    const com=Math.round(d.ventas*pct/100);
+    const com=Math.round(d.comision);
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
-    return`<tr><td><strong style="color:var(--text)">${p}</strong></td><td>${d.citas}</td><td>${fmt(d.ventas)}</td><td>${pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td><td><span class="badge b-purple">${topSrv}</span></td></tr>`;
+    return`<tr><td><strong style="color:var(--text)">${p}</strong></td><td>${d.citas}</td><td>${fmt(d.ventas)}</td><td>${d.pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td><td><span class="badge b-purple">${topSrv}</span></td></tr>`;
   }).join('')||'<tr><td colspan="7" class="empty">Sin datos en este rango</td></tr>';
 
   // Desglose por servicio (por profesional)
   const filasSrv=[];
   Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).forEach(([p,d])=>{
-    const bar=S.barberos.find(b=>b.nombre===p);
-    const pct=bar?.comision_pct||50;
     Object.entries(d.servicios).sort((a,b)=>b[1].val-a[1].val).forEach(([sNombre,sd])=>{
-      filasSrv.push({profesional:p,servicio:sNombre,cnt:sd.cnt,val:sd.val,com:Math.round(sd.val*pct/100)});
+      filasSrv.push({profesional:p,servicio:sNombre,cnt:sd.cnt,val:sd.val,com:Math.round(sd.com)});
     });
   });
   document.getElementById('rep-tabla-prof-srv').innerHTML=filasSrv.map(f=>
@@ -2243,7 +2295,7 @@ function renderReporteProfesional(){
   document.getElementById('rep-tabla-prof-det').innerHTML=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
     const bar=S.barberos.find(b=>b.nombre===v.profesional_nombre);
-    const com=Math.round((v.valor||0)*((bar?.comision_pct||50)/100));
+    const com=Math.round(v.comision_monto??calcularComision(v.valor,bar?.comision_pct||50));
     return`<tr><td>${v.fecha}</td><td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td>${resolveServicioInfo(v.servicio).nombre}</td><td>${fmt(v.valor)}</td><td class="gold">${fmt(com)}</td></tr>`;
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 }
@@ -2342,24 +2394,15 @@ function exportarExcel(tipo){
     const prof=document.getElementById('rep-sel-prof')?.value||'';
     const citas=getRepCitasRango(desde,hasta,prof||null);
     if(!citas.length){notify('Sin datos para exportar','warn');return;}
-    const byP={};
-    citas.forEach(v=>{
-      const p=v.profesional_nombre||'Sin asignar';
-      const sNombre=resolveServicioInfo(v.servicio).nombre;
-      if(!byP[p])byP[p]={citas:0,ventas:0,servicios:{}};
-      byP[p].citas++;byP[p].ventas+=(v.valor||0);
-      if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0};
-      byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);
-    });
+    const byP=agregarComisionesPorProfesional(citas);
     const resumen=Object.entries(byP).map(([p,d])=>{
-      const bar=S.barberos.find(b=>b.nombre===p);const pct=bar?.comision_pct||50;const com=Math.round(d.ventas*pct/100);
-      return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':pct,'Comisión $':com,'Para negocio':d.ventas-com};
+      const com=Math.round(d.comision);
+      return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':d.pct,'Comisión $':com,'Para negocio':d.ventas-com};
     });
     const desglose=[];
     Object.entries(byP).forEach(([p,d])=>{
-      const bar=S.barberos.find(b=>b.nombre===p);const pct=bar?.comision_pct||50;
       Object.entries(d.servicios).forEach(([sNombre,sd])=>{
-        desglose.push({Profesional:p,Servicio:sNombre,Veces:sd.cnt,Ingresos:sd.val,'Comisión $':Math.round(sd.val*pct/100)});
+        desglose.push({Profesional:p,Servicio:sNombre,Veces:sd.cnt,Ingresos:sd.val,'Comisión $':Math.round(sd.com)});
       });
     });
     const wb=XLSX.utils.book_new();
