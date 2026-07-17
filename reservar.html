@@ -61,6 +61,8 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
 .btn-ghost{background:transparent;color:#777;border:0.5px solid #2a2a2a;margin-top:8px}
 .btn-ghost:hover{color:#e8e6e0}
+.btn-wa{display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;margin-top:12px}
+.btn-wa:hover{background:#003318}
 .resumen{background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;padding:16px;margin-bottom:16px}
 .resumen-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:0.5px solid #2a2a2a;font-size:13px}
 .resumen-row:last-child{border-bottom:none}
@@ -171,7 +173,8 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       <div class="success-icon">✅</div>
       <div class="success-title">¡Reserva confirmada!</div>
       <div class="success-sub" id="success-msg"></div>
-      <button class="btn btn-ghost" style="margin-top:24px;max-width:260px;margin-left:auto;margin-right:auto" onclick="nuevaReserva()">Hacer otra reserva</button>
+      <button class="btn btn-wa" id="btn-wa-confirmar" style="max-width:260px;margin-left:auto;margin-right:auto" onclick="confirmarPorWhatsApp()">📱 Avisar por WhatsApp</button>
+      <button class="btn btn-ghost" style="margin-top:12px;max-width:260px;margin-left:auto;margin-right:auto" onclick="nuevaReserva()">Hacer otra reserva</button>
     </div>
   </div>
 </div>
@@ -189,8 +192,15 @@ const BARBERIA_ID = params.get('barberia') || params.get('id');
 let B = { barberia:null, servicios:[], profesionals:[], reservasOcupadas:[] };
 let SEL = { servicio:null, profesional:null, fecha:null, hora:null };
 let calMes = new Date();
+let ULTIMO_NOMBRE = '';
 
 const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
+
+// Arma/compara fechas solo con componentes locales (año/mes/día) — nunca vía
+// toISOString() ni new Date("YYYY-MM-DD"), que se interpretan como UTC y
+// pueden correrse un día según la zona horaria del visitante.
+function fmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
 
 async function init(){
   if(!BARBERIA_ID){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:#555">URL inválida. Falta el ID de la negocio.</div>'; return; }
@@ -257,10 +267,11 @@ function renderCalendario(){
   for(let i=0;i<lunes;i++) cal.innerHTML+=`<div class="cal-day empty"></div>`;
   for(let d=1;d<=ultimoDia.getDate();d++){
     const fecha = new Date(calMes.getFullYear(),calMes.getMonth(),d);
+    const fechaStr = fmtDateLocal(fecha);
     const past = fecha < hoy;
-    const sel = SEL.fecha && fecha.toDateString()===new Date(SEL.fecha).toDateString();
-    const hoyClass = fecha.toDateString()===hoy.toDateString()?'today':'';
-    cal.innerHTML+=`<div class="cal-day ${past?'past':'available'} ${sel?'selected':''} ${hoyClass}" ${!past?`onclick="selFecha('${fecha.toISOString().split('T')[0]}')"`:''}">${d}</div>`;
+    const sel = SEL.fecha===fechaStr;
+    const hoyClass = fechaStr===fmtDateLocal(hoy)?'today':'';
+    cal.innerHTML+=`<div class="cal-day ${past?'past':'available'} ${sel?'selected':''} ${hoyClass}" ${!past?`onclick="selFecha('${fechaStr}')"`:''}">${d}</div>`;
   }
 }
 
@@ -365,12 +376,14 @@ async function confirmarReserva(){
       fuente:'Web propia'
     }).select().single();
     if(error)throw error;
-    // Enviar correos via edge function
+    ULTIMO_NOMBRE=(nombre+' '+apellido).trim();
+    // Enviar correos via edge function (si está configurada)
     await enviarCorreos({nombre,apellido,email,wsp,reserva:data});
     // Mostrar éxito
     document.querySelectorAll('.step-content').forEach(s=>s.classList.remove('active'));
     document.getElementById('sc-exito').classList.add('active');
-    document.getElementById('success-msg').innerHTML=`Hemos enviado la confirmación a <strong>${email}</strong>.<br><br>📅 ${SEL.fecha} a las ${SEL.hora} hrs<br>✂️ ${SEL.servicio?.nombre} con ${SEL.profesional?.nombre||'profesional por asignar'}<br><br>¡Te esperamos en ${B.barberia.nombre}!`;
+    document.getElementById('success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${SEL.fecha} a las ${SEL.hora} hrs<br>✂️ ${SEL.servicio?.nombre} con ${SEL.profesional?.nombre||'profesional por asignar'}<br><br>¡Te esperamos en ${B.barberia.nombre}!`;
+    document.getElementById('btn-wa-confirmar').style.display=B.barberia.whatsapp?'':'none';
   }catch(e){
     const al=document.getElementById('alert-confirm');
     al.textContent='Error al confirmar: '+e.message; al.style.display='';
@@ -394,6 +407,12 @@ async function enviarCorreos({nombre,apellido,email,wsp,reserva}){
   }catch(e){
     console.log('Correos no enviados (Edge Function no configurada):', e.message);
   }
+}
+
+function confirmarPorWhatsApp(){
+  if(!B.barberia?.whatsapp)return;
+  const msg=`Hola! Quiero confirmar mi reserva en ${B.barberia.nombre}:\n📅 ${SEL.fecha} a las ${SEL.hora} hrs\n✂️ ${SEL.servicio?.nombre||''}${SEL.profesional?' con '+SEL.profesional.nombre:''}\nNombre: ${ULTIMO_NOMBRE}`;
+  abrirWA(B.barberia.whatsapp,msg);
 }
 
 function nuevaReserva(){
