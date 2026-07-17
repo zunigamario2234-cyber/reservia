@@ -92,6 +92,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
 </div>
 
 <div class="container">
+  <div id="prof-preselec" style="display:none;margin-bottom:14px;padding:10px 14px;background:#13142a;border:0.5px solid #7c6af7;border-radius:8px;font-size:12px;color:#999;text-align:center"></div>
   <div class="steps">
     <div class="step-tab active" id="st-1">1. Servicio</div>
     <div class="step-tab" id="st-2">2. Profesional</div>
@@ -106,7 +107,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       <div class="card-title">¿Qué servicio necesitas?</div>
       <div class="servicio-grid" id="lista-servicios"></div>
     </div>
-    <button class="btn btn-primary" id="btn-s1" onclick="irPaso(2)" disabled>Continuar →</button>
+    <button class="btn btn-primary" id="btn-s1" onclick="irPaso(SALTAR_PROFESIONAL?3:2)" disabled>Continuar →</button>
   </div>
 
   <!-- PASO 2: Profesional -->
@@ -140,7 +141,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       <div class="horarios" id="lista-horarios"></div>
     </div>
     <button class="btn btn-primary" id="btn-s3" onclick="irPaso(4)" disabled>Continuar →</button>
-    <button class="btn btn-ghost" onclick="irPaso(2)">← Volver</button>
+    <button class="btn btn-ghost" onclick="irPaso(SALTAR_PROFESIONAL?1:2)">← Volver</button>
   </div>
 
   <!-- PASO 4: Datos cliente -->
@@ -193,6 +194,7 @@ let B = { barberia:null, servicios:[], profesionals:[], reservasOcupadas:[] };
 let SEL = { servicio:null, profesional:null, fecha:null, hora:null };
 let calMes = new Date();
 let ULTIMO_NOMBRE = '';
+let SALTAR_PROFESIONAL = false;
 
 const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
 
@@ -217,7 +219,15 @@ async function init(){
   B.servicios = sv||[]; B.profesionals = ba||[];
   renderServicios(); renderProfesionals(); renderCalendario();
   const profParam = params.get('profesional');
-  if(profParam && B.profesionals.some(b=>b.id===profParam)) selProfesional(profParam);
+  const profPreseleccionado = profParam && B.profesionals.find(b=>b.id===profParam);
+  if(profPreseleccionado){
+    selProfesional(profParam);
+    SALTAR_PROFESIONAL = true;
+    document.getElementById('st-2').style.display = 'none';
+    const banner = document.getElementById('prof-preselec');
+    banner.innerHTML = `Reservando con: <strong style="color:#e8e6e0">${profPreseleccionado.nombre}</strong>`;
+    banner.style.display = '';
+  }
 }
 
 function renderServicios(){
