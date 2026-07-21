@@ -733,13 +733,26 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div class="modal">
     <div class="modal-hdr"><span class="modal-title" id="m-reserva-title">Nueva reserva</span><button class="xbtn" onclick="closeM('m-reserva')">x</button></div>
     <input type="hidden" id="r-id">
-    <div class="fg" style="position:relative;margin-bottom:12px">
-      <label>Buscar cliente existente</label>
-      <input id="r-buscar" type="text" placeholder="Escribe nombre o WhatsApp..." oninput="buscarClienteReserva(this.value)" autocomplete="off">
-      <div id="r-sugerencias" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:0.5px solid #d4a853;border-radius:8px;z-index:100;max-height:180px;overflow-y:auto;margin-top:2px"></div>
+    <div id="rm-tabs" style="display:flex;gap:8px;margin-bottom:14px">
+      <button type="button" class="btn btn-sm btn-primary" id="rm-tab-existente" onclick="setModoClienteReserva('existente')">Buscar cliente existente</button>
+      <button type="button" class="btn btn-sm btn-ghost" id="rm-tab-nuevo" onclick="setModoClienteReserva('nuevo')">+ Cliente nuevo</button>
+    </div>
+    <div id="rm-existente">
+      <div class="fg" style="position:relative;margin-bottom:12px">
+        <label>Buscar cliente existente</label>
+        <input id="r-buscar" type="text" placeholder="Escribe nombre o WhatsApp..." oninput="buscarClienteReserva(this.value)" autocomplete="off">
+        <div id="r-sugerencias" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:0.5px solid #d4a853;border-radius:8px;z-index:100;max-height:180px;overflow-y:auto;margin-top:2px"></div>
+      </div>
+      <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
+    </div>
+    <div id="rm-nuevo" style="display:none">
+      <div class="fr"><div class="fg"><label>Nombre *</label><input id="rn-nombre" type="text" placeholder="Juan"></div><div class="fg"><label>Apellido</label><input id="rn-apellido" type="text" placeholder="Pérez"></div></div>
+      <div class="fr"><div class="fg"><label>WhatsApp *</label><input id="rn-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div><div class="fg"><label>Correo</label><input id="rn-email" type="email" placeholder="juan@correo.com"></div></div>
+      <div class="fr"><div class="fg"><label>Fecha de nacimiento</label><input id="rn-cumple" type="date"></div><div class="fg"><label>Profesional preferido</label><select id="rn-profesional"><option value="">Sin preferencia</option></select></div></div>
+      <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="rn-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Reserva Web</option><option>Directo</option><option>Otro</option></select></div><div class="fg"></div></div>
+      <div class="fg"><label>Notas del cliente</label><textarea id="rn-notas" rows="2" placeholder="Observaciones..."></textarea></div>
     </div>
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="r-fecha" type="date"></div><div class="fg"><label>Hora *</label><input id="r-hora" type="time"></div></div>
-    <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
     <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Cualquiera</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
@@ -1106,6 +1119,15 @@ function buildMsg(evento, vars={}){
   return m;
 }
 function mesActual(){ return new Date().toISOString().slice(0,7); }
+
+let MODO_CLIENTE_RESERVA='existente';
+function setModoClienteReserva(modo){
+  MODO_CLIENTE_RESERVA=modo;
+  document.getElementById('rm-existente').style.display=modo==='existente'?'':'none';
+  document.getElementById('rm-nuevo').style.display=modo==='nuevo'?'':'none';
+  document.getElementById('rm-tab-existente').className='btn btn-sm '+(modo==='existente'?'btn-primary':'btn-ghost');
+  document.getElementById('rm-tab-nuevo').className='btn btn-sm '+(modo==='nuevo'?'btn-primary':'btn-ghost');
+}
 function initModal(id){
   const hoy=new Date().toISOString().split('T')[0];
   if(id==='m-cita'){
@@ -1133,6 +1155,12 @@ function initModal(id){
     document.getElementById('r-estado').value='Pendiente';
     sel('r-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
     sel('r-servicio',S.servicios.map(s=>({v:s.nombre,t:s.nombre})),true);
+    document.getElementById('rm-tabs').style.display='';
+    setModoClienteReserva('existente');
+    ['rn-nombre','rn-apellido','rn-wsp','rn-email','rn-notas'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('rn-cumple').value='';
+    document.getElementById('rn-canal').value='Directo';
+    sel('rn-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
   if(id==='m-cliente'){
     document.getElementById('cl-id').value='';
@@ -1241,11 +1269,37 @@ async function guardarCita(){
 
 async function guardarReserva(){
   const id=document.getElementById('r-id').value;
-  const n=document.getElementById('r-nombre').value.trim();
-  const w=document.getElementById('r-wsp').value.trim();
   const f=document.getElementById('r-fecha').value;
   const h=document.getElementById('r-hora').value;
-  if(!n||!w||!f||!h){notify('Nombre, WhatsApp, fecha y hora son obligatorios','warn');return;}
+  if(!f||!h){notify('Fecha y hora son obligatorios','warn');return;}
+
+  let n, w;
+  if(!id && MODO_CLIENTE_RESERVA==='nuevo'){
+    n=document.getElementById('rn-nombre').value.trim();
+    const wNuevo=document.getElementById('rn-wsp').value.trim();
+    if(!n||!wNuevo){notify('Nombre y WhatsApp del cliente son obligatorios','warn');return;}
+    if(S.clientes.find(c=>c.whatsapp===wNuevo)){notify('Ya existe un cliente con ese WhatsApp','warn');return;}
+    const clientePayload={
+      barberia_id:S.barberia.id,nombre:n,
+      apellido:document.getElementById('rn-apellido').value.trim(),
+      whatsapp:wNuevo,
+      email:document.getElementById('rn-email').value.trim(),
+      cumpleanos:document.getElementById('rn-cumple').value||null,
+      barbero_preferido:document.getElementById('rn-profesional').value||null,
+      canal:document.getElementById('rn-canal').value,
+      notas:document.getElementById('rn-notas').value
+    };
+    const {data:nuevoCliente,error:errCliente}=await sb.from('clientes').insert(clientePayload).select().single();
+    if(errCliente){notify('No se pudo crear el cliente: '+errCliente.message,'err');return;}
+    await loadClientes();
+    n=(nuevoCliente.nombre+' '+(nuevoCliente.apellido||'')).trim();
+    w=nuevoCliente.whatsapp;
+  } else {
+    n=document.getElementById('r-nombre').value.trim();
+    w=document.getElementById('r-wsp').value.trim();
+    if(!n||!w){notify('Nombre y WhatsApp son obligatorios','warn');return;}
+  }
+
   const payload={
     nombre_cliente:n,whatsapp_cliente:w,fecha:f,hora:h,
     servicio:document.getElementById('r-servicio').value||null,
@@ -1631,7 +1685,7 @@ async function procesarReserva(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   let cl=S.clientes.find(c=>c.whatsapp===r.whatsapp_cliente);
   if(!cl){
-    const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
+    const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,cumpleanos:r.cumpleanos_cliente||null,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
   const svObj=S.servicios.find(s=>s.nombre===r.servicio);
@@ -2471,6 +2525,7 @@ function abrirEditarReserva(id){
   document.getElementById('r-estado').value=r.estado||'Pendiente';
   const selS=document.getElementById('r-servicio'); if(r.servicio)selS.value=r.servicio;
   const selP=document.getElementById('r-profesional'); if(r.barbero_nombre)selP.value=r.barbero_nombre;
+  document.getElementById('rm-tabs').style.display='none';
 }
 
 function abrirEditarCita(id){

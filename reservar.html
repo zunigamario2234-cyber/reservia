@@ -154,6 +154,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       </div>
       <div class="form-group"><label>WhatsApp *</label><input type="tel" id="cl-wsp" placeholder="+56 9 XXXX XXXX"></div>
       <div class="form-group"><label>Correo electrónico *</label><input type="email" id="cl-email" placeholder="tu@correo.com"></div>
+      <div class="form-group"><label>Fecha de nacimiento (opcional)</label><input type="date" id="cl-cumple"></div>
       <div class="form-group"><label>Notas (opcional)</label><textarea id="cl-notas" rows="2" placeholder="Ej: corte específico, alergias..."></textarea></div>
     </div>
     <button class="btn btn-primary" onclick="irPaso(5)">Continuar →</button>
@@ -418,6 +419,7 @@ async function confirmarReserva(){
   const apellido=document.getElementById('cl-apellido').value.trim();
   const wsp=document.getElementById('cl-wsp').value.trim();
   const email=document.getElementById('cl-email').value.trim();
+  const cumpleanos=document.getElementById('cl-cumple').value||null;
   const notas=document.getElementById('cl-notas').value.trim();
   try{
     const {data,error}=await sb.from('reservas').insert({
@@ -425,6 +427,7 @@ async function confirmarReserva(){
       nombre_cliente:nombre+' '+apellido,
       whatsapp_cliente:wsp,
       email_cliente:email,
+      cumpleanos_cliente:cumpleanos,
       fecha:SEL.fecha,
       hora:SEL.hora,
       servicio:SEL.servicio?.nombre,
