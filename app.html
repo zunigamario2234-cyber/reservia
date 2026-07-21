@@ -1634,7 +1634,12 @@ async function procesarReserva(id){
     const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();
   }
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor:0,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto:0});
+  const svObj=S.servicios.find(s=>s.nombre===r.servicio);
+  if(!svObj) console.warn('procesarReserva: no se encontró el servicio "'+r.servicio+'" en S.servicios (¿borrado o renombrado?) — se guarda valor:0');
+  const valor=svObj?.precio||0;
+  const barObj=S.barberos.find(b=>b.nombre===r.barbero_nombre);
+  const comision_monto=calcularComision(valor,barObj?.comision_pct||50);
+  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto});
   await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
   await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva procesada ✓');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
