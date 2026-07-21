@@ -16,10 +16,6 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .hero-badge{font-size:52px;margin-bottom:10px}
 .hero-nombre{font-size:18px;font-weight:700;color:#fff;margin-bottom:2px}
 .hero-nivel{font-size:22px;font-weight:700;margin-bottom:14px}
-.nivel-Plata{color:#aaa}
-.nivel-Oro{color:#d4a853}
-.nivel-Diamante{color:#6ab0e0}
-.nivel-Sinnivel{color:#666}
 .hero-beneficio{display:inline-block;background:#13142a;border:0.5px solid #7c6af7;border-radius:20px;padding:8px 18px;font-size:13px;color:#c9c3ff}
 .progreso-wrap{margin-top:20px}
 .progreso-label{font-size:11px;color:#555;margin-bottom:6px;text-align:center}
@@ -42,6 +38,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .b-silver{background:#2a2a2a;color:#ccc}
 .b-gold{background:#3a2f10;color:#d4a853}
 .b-blue{background:#13142a;color:#6ab0e0}
+.b-green{background:#0f2a1a;color:#5cd685}
 .empty{text-align:center;color:#444;font-size:12px;padding:16px 0}
 .msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
 </style>
@@ -62,10 +59,15 @@ const params = new URLSearchParams(window.location.search);
 const BARBERIA_ID = params.get('id');
 const CLIENTE_ID = params.get('cliente');
 
-const NIVEL_ORDEN = {'Sin nivel':0,'Todos':0,'Plata':1,'Oro':2,'Diamante':3};
-const NIVEL_META = {'Sin nivel':5,'Plata':10,'Oro':20,'Diamante':null};
-const NIVEL_BENEFICIO = {'Plata':'10% de descuento','Oro':'Servicio gratis','Diamante':'VIP total'};
-const NIVEL_ICONO = {'Sin nivel':'🎫','Plata':'🥈','Oro':'🥇','Diamante':'💎'};
+// Ícono y color se asignan por POSICIÓN en la escalera de niveles del
+// negocio (no por nombre) — los niveles son configurables, no hay
+// "Plata/Oro/Diamante" fijos.
+const ICONOS_NIVEL = ['🥈','🥇','💎','⭐','🌟','👑'];
+const BADGES_NIVEL = ['b-silver','b-gold','b-blue','b-green'];
+const COLORES_NIVEL = ['#aaa','#d4a853','#6ab0e0','#5cd685'];
+function iconoPos(i){ return i>=0?ICONOS_NIVEL[i%ICONOS_NIVEL.length]:'🎫'; }
+function badgePos(i){ return i>=0?BADGES_NIVEL[i%BADGES_NIVEL.length]:'b-silver'; }
+function colorPos(i){ return i>=0?COLORES_NIVEL[i%COLORES_NIVEL.length]:'#666'; }
 
 function mostrarError(msg){
   document.getElementById('contenido').innerHTML = `<div class="msg-full">${msg}</div>`;
@@ -83,36 +85,52 @@ async function init(){
   const cliente = clienteRows && clienteRows[0];
   if(eCli || !cliente){ mostrarError('No encontramos tu perfil de cliente VIP. Consulta con el negocio.'); return; }
 
-  const [{data:historial},{data:alianzas}] = await Promise.all([
+  const [{data:historial},{data:alianzas},{data:niveles}] = await Promise.all([
     sb.rpc('get_club_vip_historial_publico',{p_barberia_id:BARBERIA_ID,p_cliente_id:CLIENTE_ID}),
-    sb.from('alianzas').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
+    sb.from('alianzas').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true),
+    sb.from('niveles_vip').select('*').eq('barberia_id',BARBERIA_ID).order('orden')
   ]);
 
-  render(cliente, historial||[], alianzas||[]);
+  render(cliente, historial||[], alianzas||[], niveles||[]);
 }
 
-function render(cliente, historial, alianzas){
+function render(cliente, historial, alianzas, niveles){
   const nivel = cliente.nivel || 'Sin nivel';
-  const nivelClass = 'nivel-'+nivel.replace(' ','');
   const totalV = cliente.total_visitas||0;
-  const meta = NIVEL_META[nivel];
-  const beneficio = NIVEL_BENEFICIO[nivel] || 'Sigue viniendo para desbloquear beneficios';
+  const idx = niveles.findIndex(nv=>nv.nombre===nivel);
+  const nivelActual = idx>=0?niveles[idx]:null;
+  const proximoNivel = niveles.find(nv=>nv.visitas_minimas>totalV);
+  const beneficio = nivelActual?.beneficio || 'Sigue viniendo para desbloquear beneficios';
 
   let progresoHtml = '';
-  if(meta){
-    const previo = nivel==='Sin nivel'?0:(nivel==='Plata'?5:10);
+  if(proximoNivel){
+    const previo = nivelActual?.visitas_minimas||0;
+    const meta = proximoNivel.visitas_minimas;
     const pct = Math.min(100, Math.round(((totalV-previo)/(meta-previo))*100));
     const faltan = Math.max(0, meta-totalV);
     progresoHtml = `<div class="progreso-wrap">
-      <div class="progreso-label">${faltan>0?`Te faltan ${faltan} visita${faltan===1?'':'s'} para el próximo nivel`:'¡Ya alcanzaste este nivel!'}</div>
+      <div class="progreso-label">${faltan>0?`Te faltan ${faltan} visita${faltan===1?'':'s'} para ${proximoNivel.nombre}`:'¡Ya alcanzaste este nivel!'}</div>
       <div class="progreso-bar"><div class="progreso-fill" style="width:${pct}%"></div></div>
     </div>`;
-  } else {
+  } else if(niveles.length){
     progresoHtml = `<div class="progreso-wrap"><div class="progreso-label">Alcanzaste el nivel máximo 🎉</div></div>`;
   }
 
-  const nivelNum = NIVEL_ORDEN[nivel]||0;
-  const alianzasVisibles = alianzas.filter(a=>(NIVEL_ORDEN[a.nivel_minimo]??0) <= nivelNum);
+  // nivel_minimo_id: null = sin restricción (visible a todos). Si apunta
+  // a un nivel que ya no existe (borrado), también se trata como sin
+  // restricción — nunca rompe, nunca oculta una alianza por accidente.
+  // nivel_sin_restriccion=true ("Todos", elegido a propósito) siempre
+  // visible. nivel_minimo_id=null SIN ese flag significa que el nivel
+  // asignado se borró — se oculta hasta que el dueño la reasigne, en
+  // vez de mostrarla de más por error (más seguro para beneficios premium).
+  const clienteOrden = nivelActual?.orden ?? 0;
+  const alianzasVisibles = alianzas.filter(a=>{
+    if(a.nivel_sin_restriccion) return true;
+    if(!a.nivel_minimo_id) return false;
+    const req = niveles.find(nv=>nv.id===a.nivel_minimo_id);
+    if(!req) return false;
+    return req.orden <= clienteOrden;
+  });
 
   const alianzasHtml = alianzasVisibles.length
     ? alianzasVisibles.map(a=>`
@@ -127,20 +145,24 @@ function render(cliente, historial, alianzas){
       </div>`).join('')
     : '<div class="empty">Todavía no hay alianzas disponibles para tu nivel.</div>';
 
-  const badgeClass = nivel==='Oro'?'b-gold':nivel==='Diamante'?'b-blue':'b-silver';
   const historialHtml = historial.length
-    ? historial.map(h=>`
-      <div class="hist-item">
-        <span><span class="badge ${h.nivel==='Oro'?'b-gold':h.nivel==='Diamante'?'b-blue':'b-silver'}">${NIVEL_ICONO[h.nivel]||'🏆'} ${h.nivel}</span></span>
+    ? historial.map(h=>{
+        // h.nivel es un snapshot de texto del momento en que se ganó —
+        // puede no matchear ningún nivel_vip actual si se renombró o
+        // borró después. Se muestra igual, con estilo neutro si no matchea.
+        const hIdx = niveles.findIndex(nv=>nv.nombre===h.nivel);
+        return `<div class="hist-item">
+        <span><span class="badge ${badgePos(hIdx)}">${hIdx>=0?iconoPos(hIdx):'🏆'} ${h.nivel}</span></span>
         <span class="hist-fecha">${h.fecha_ganado||'—'}</span>
-      </div>`).join('')
+      </div>`;
+      }).join('')
     : '<div class="empty">Todavía no subiste de nivel — ¡sigue viniendo!</div>';
 
   document.getElementById('contenido').innerHTML = `
     <div class="card hero">
-      <div class="hero-badge">${NIVEL_ICONO[nivel]||'🎫'}</div>
+      <div class="hero-badge">${iconoPos(idx)}</div>
       <div class="hero-nombre">${cliente.nombre}</div>
-      <div class="hero-nivel ${nivelClass}">${nivel}</div>
+      <div class="hero-nivel" style="color:${colorPos(idx)}">${nivel}</div>
       <div class="hero-beneficio">${beneficio}</div>
       ${progresoHtml}
     </div>

@@ -194,13 +194,18 @@ async function doReg(){
       {barberia_id:barb.id,dia_semana:5,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
       {barberia_id:barb.id,dia_semana:6,cerrado:false,hora_apertura:'09:00',hora_cierre:'14:00'}
     ]);
+    await sb.from('niveles_vip').insert([
+      {barberia_id:barb.id,orden:1,nombre:'Plata',visitas_minimas:5,beneficio:'10% descuento'},
+      {barberia_id:barb.id,orden:2,nombre:'Oro',visitas_minimas:10,beneficio:'Servicio gratis'},
+      {barberia_id:barb.id,orden:3,nombre:'Diamante',visitas_minimas:20,beneficio:'VIP total'}
+    ]);
     const plantillas=[
       {barberia_id:barb.id,evento:'Bienvenida',mensaje:'¡Hola {nombre}! 👋 Bienvenido a {negocio}. Reserva cuando quieras: {link}',activo:true},
       {barberia_id:barb.id,evento:'Confirmación reserva',mensaje:'✅ ¡Hola {nombre}! Tu reserva está confirmada.\n📅 {fecha} a las {hora}\n✂️ {servicio} con {profesional}\n📍 {direccion}',activo:true},
       {barberia_id:barb.id,evento:'Cumpleaños',mensaje:'🎂 ¡Feliz cumpleaños {nombre}! Te regalamos un 15% de descuento en tu próxima visita.',activo:true},
-      {barberia_id:barb.id,evento:'Club Plata',mensaje:'🥈 ¡Felicitaciones {nombre}! Alcanzaste nivel Plata. Beneficio: 10% de descuento. Mira tu Club VIP acá: {link_club}',activo:true},
-      {barberia_id:barb.id,evento:'Club Oro',mensaje:'🥇 ¡{nombre}, llegaste a Oro! Tienes un servicio gratis en tu próxima visita. Mira tu Club VIP acá: {link_club}',activo:true},
-      {barberia_id:barb.id,evento:'Club Diamante',mensaje:'💎 ¡DIAMANTE! {nombre}, eres uno de nuestros clientes más especiales. ¡Beneficio VIP activado! Mira tu Club VIP acá: {link_club}',activo:true},
+      {barberia_id:barb.id,evento:'Club nivel 1',mensaje:'🥈 ¡Felicitaciones {nombre}! Alcanzaste nivel Plata. Beneficio: 10% de descuento. Mira tu Club VIP acá: {link_club}',activo:true},
+      {barberia_id:barb.id,evento:'Club nivel 2',mensaje:'🥇 ¡{nombre}, llegaste a Oro! Tienes un servicio gratis en tu próxima visita. Mira tu Club VIP acá: {link_club}',activo:true},
+      {barberia_id:barb.id,evento:'Club nivel 3',mensaje:'💎 ¡DIAMANTE! {nombre}, eres uno de nuestros clientes más especiales. ¡Beneficio VIP activado! Mira tu Club VIP acá: {link_club}',activo:true},
       {barberia_id:barb.id,evento:'Recuperar inactivo',mensaje:'👋 ¡Hola {nombre}! Te echamos de menos. Hace {dias} días que no te vemos. ¿Reservamos? {link}',activo:true},
       {barberia_id:barb.id,evento:'Pedir reseña',mensaje:'⭐ ¡Gracias por visitarnos {nombre}! ¿Nos dejas una reseña? {reviews}',activo:true}
     ];

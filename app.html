@@ -278,7 +278,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="mc"><div class="mc-label">Clientes totales</div><div class="mc-val" id="d-clientes">—</div><div class="mc-sub" id="d-clientes-sub">Base activa</div></div>
     <div class="mc"><div class="mc-label" id="d-citas-label">Citas</div><div class="mc-val" id="d-citas">—</div><div class="mc-sub" id="d-citas-sub">—</div></div>
     <div class="mc"><div class="mc-label" id="d-ventas-label">Ventas</div><div class="mc-val" id="d-ventas">—</div><div class="mc-sub" id="d-ventas-neto">—</div></div>
-    <div class="mc vip-only"><div class="mc-label">Clientes VIP</div><div class="mc-val gold" id="d-vip">—</div><div class="mc-sub">Plata · Oro · Diamante</div></div>
+    <div class="mc vip-only"><div class="mc-label">Clientes VIP</div><div class="mc-val gold" id="d-vip">—</div><div class="mc-sub" id="d-vip-sub">—</div></div>
   </div>
   <div class="g4">
     <div class="mc"><div class="mc-label">Inactivos +30d</div><div class="mc-val down" id="d-inactivos">—</div><div class="mc-sub">Sin citar</div></div>
@@ -367,19 +367,11 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab" onclick="switchTab(this,'tv-hist')">Historial</div>
   </div>
   <div id="tv-estado">
-    <div class="g3">
-      <div class="mc"><div class="mc-label">🥈 Plata (5+)</div><div class="mc-val" id="vip-plata">0</div></div>
-      <div class="mc"><div class="mc-label">🥇 Oro (10+)</div><div class="mc-val gold" id="vip-oro">0</div></div>
-      <div class="mc"><div class="mc-label">💎 Diamante (20+)</div><div class="mc-val" id="vip-diam">0</div></div>
-    </div>
+    <div class="g3" id="vip-stat-cards"></div>
     <div class="card"><div id="t-vip-cl"></div></div>
   </div>
   <div id="tv-niveles" style="display:none">
-    <div class="g3">
-      <div class="card"><div style="font-size:28px;margin-bottom:8px">🥈</div><div style="font-weight:600;color:#aaa;margin-bottom:4px">Plata</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">5 citas</div><span class="badge b-silver">10% descuento</span></div>
-      <div class="card" style="border-color:#d4a853"><div style="font-size:28px;margin-bottom:8px">🥇</div><div style="font-weight:600;color:#d4a853;margin-bottom:4px">Oro</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">10 citas</div><span class="badge b-gold">Servicio gratis</span></div>
-      <div class="card"><div style="font-size:28px;margin-bottom:8px">💎</div><div style="font-weight:600;color:#6ab0e0;margin-bottom:4px">Diamante</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">20 citas</div><span class="badge b-blue">VIP total</span></div>
-    </div>
+    <div class="g3" id="vip-nivel-cards"></div>
     <div class="card">
       <div class="card-hdr"><span class="card-title">Beneficios especiales automáticos</span></div>
       <table><thead><tr><th>Evento</th><th>Beneficio</th><th>Vigencia</th></tr></thead>
@@ -483,6 +475,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
     <div class="tab" onclick="switchTab(this,'cfg-blq')">Bloqueos</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-alz')">Alianzas</div>
+    <div class="tab vip-only" onclick="switchTab(this,'cfg-vip')">Club VIP</div>
     <div class="tab" onclick="switchTab(this,'cfg-int')" style="display:none">Integraciones</div>
   </div>
   <div id="cfg-neg">
@@ -559,6 +552,12 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-alianza')">+ Alianza</button></div>
     <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Beneficio</th><th>Nivel mínimo</th><th>Activa</th><th></th></tr></thead>
     <tbody id="t-alianzas"></tbody></table></div></div>
+  </div>
+  <div id="cfg-vip" style="display:none">
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Configurá los niveles de tu Club VIP — cuántas visitas hacen falta para cada uno, cómo se llaman, y su beneficio. Necesitás al menos un nivel siempre.</p>
+    <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-nivel')">+ Nivel</button></div>
+    <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Visitas mínimas</th><th>Beneficio</th><th></th></tr></thead>
+    <tbody id="t-niveles-vip"></tbody></table></div></div>
   </div>
   <div id="cfg-int" style="display:none">
     <div class="card">
@@ -863,6 +862,20 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
 </div>
 
+<!-- Nivel VIP -->
+<div class="overlay" id="m-nivel">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title" id="m-niv-title">Agregar nivel</span><button class="xbtn" onclick="closeM('m-nivel')">×</button></div>
+    <input type="hidden" id="niv-id">
+    <div class="fr"><div class="fg"><label>Nombre *</label><input id="niv-nombre" type="text" placeholder="Plata"></div><div class="fg"><label>Visitas mínimas *</label><input id="niv-visitas" type="number" min="1" value="5"></div></div>
+    <div class="fg"><label>Beneficio</label><input id="niv-beneficio" type="text" placeholder="10% de descuento"></div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary" id="btn-guardar-niv" onclick="guardarNivelVip()">Guardar</button>
+      <button class="btn btn-ghost" onclick="closeM('m-nivel')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Bloqueo de horario -->
 <div class="overlay" id="m-bloqueo">
   <div class="modal">
@@ -907,7 +920,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
         <div style="font-size:10px;color:var(--text3);margin-top:4px">JPG, PNG — máx 2MB</div>
       </div>
     </div>
-    <div class="fr"><div class="fg"><label>Nombre del negocio aliado *</label><input id="alz-nombre" type="text" placeholder="Gimnasio Fit"></div><div class="fg"><label>Nivel mínimo</label><select id="alz-nivel"><option value="Todos">Todos</option><option value="Plata">Plata</option><option value="Oro">Oro</option><option value="Diamante">Diamante</option></select></div></div>
+    <div class="fr"><div class="fg"><label>Nombre del negocio aliado *</label><input id="alz-nombre" type="text" placeholder="Gimnasio Fit"></div><div class="fg"><label>Nivel mínimo</label><select id="alz-nivel"><option value="">Todos</option></select></div></div>
     <div class="fg"><label>Beneficio *</label><input id="alz-beneficio" type="text" placeholder="15% de descuento presentando tu carnet VIP"></div>
     <div class="fg"><label>Descripción</label><input id="alz-desc" type="text" placeholder="Detalle del convenio (opcional)"></div>
     <div class="fg"><label>Link (web/WhatsApp del aliado)</label><input id="alz-link" type="url" placeholder="https://..."></div>
@@ -927,7 +940,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], horario:[], bloqueos:[] };
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], horario:[], bloqueos:[], nivelesVip:[] };
 const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
@@ -986,7 +999,7 @@ async function loadAll(){
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
   const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
-  if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas());
+  if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadNivelesVip());
   await Promise.all(cargas);
 }
 
@@ -999,6 +1012,7 @@ async function loadInventario(){ const {data}=await sb.from('inventario').select
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
+async function loadNivelesVip(){ const {data}=await sb.from('niveles_vip').select('*').eq('barberia_id',S.barberia.id).order('orden'); S.nivelesVip=data||[]; }
 async function loadHorarioNegocio(){
   const {data}=await sb.from('horario_negocio').select('*').eq('barberia_id',S.barberia.id);
   const rows=data||[];
@@ -1106,8 +1120,21 @@ function getCitas(cid){ return S.visitas.filter(v=>v.cliente_id===cid).length; }
 function getUltCita(cid){ const vs=S.visitas.filter(v=>v.cliente_id===cid).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)); return vs[0]?.fecha||null; }
 function diasDesde(f){ if(!f)return 9999; return Math.floor((Date.now()-new Date(f))/86400000); }
 function getEstado(cid){ const d=diasDesde(getUltCita(cid)); const vis=getCitas(cid); if(vis===0)return 'Inactivo'; if(d<30)return 'Activo'; if(d<60)return 'En riesgo'; return 'Inactivo'; }
-function getNivel(n){ if(n>=20)return'Diamante'; if(n>=10)return'Oro'; if(n>=5)return'Plata'; return'Sin nivel'; }
-function badgeNivel(nv){ const m={Diamante:'b-blue',Oro:'b-gold',Plata:'b-silver','Sin nivel':'b-silver'}; return`<span class="badge ${m[nv]||'b-silver'}">${nv}</span>`; }
+const PALETA_NIVELES=['b-silver','b-gold','b-blue','b-green'];
+const ICONOS_NIVEL=['🥈','🥇','💎','⭐','🌟','👑'];
+function ICONO_NIVEL(i){ return ICONOS_NIVEL[i%ICONOS_NIVEL.length]; }
+function nivelesOrdenados(){ return [...S.nivelesVip].sort((a,b)=>a.orden-b.orden); }
+function getNivel(n){
+  const niveles=nivelesOrdenados();
+  for(let i=niveles.length-1;i>=0;i--){ if(n>=niveles[i].visitas_minimas) return niveles[i].nombre; }
+  return 'Sin nivel';
+}
+function badgeNivel(nv){
+  if(nv==='Sin nivel')return`<span class="badge b-silver">Sin nivel</span>`;
+  const idx=nivelesOrdenados().findIndex(x=>x.nombre===nv);
+  const cls=idx>=0?PALETA_NIVELES[idx%PALETA_NIVELES.length]:'b-silver';
+  return`<span class="badge ${cls}">${nv}</span>`;
+}
 function abrirWA(wsp,msg){ const n=wsp.replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
 function linkClub(clienteId){ return S.barberia?.id&&clienteId?(location.origin+'/club.html?id='+S.barberia.id+'&cliente='+clienteId):''; }
 function buildMsg(evento, vars={}){
@@ -1175,7 +1202,7 @@ function initModal(id){
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
-  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';document.getElementById('alz-nivel').value='Todos';document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
+  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
     document.getElementById('blq-tipo').value='puntual';
@@ -1184,6 +1211,13 @@ function initModal(id){
     document.getElementById('blq-hora-fin').value='';
     document.getElementById('blq-motivo').value='';
     onChangeTipoBloqueo();
+  }
+  if(id==='m-nivel'){
+    document.getElementById('niv-id').value='';
+    document.getElementById('m-niv-title').textContent='Agregar nivel';
+    document.getElementById('niv-nombre').value='';
+    document.getElementById('niv-visitas').value=5;
+    document.getElementById('niv-beneficio').value='';
   }
 }
 function sel(id,opts,addEmpty=false){
@@ -1255,12 +1289,13 @@ async function guardarCita(){
     const antes=getNivel(totalV-1); const ahora=getNivel(totalV);
     if(antes!==ahora&&ahora!=='Sin nivel'){
       const cl=S.clientes.find(c=>c.id===cid);
-      const ben=ahora==='Plata'?'10% descuento':ahora==='Oro'?'Servicio gratis':'VIP total';
+      const nivelObj=nivelesOrdenados().find(x=>x.nombre===ahora);
+      const ben=nivelObj?.beneficio||'';
       const expires=new Date(); expires.setDate(expires.getDate()+30);
       await sb.from('vip_historial').insert({barberia_id:S.barberia.id,cliente_id:cid,nivel:ahora,beneficio:ben,fecha_ganado:fecha,fecha_expira:expires.toISOString().split('T')[0]});
       await loadVIP();
       notify('🏆 '+cl?.nombre+' alcanzó nivel '+ahora+'!','warn');
-      if(cl){const msg=buildMsg('Club '+ahora,{nombre:cl.nombre,link_club:linkClub(cl.id)});if(msg)abrirWA(cl.whatsapp,msg);}
+      if(cl&&nivelObj){const msg=buildMsg('Club nivel '+nivelObj.orden,{nombre:cl.nombre,link_club:linkClub(cl.id)});if(msg)abrirWA(cl.whatsapp,msg);}
     }
   }
   closeM('m-cita');notify(id?'Cita actualizada ✓':'Cita registrada ✓');
@@ -1520,7 +1555,7 @@ function editarAlianza(id){
   document.getElementById('m-alz-title').textContent='Editar alianza';
   document.getElementById('alz-id').value=a.id;
   document.getElementById('alz-nombre').value=a.nombre||'';
-  document.getElementById('alz-nivel').value=a.nivel_minimo||'Todos';
+  document.getElementById('alz-nivel').value=a.nivel_minimo_id||'';
   document.getElementById('alz-beneficio').value=a.beneficio||'';
   document.getElementById('alz-desc').value=a.descripcion||'';
   document.getElementById('alz-link').value=a.link||'';
@@ -1552,7 +1587,8 @@ async function guardarAlianza(){
   const id=document.getElementById('alz-id').value;
   const payload={
     barberia_id:S.barberia.id,nombre:n,beneficio:ben,
-    nivel_minimo:document.getElementById('alz-nivel').value||'Todos',
+    nivel_minimo_id:document.getElementById('alz-nivel').value||null,
+    nivel_sin_restriccion:!document.getElementById('alz-nivel').value,
     descripcion:document.getElementById('alz-desc').value.trim()||null,
     link:document.getElementById('alz-link').value.trim()||null,
     ...(logo_url&&{logo_url})
@@ -1624,6 +1660,81 @@ function renderBloqueos(){
       <td><button class="btn btn-danger btn-sm" onclick="eliminar('bloqueos_profesional','${b.id}',loadBloqueos,renderConfig)">×</button></td>
     </tr>`;
   }).join('')||'<tr><td colspan="6" class="empty">Sin bloqueos configurados</td></tr>';
+}
+
+function editarNivelVip(id){
+  const nv=S.nivelesVip.find(x=>x.id===id);if(!nv)return;
+  openM('m-nivel');
+  document.getElementById('m-niv-title').textContent='Editar nivel';
+  document.getElementById('niv-id').value=nv.id;
+  document.getElementById('niv-nombre').value=nv.nombre||'';
+  document.getElementById('niv-visitas').value=nv.visitas_minimas||1;
+  document.getElementById('niv-beneficio').value=nv.beneficio||'';
+}
+
+async function guardarNivelVip(){
+  const nombre=document.getElementById('niv-nombre').value.trim();
+  const visitas=parseInt(document.getElementById('niv-visitas').value);
+  if(!nombre||!visitas||visitas<1){notify('Nombre y visitas mínimas (mayor a 0) son obligatorios','warn');return;}
+  const beneficio=document.getElementById('niv-beneficio').value.trim()||null;
+  const id=document.getElementById('niv-id').value;
+  const btn=document.getElementById('btn-guardar-niv');
+  btn.disabled=true;btn.textContent='Guardando...';
+  let error;
+  if(id){
+    ({error}=await sb.from('niveles_vip').update({nombre,visitas_minimas:visitas,beneficio}).eq('id',id));
+  } else {
+    const maxOrden=S.nivelesVip.reduce((m,nv)=>Math.max(m,nv.orden),0);
+    const nuevoOrden=maxOrden+1;
+    ({error}=await sb.from('niveles_vip').insert({barberia_id:S.barberia.id,orden:nuevoOrden,nombre,visitas_minimas:visitas,beneficio}));
+    if(!error){
+      await sb.from('plantillas_mensajes').insert({barberia_id:S.barberia.id,evento:'Club nivel '+nuevoOrden,mensaje:`¡Felicitaciones {nombre}! Alcanzaste nivel ${nombre}.${beneficio?(' Beneficio: '+beneficio+'.'):''} Mira tu Club VIP acá: {link_club}`,activo:true});
+      await loadPlantillas();
+    }
+  }
+  if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
+  await loadNivelesVip();closeM('m-nivel');notify('Nivel guardado ✓');renderConfig();renderVIP();
+  btn.disabled=false;btn.textContent='Guardar';
+}
+
+async function eliminarNivelVip(id){
+  if(S.nivelesVip.length<=1){notify('No podés borrar el último nivel — tiene que quedar al menos uno configurado','warn');return;}
+  const nv=S.nivelesVip.find(x=>x.id===id);if(!nv)return;
+  if(!confirm('¿Eliminar el nivel "'+nv.nombre+'"? Los clientes que calificaban para este nivel van a recalcular al nivel inmediato inferior.'))return;
+  const {error}=await sb.from('niveles_vip').delete().eq('id',id);
+  if(error){notify(error.message,'err');return;}
+  await sb.from('plantillas_mensajes').update({activo:false}).eq('barberia_id',S.barberia.id).eq('evento','Club nivel '+nv.orden);
+  await Promise.all([loadNivelesVip(),loadAlianzas(),loadPlantillas()]);
+  notify('Nivel eliminado ✓');renderConfig();renderVIP();
+}
+
+async function moverNivelVip(id,dir){
+  const niveles=nivelesOrdenados();
+  const idx=niveles.findIndex(x=>x.id===id);
+  if(idx<0)return;
+  const swapIdx=dir==='up'?idx-1:idx+1;
+  if(swapIdx<0||swapIdx>=niveles.length)return;
+  const a=niveles[idx],b=niveles[swapIdx];
+  const {error:e1}=await sb.from('niveles_vip').update({orden:-1}).eq('id',a.id);
+  const {error:e2}=await sb.from('niveles_vip').update({orden:a.orden}).eq('id',b.id);
+  const {error:e3}=await sb.from('niveles_vip').update({orden:b.orden}).eq('id',a.id);
+  if(e1||e2||e3){notify((e1||e2||e3).message,'err');}
+  await loadNivelesVip();renderConfig();renderVIP();
+}
+
+function renderNivelesVipConfig(){
+  const cont=document.getElementById('t-niveles-vip');
+  if(!cont)return;
+  const niveles=nivelesOrdenados();
+  cont.innerHTML=niveles.map((nv,i)=>`<tr>
+    <td>${ICONO_NIVEL(i)}</td><td>${nv.nombre}</td><td>${nv.visitas_minimas}</td><td>${nv.beneficio||'—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" onclick="moverNivelVip('${nv.id}','up')" ${i===0?'disabled':''} title="Subir">↑</button>
+      <button class="btn btn-ghost btn-sm" onclick="moverNivelVip('${nv.id}','down')" ${i===niveles.length-1?'disabled':''} title="Bajar">↓</button>
+      <button class="btn btn-ghost btn-sm" onclick="editarNivelVip('${nv.id}')" title="Editar">✏️</button>
+      <button class="btn btn-danger btn-sm" onclick="eliminarNivelVip('${nv.id}')" title="Eliminar">×</button>
+    </td>
+  </tr>`).join('')||'<tr><td colspan="5" class="empty">Sin niveles configurados</td></tr>';
 }
 
 async function guardarConfig(){
@@ -1930,6 +2041,7 @@ function renderDashboard(){
   document.getElementById('d-ventas').textContent=fmt(ventas+iva);
   document.getElementById('d-ventas-neto').innerHTML='Neto: '+fmt(ventas)+' · '+deltaHtml(ventas,ventasPrev,range.nombrePrev);
   document.getElementById('d-vip').textContent=fmtN(vips);
+  document.getElementById('d-vip-sub').textContent=nivelesOrdenados().map(nv=>nv.nombre).join(' · ')||'Sin niveles configurados';
   document.getElementById('d-inactivos').textContent=fmtN(inact);
   document.getElementById('d-cumples').textContent=fmtN(cumples);
   document.getElementById('d-ticket').textContent=fmt(ticket);
@@ -1966,14 +2078,12 @@ function renderDashboard(){
   }).join('')||'<div class="empty" style="padding:16px">Sin citas aún.</div>';
 
   // VIP dist
-  const np=S.clientes.filter(c=>getNivel(getCitas(c.id))==='Plata').length;
-  const no=S.clientes.filter(c=>getNivel(getCitas(c.id))==='Oro').length;
-  const nd=S.clientes.filter(c=>getNivel(getCitas(c.id))==='Diamante').length;
-  document.getElementById('d-vip-dist').innerHTML=`
-    <div style="padding:7px 0;border-bottom:0.5px solid #1a1a1a;display:flex;justify-content:space-between;font-size:12px"><span>🥈 Plata</span><span class="badge b-silver">${np}</span></div>
-    <div style="padding:7px 0;border-bottom:0.5px solid #1a1a1a;display:flex;justify-content:space-between;font-size:12px"><span>🥇 Oro</span><span class="badge b-gold">${no}</span></div>
-    <div style="padding:7px 0;border-bottom:0.5px solid #1a1a1a;display:flex;justify-content:space-between;font-size:12px"><span>💎 Diamante</span><span class="badge b-blue">${nd}</span></div>
-    <div style="padding:7px 0;display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--text3)">Sin nivel</span><span style="color:var(--text3)">${S.clientes.length-np-no-nd}</span></div>`;
+  const nivelesD=nivelesOrdenados();
+  const conteosNivel=nivelesD.map(nv=>S.clientes.filter(c=>getNivel(getCitas(c.id))===nv.nombre).length);
+  const sinNivelCount=S.clientes.length-conteosNivel.reduce((a,b)=>a+b,0);
+  document.getElementById('d-vip-dist').innerHTML=
+    nivelesD.map((nv,i)=>`<div style="padding:7px 0;border-bottom:0.5px solid #1a1a1a;display:flex;justify-content:space-between;font-size:12px"><span>${ICONO_NIVEL(i)} ${nv.nombre}</span><span class="badge ${PALETA_NIVELES[i%PALETA_NIVELES.length]}">${conteosNivel[i]}</span></div>`).join('')
+    +`<div style="padding:7px 0;display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--text3)">Sin nivel</span><span style="color:var(--text3)">${sinNivelCount}</span></div>`;
 
   renderChartIngresos(DASH_PERIODO);
   renderChartEstados(range);
@@ -2102,17 +2212,30 @@ function enviarConfirm(id){
   if(msg)abrirWA(r.whatsapp_cliente,msg);
 }
 
+function proximaMetaNivel(v){
+  const niveles=nivelesOrdenados();
+  if(!niveles.length)return null;
+  for(const nv of niveles){ if(v<nv.visitas_minimas)return nv.visitas_minimas; }
+  return niveles[niveles.length-1].visitas_minimas;
+}
 function renderVIP(){
   const map=c=>({...c,vis:getCitas(c.id),nv:getNivel(getCitas(c.id))});
   const cls=S.clientes.map(map).sort((a,b)=>b.vis-a.vis);
-  document.getElementById('vip-plata').textContent=cls.filter(c=>c.nv==='Plata').length;
-  document.getElementById('vip-oro').textContent=cls.filter(c=>c.nv==='Oro').length;
-  document.getElementById('vip-diam').textContent=cls.filter(c=>c.nv==='Diamante').length;
-  const next=v=>v<5?5:v<10?10:v<20?20:20;
+  const niveles=nivelesOrdenados();
+  document.getElementById('vip-stat-cards').innerHTML=niveles.length?niveles.map((nv,i)=>
+    `<div class="mc"><div class="mc-label">${ICONO_NIVEL(i)} ${nv.nombre} (${nv.visitas_minimas}+)</div><div class="mc-val${i===1?' gold':''}">${cls.filter(c=>c.nv===nv.nombre).length}</div></div>`
+  ).join(''):'<div class="empty">Sin niveles configurados. Configuralos en Config → Club VIP.</div>';
+  document.getElementById('vip-nivel-cards').innerHTML=niveles.length?niveles.map((nv,i)=>
+    `<div class="card"><div style="font-size:28px;margin-bottom:8px">${ICONO_NIVEL(i)}</div><div style="font-weight:600;margin-bottom:4px">${nv.nombre}</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">${nv.visitas_minimas} citas</div><span class="badge ${PALETA_NIVELES[i%PALETA_NIVELES.length]}">${nv.beneficio||'—'}</span></div>`
+  ).join(''):'<div class="empty">Sin niveles configurados. Configuralos en Config → Club VIP.</div>';
   document.getElementById('t-vip-cl').innerHTML=`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Citas</th><th>Nivel</th><th>Progreso</th><th>WhatsApp</th></tr></thead><tbody>
-    ${cls.map(c=>`<tr><td><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong></td><td>${c.vis}</td><td>${badgeNivel(c.nv)}</td>
-    <td style="min-width:120px"><div class="bar-h"><div class="bar-fill" style="width:${Math.min(100,(c.vis/next(c.vis)*100)).toFixed(0)}%"></div></div><span style="font-size:10px;color:var(--text3)">${c.vis}/${next(c.vis)}</span></td>
-    <td><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')">${c.whatsapp||'—'}</a></td></tr>`).join('')}
+    ${cls.map(c=>{
+      const meta=proximaMetaNivel(c.vis);
+      const pct=meta?Math.min(100,(c.vis/meta*100)):0;
+      return`<tr><td><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong></td><td>${c.vis}</td><td>${badgeNivel(c.nv)}</td>
+      <td style="min-width:120px"><div class="bar-h"><div class="bar-fill" style="width:${pct.toFixed(0)}%"></div></div><span style="font-size:10px;color:var(--text3)">${c.vis}/${meta||'—'}</span></td>
+      <td><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')">${c.whatsapp||'—'}</a></td></tr>`;
+    }).join('')}
   </tbody></table></div>`;
   const tb=document.getElementById('t-vip-hist');
   document.getElementById('e-vip-hist').style.display=S.vipHist.length?'none':'';
@@ -2159,7 +2282,8 @@ function renderMensajes(){
     const vipPend=S.vipHist.filter(h=>!h.msg_enviado);
     document.getElementById('l-vip-msg').innerHTML=vipPend.length?vipPend.map(h=>{
       const cl=S.clientes.find(c=>c.id===h.cliente_id);
-      const msg=cl?buildMsg('Club '+h.nivel,{nombre:cl.nombre,link_club:linkClub(cl.id)}):null;
+      const nivelObjH=nivelesOrdenados().find(x=>x.nombre===h.nivel);
+      const msg=(cl&&nivelObjH)?buildMsg('Club nivel '+nivelObjH.orden,{nombre:cl.nombre,link_club:linkClub(cl.id)}):null;
       return`<div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div><strong style="color:var(--text)">${h.clientes?.nombre||'—'}</strong> ${badgeNivel(h.nivel)} <span style="font-size:11px;color:var(--text3)">desde ${h.fecha_ganado}</span></div>
         ${cl&&msg?`<button class="btn-wa" onclick="marcarVIPMsg('${h.id}');abrirWA('${cl.whatsapp}',\`${msg.replace(/`/g,"'")}\`)">📱 Enviar beneficio</button>`:''}
@@ -2297,6 +2421,7 @@ function renderConfig(){
   }
   renderHorarioNegocio();
   renderBloqueos();
+  renderNivelesVipConfig();
   document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>{
     const avatar=s.foto_url
       ?`<img src="${s.foto_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
@@ -2313,8 +2438,13 @@ function renderConfig(){
       const avatar=a.logo_url
         ?`<img src="${a.logo_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
         :`<div style="width:32px;height:32px;border-radius:7px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:14px">🤝</div>`;
+      const nivelCelda=a.nivel_sin_restriccion
+        ?'Todos'
+        :(a.nivel_minimo_id
+          ?(S.nivelesVip.find(nv=>nv.id===a.nivel_minimo_id)?.nombre||'Todos')
+          :'<span style="color:#e0a030">⚠️ Sin nivel asignado — no visible para clientes, revisala</span>');
       return `<tr>
-      <td>${avatar}</td><td>${a.nombre}</td><td>${a.beneficio}</td><td>${a.nivel_minimo}</td>
+      <td>${avatar}</td><td>${a.nombre}</td><td>${a.beneficio}</td><td>${nivelCelda}</td>
       <td>${a.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="editarAlianza('${a.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('alianzas','${a.id}',loadAlianzas,renderConfig)">×</button></td>
     </tr>`;
