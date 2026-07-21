@@ -855,6 +855,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="sv-nombre" type="text" placeholder="Corte Clásico"></div><div class="fg"><label>Precio ($)</label><input id="sv-precio" type="number" value="0"></div></div>
     <div class="fr"><div class="fg"><label>Duración (min)</label><input id="sv-dur" type="number" value="30"></div><div class="fg"><label>Comisión %</label><input id="sv-com" type="number" value="50"></div></div>
+    <div class="fg"><label>Descripción</label><textarea id="sv-desc" rows="2" placeholder="Detalle del servicio para que el cliente sepa en qué consiste (opcional)"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarServicio()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-servicio')">Cancelar</button>
@@ -1173,7 +1174,7 @@ function initModal(id){
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
-  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
+  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
   if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';document.getElementById('alz-nivel').value='Todos';document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
@@ -1396,6 +1397,7 @@ function editarServicio(id){
   document.getElementById('sv-precio').value=s.precio||0;
   document.getElementById('sv-dur').value=s.duracion_min||30;
   document.getElementById('sv-com').value=s.comision_pct||50;
+  document.getElementById('sv-desc').value=s.descripcion||'';
   const prev=document.getElementById('sv-foto-preview');
   if(s.foto_url){
     prev.innerHTML=`<img src="${s.foto_url}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
@@ -1487,6 +1489,7 @@ async function guardarServicio(){
     precio:parseFloat(document.getElementById('sv-precio').value)||0,
     duracion_min:parseInt(document.getElementById('sv-dur').value)||30,
     comision_pct:parseFloat(document.getElementById('sv-com').value)||50,
+    descripcion:document.getElementById('sv-desc').value.trim()||null,
     ...(foto_url&&{foto_url})
   };
   let error;
@@ -2398,7 +2401,11 @@ function renderAgenda(){
 
   const head=`<div class="cal-head"><div class="cal-hcell cal-gutter-head"></div>${cols.map(c=>{
     const cnt=conHora.filter(x=>(x.barbero_nombre||'Sin asignar')===c).length+sinHora.filter(x=>(x.barbero_nombre||'Sin asignar')===c).length;
-    return `<div class="cal-hcell">👤 ${c}<span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">${cnt}</span></div>`;
+    const barb=S.barberos.find(b=>b.nombre===c);
+    const avatar=barb?.foto_url
+      ?`<img src="${barb.foto_url}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+      :'👤';
+    return `<div class="cal-hcell">${avatar} ${c}<span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">${cnt}</span></div>`;
   }).join('')}</div>`;
 
   const gutter=`<div class="cal-gutter" style="height:${gridH}px">${horas.map(hr=>`<div class="cal-hourlabel" style="top:${(hr-AG_START_HOUR)*60*AG_PX_MIN}px">${String(hr).padStart(2,'0')}:00</div>`).join('')}</div>`;
