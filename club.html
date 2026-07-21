@@ -30,10 +30,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .alianza-beneficio{font-size:12px;color:#7c6af7;margin-top:2px}
 .alianza-desc{font-size:11px;color:#555;margin-top:2px}
 .alianza-link{font-size:11px;color:#5b8def;text-decoration:none}
-.hist-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
+.hist-item{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 8px;padding:10px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
 .hist-item:last-child{border-bottom:none}
 .hist-nivel{font-weight:600}
-.hist-fecha{color:#555}
+.hist-fecha{color:#555;white-space:nowrap}
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
 .b-silver{background:#2a2a2a;color:#ccc}
 .b-gold{background:#3a2f10;color:#d4a853}
@@ -41,6 +41,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .b-green{background:#0f2a1a;color:#5cd685}
 .empty{text-align:center;color:#444;font-size:12px;padding:16px 0}
 .msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+@media(max-width:360px){
+  .container{padding:0 12px 32px}
+  .card{padding:16px}
+  .hero{padding:24px 16px}
+  .alianza-item{gap:10px}
+  .alianza-logo{width:38px;height:38px}
+}
 </style>
 </head>
 <body>
@@ -67,6 +74,13 @@ const BADGES_NIVEL = ['b-silver','b-gold','b-blue','b-green'];
 const COLORES_NIVEL = ['#aaa','#d4a853','#6ab0e0','#5cd685'];
 function iconoPos(i){ return i>=0?ICONOS_NIVEL[i%ICONOS_NIVEL.length]:'🎫'; }
 function badgePos(i){ return i>=0?BADGES_NIVEL[i%BADGES_NIVEL.length]:'b-silver'; }
+const MESES_CORTOS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function fmtFechaCorta(f){
+  if(!f)return'—';
+  const d=new Date(f);
+  if(isNaN(d))return f;
+  return d.getUTCDate()+' '+MESES_CORTOS[d.getUTCMonth()]+' '+d.getUTCFullYear();
+}
 function colorPos(i){ return i>=0?COLORES_NIVEL[i%COLORES_NIVEL.length]:'#666'; }
 
 function mostrarError(msg){
@@ -153,7 +167,7 @@ function render(cliente, historial, alianzas, niveles){
         const hIdx = niveles.findIndex(nv=>nv.nombre===h.nivel);
         return `<div class="hist-item">
         <span><span class="badge ${badgePos(hIdx)}">${hIdx>=0?iconoPos(hIdx):'🏆'} ${h.nivel}</span></span>
-        <span class="hist-fecha">${h.fecha_ganado||'—'}</span>
+        <span class="hist-fecha">${fmtFechaCorta(h.fecha_ganado)}</span>
       </div>`;
       }).join('')
     : '<div class="empty">Todavía no subiste de nivel — ¡sigue viniendo!</div>';
