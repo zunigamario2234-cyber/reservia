@@ -190,13 +190,48 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const params = new URLSearchParams(window.location.search);
 const BARBERIA_ID = params.get('barberia') || params.get('id');
 
-let B = { barberia:null, servicios:[], profesionals:[], reservasOcupadas:[] };
+let B = { barberia:null, servicios:[], profesionals:[], reservasOcupadas:[], horario:{}, bloqueos:[] };
 let SEL = { servicio:null, profesional:null, fecha:null, hora:null };
 let calMes = new Date();
 let ULTIMO_NOMBRE = '';
 let SALTAR_PROFESIONAL = false;
 
 const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
+
+function timeToMin(t){ if(!t)return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
+function minToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+
+// Slots de 30 min para un día de la semana según horario_negocio. Si el
+// negocio no configuró ese día (tabla vacía o falta esa fila puntual), se
+// usa HORARIOS_BASE como antes — para no dejar sin horarios a negocios que
+// todavía no configuraron su horario.
+function slotsParaDia(diaSemana){
+  const cfg = B.horario[diaSemana];
+  if(!cfg) return HORARIOS_BASE.slice();
+  if(cfg.cerrado) return [];
+  const ini=timeToMin(cfg.hora_apertura), fin=timeToMin(cfg.hora_cierre);
+  if(ini==null||fin==null) return [];
+  const out=[];
+  for(let m=ini; m<fin; m+=30) out.push(minToTime(m));
+  return out;
+}
+
+// ¿Este bloqueo cubre el slot "hora" (HH:MM) de esa fecha/día de semana?
+function bloqueoCubreSlot(b, hora, fecha, diaSemana){
+  const hMin=timeToMin(hora);
+  if(b.tipo==='dia_completo') return b.fecha===fecha;
+  if(b.tipo==='puntual'){
+    if(b.fecha!==fecha) return false;
+    const ini=timeToMin(b.hora_inicio), fin=timeToMin(b.hora_fin);
+    return ini!=null && fin!=null && hMin>=ini && hMin<fin;
+  }
+  if(b.tipo==='recurrente'){
+    if(b.dia_semana!==diaSemana) return false;
+    const ini=timeToMin(b.hora_inicio), fin=timeToMin(b.hora_fin);
+    return ini!=null && fin!=null && hMin>=ini && hMin<fin;
+  }
+  return false;
+}
 
 // Arma/compara fechas solo con componentes locales (año/mes/día) — nunca vía
 // toISOString() ni new Date("YYYY-MM-DD"), que se interpretan como UTC y
@@ -212,11 +247,15 @@ async function init(){
   document.getElementById('h-nombre').textContent = barb.nombre;
   document.getElementById('h-dir').textContent = barb.direccion || '';
   document.title = 'Reservar — ' + barb.nombre;
-  const [{data:sv},{data:ba}] = await Promise.all([
+  const [{data:sv},{data:ba},{data:hn},{data:blq}] = await Promise.all([
     sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('precio'),
-    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).order('nombre')
+    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).order('nombre'),
+    sb.from('horario_negocio').select('*').eq('barberia_id',BARBERIA_ID),
+    sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
   ]);
   B.servicios = sv||[]; B.profesionals = ba||[];
+  B.horario = {}; (hn||[]).forEach(h=>{ B.horario[h.dia_semana]=h; });
+  B.bloqueos = blq||[];
   renderServicios(); renderProfesionals(); renderCalendario();
   const profParam = params.get('profesional');
   const profPreseleccionado = profParam && B.profesionals.find(b=>b.id===profParam);
@@ -310,13 +349,21 @@ async function selFecha(fecha){
 }
 
 function renderHorarios(){
-  const durMin = SEL.servicio?.duracion_min||30;
-  const slotsNec = Math.ceil(durMin/30);
-  document.getElementById('lista-horarios').innerHTML = HORARIOS_BASE.map(h=>{
-    const ocupado = B.reservasOcupadas.some(r=>{
+  const d = new Date(SEL.fecha+'T12:00:00');
+  const diaSemana = d.getDay();
+  const slots = slotsParaDia(diaSemana);
+  document.getElementById('lista-horarios').innerHTML = slots.map(h=>{
+    const ocupadoPorReserva = B.reservasOcupadas.some(r=>{
       if(SEL.profesional && r.barbero_nombre!==SEL.profesional.nombre) return false;
       return r.hora && r.hora.startsWith(h);
     });
+    // Mismo criterio que reservasOcupadas: sin profesional elegido ("cualquiera
+    // disponible"), un bloqueo de cualquier profesional oculta el horario —
+    // limitación ya existente para citas ocupadas, no nueva de esta feature.
+    const bloqueado = SEL.profesional
+      ? B.bloqueos.some(b=>b.profesional_id===SEL.profesional.id && bloqueoCubreSlot(b,h,SEL.fecha,diaSemana))
+      : B.bloqueos.some(b=>bloqueoCubreSlot(b,h,SEL.fecha,diaSemana));
+    const ocupado = ocupadoPorReserva || bloqueado;
     const sel = h===SEL.hora;
     return`<button class="horario-btn ${sel?'selected':''}" ${ocupado?'disabled':''} onclick="selHora('${h}')">${h}</button>`;
   }).join('') || '<div class="no-horarios">No hay horarios disponibles.</div>';

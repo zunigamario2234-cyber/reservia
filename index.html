@@ -185,6 +185,15 @@ async function doReg(){
       {barberia_id:barb.id,nombre:'Servicio básico',precio:10000,duracion_min:30,comision_pct:50},
       {barberia_id:barb.id,nombre:'Servicio premium',precio:20000,duracion_min:60,comision_pct:50}
     ]);
+    await sb.from('horario_negocio').insert([
+      {barberia_id:barb.id,dia_semana:0,cerrado:true,hora_apertura:null,hora_cierre:null},
+      {barberia_id:barb.id,dia_semana:1,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:2,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:3,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:4,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:5,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:6,cerrado:false,hora_apertura:'09:00',hora_cierre:'14:00'}
+    ]);
     const plantillas=[
       {barberia_id:barb.id,evento:'Bienvenida',mensaje:'¡Hola {nombre}! 👋 Bienvenido a {negocio}. Reserva cuando quieras: {link}',activo:true},
       {barberia_id:barb.id,evento:'Confirmación reserva',mensaje:'✅ ¡Hola {nombre}! Tu reserva está confirmada.\n📅 {fecha} a las {hora}\n✂️ {servicio} con {profesional}\n📍 {direccion}',activo:true},

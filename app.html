@@ -481,6 +481,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'cfg-neg')">Negocio</div>
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
+    <div class="tab" onclick="switchTab(this,'cfg-blq')">Bloqueos</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-alz')">Alianzas</div>
     <div class="tab" onclick="switchTab(this,'cfg-int')" style="display:none">Integraciones</div>
   </div>
@@ -523,6 +524,12 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
     </div>
     <div class="card" style="margin-top:14px">
+      <div class="card-hdr"><span class="card-title">Horario del negocio</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Define los días y horarios en que atiendes. El link público de reservas solo va a ofrecer horarios dentro de este rango.</div>
+      <div id="horario-dias"></div>
+      <button class="btn btn-primary" id="btn-guardar-horario" style="margin-top:10px" onclick="guardarHorarioNegocio()">Guardar horario</button>
+    </div>
+    <div class="card" style="margin-top:14px">
       <div class="card-hdr"><span class="card-title">Modo de cálculo de comisión</span></div>
       <div class="fg">
         <label>¿Cómo se calcula la comisión de los profesionales?</label>
@@ -540,6 +547,12 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-servicio')">+ Servicio</button></div>
     <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-servicios"></tbody></table></div></div>
+  </div>
+  <div id="cfg-blq" style="display:none">
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Bloqueá horarios puntuales, días completos, o un día fijo cada semana en que un profesional no atiende. Se refleja automáticamente en el link público de reservas.</p>
+    <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-bloqueo')">+ Bloqueo</button></div>
+    <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Tipo</th><th>Detalle</th><th>Motivo</th><th>Activo</th><th></th></tr></thead>
+    <tbody id="t-bloqueos"></tbody></table></div></div>
   </div>
   <div id="cfg-alz" style="display:none">
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Convenios con negocios externos que tus clientes VIP pueden canjear. Se muestran en la página pública "Mi Club VIP" según el nivel del cliente.</p>
@@ -836,6 +849,34 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
 </div>
 
+<!-- Bloqueo de horario -->
+<div class="overlay" id="m-bloqueo">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">Agregar bloqueo</span><button class="xbtn" onclick="closeM('m-bloqueo')">×</button></div>
+    <div class="fg"><label>Profesional *</label><select id="blq-profesional"></select></div>
+    <div class="fg"><label>Tipo de bloqueo *</label>
+      <select id="blq-tipo" onchange="onChangeTipoBloqueo()">
+        <option value="puntual">Puntual (rango de horas, un día específico)</option>
+        <option value="dia_completo">Día completo</option>
+        <option value="recurrente">Recurrente (mismo día cada semana)</option>
+      </select>
+    </div>
+    <div class="fg" id="blq-fg-fecha"><label>Fecha *</label><input id="blq-fecha" type="date"></div>
+    <div class="fg" id="blq-fg-dia" style="display:none"><label>Día de la semana *</label>
+      <select id="blq-dia-semana">
+        <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
+        <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option>
+      </select>
+    </div>
+    <div class="fr" id="blq-fg-horas"><div class="fg"><label>Desde *</label><input id="blq-hora-inicio" type="time"></div><div class="fg"><label>Hasta *</label><input id="blq-hora-fin" type="time"></div></div>
+    <div class="fg"><label>Motivo</label><input id="blq-motivo" type="text" placeholder="Vacaciones, capacitación, etc. (opcional)"></div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary" id="btn-guardar-blq" onclick="guardarBloqueo()">Guardar</button>
+      <button class="btn btn-ghost" onclick="closeM('m-bloqueo')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Alianza -->
 <div class="overlay" id="m-alianza">
   <div class="modal">
@@ -872,7 +913,8 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[] };
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], horario:[], bloqueos:[] };
+const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
 
@@ -929,7 +971,7 @@ async function loadAll(){
   S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas());
   await Promise.all(cargas);
 }
@@ -943,6 +985,12 @@ async function loadInventario(){ const {data}=await sb.from('inventario').select
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
+async function loadHorarioNegocio(){
+  const {data}=await sb.from('horario_negocio').select('*').eq('barberia_id',S.barberia.id);
+  const rows=data||[];
+  S.horario = DIAS_SEMANA.map((_,i)=>rows.find(r=>r.dia_semana===i) || {dia_semana:i,hora_apertura:'09:00',hora_cierre:'19:00',cerrado:i===0});
+}
+async function loadBloqueos(){ const {data}=await sb.from('bloqueos_profesional').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.bloqueos=data||[]; }
 async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').eq('barberia_id',S.barberia.id).order('evento'); S.plantillas=data||[]; }
 
 // ─── HELPERS ───
@@ -1099,6 +1147,15 @@ function initModal(id){
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
   if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';document.getElementById('alz-nivel').value='Todos';document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
+  if(id==='m-bloqueo'){
+    sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
+    document.getElementById('blq-tipo').value='puntual';
+    document.getElementById('blq-fecha').value='';
+    document.getElementById('blq-hora-inicio').value='';
+    document.getElementById('blq-hora-fin').value='';
+    document.getElementById('blq-motivo').value='';
+    onChangeTipoBloqueo();
+  }
 }
 function sel(id,opts,addEmpty=false){
   const s=document.getElementById(id); if(!s)return;
@@ -1454,6 +1511,64 @@ async function guardarAlianza(){
   btn.disabled=false;btn.textContent='Guardar';
 }
 
+function onChangeTipoBloqueo(){
+  const tipo=document.getElementById('blq-tipo').value;
+  document.getElementById('blq-fg-fecha').style.display=(tipo==='puntual'||tipo==='dia_completo')?'':'none';
+  document.getElementById('blq-fg-dia').style.display=tipo==='recurrente'?'':'none';
+  document.getElementById('blq-fg-horas').style.display=(tipo==='puntual'||tipo==='recurrente')?'':'none';
+}
+
+async function guardarBloqueo(){
+  const profId=document.getElementById('blq-profesional').value;
+  const tipo=document.getElementById('blq-tipo').value;
+  if(!profId){notify('Elegí un profesional','warn');return;}
+  const payload={barberia_id:S.barberia.id,profesional_id:profId,tipo,motivo:document.getElementById('blq-motivo').value.trim()||null};
+  if(tipo==='puntual'||tipo==='dia_completo'){
+    const fecha=document.getElementById('blq-fecha').value;
+    if(!fecha){notify('Elegí una fecha','warn');return;}
+    payload.fecha=fecha;
+  }
+  if(tipo==='recurrente'){
+    payload.dia_semana=parseInt(document.getElementById('blq-dia-semana').value);
+  }
+  if(tipo==='puntual'||tipo==='recurrente'){
+    const hi=document.getElementById('blq-hora-inicio').value, hf=document.getElementById('blq-hora-fin').value;
+    if(!hi||!hf){notify('Completá el rango de horas','warn');return;}
+    if(hi>=hf){notify('La hora de inicio debe ser antes que la de fin','warn');return;}
+    payload.hora_inicio=hi;payload.hora_fin=hf;
+  }
+  const btn=document.getElementById('btn-guardar-blq');
+  btn.disabled=true;btn.textContent='Guardando...';
+  const {error}=await sb.from('bloqueos_profesional').insert(payload);
+  if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
+  await loadBloqueos();closeM('m-bloqueo');notify('Bloqueo guardado ✓');renderConfig();
+  btn.disabled=false;btn.textContent='Guardar';
+}
+
+async function toggleBloqueoActivo(id,activo){
+  const {error}=await sb.from('bloqueos_profesional').update({activo}).eq('id',id);
+  if(error){notify(error.message,'err');return;}
+  await loadBloqueos();renderConfig();notify(activo?'Bloqueo activado':'Bloqueo desactivado');
+}
+
+function renderBloqueos(){
+  const cont=document.getElementById('t-bloqueos');
+  if(!cont)return;
+  const TIPO_LABEL={puntual:'Puntual',dia_completo:'Día completo',recurrente:'Recurrente'};
+  cont.innerHTML=S.bloqueos.map(b=>{
+    const prof=S.barberos.find(p=>p.id===b.profesional_id);
+    let detalle='';
+    if(b.tipo==='puntual') detalle=`${b.fecha} · ${(b.hora_inicio||'').slice(0,5)}–${(b.hora_fin||'').slice(0,5)}`;
+    else if(b.tipo==='dia_completo') detalle=b.fecha||'—';
+    else if(b.tipo==='recurrente') detalle=`${DIAS_SEMANA[b.dia_semana]} · ${(b.hora_inicio||'').slice(0,5)}–${(b.hora_fin||'').slice(0,5)}`;
+    return `<tr>
+      <td>${prof?.nombre||'—'}</td><td>${TIPO_LABEL[b.tipo]||b.tipo}</td><td>${detalle}</td><td>${b.motivo||'—'}</td>
+      <td><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${b.activo?'checked':''} onchange="toggleBloqueoActivo('${b.id}',this.checked)"></label></td>
+      <td><button class="btn btn-danger btn-sm" onclick="eliminar('bloqueos_profesional','${b.id}',loadBloqueos,renderConfig)">×</button></td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty">Sin bloqueos configurados</td></tr>';
+}
+
 async function guardarConfig(){
   const {error}=await sb.from('barberias').update({
     nombre:document.getElementById('cfg-nombre').value,
@@ -1467,6 +1582,42 @@ async function guardarConfig(){
   if(error){notify(error.message,'err');return;}
   await sb.from('barberias').select('*').eq('id',S.barberia.id).single().then(({data})=>S.barberia=data);
   notify('Configuración guardada ✓');
+}
+
+function renderHorarioNegocio(){
+  const cont=document.getElementById('horario-dias');
+  if(!cont)return;
+  cont.innerHTML=S.horario.map((h,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #1a1a1a;flex-wrap:wrap">
+      <div style="width:90px;font-size:12px;color:var(--text)">${DIAS_SEMANA[i]}</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3)">
+        <input type="checkbox" id="hn-cerrado-${i}" ${h.cerrado?'checked':''} onchange="toggleHorarioCerrado(${i})"> Cerrado
+      </label>
+      <input type="time" id="hn-apertura-${i}" value="${(h.hora_apertura||'').slice(0,5)}" ${h.cerrado?'disabled':''} style="width:110px">
+      <span style="color:var(--text3);font-size:12px">a</span>
+      <input type="time" id="hn-cierre-${i}" value="${(h.hora_cierre||'').slice(0,5)}" ${h.cerrado?'disabled':''} style="width:110px">
+    </div>`).join('');
+}
+
+function toggleHorarioCerrado(i){
+  const chk=document.getElementById('hn-cerrado-'+i).checked;
+  document.getElementById('hn-apertura-'+i).disabled=chk;
+  document.getElementById('hn-cierre-'+i).disabled=chk;
+}
+
+async function guardarHorarioNegocio(){
+  const btn=document.getElementById('btn-guardar-horario');
+  btn.disabled=true;btn.textContent='Guardando...';
+  const payload=DIAS_SEMANA.map((_,i)=>({
+    barberia_id:S.barberia.id,dia_semana:i,
+    cerrado:document.getElementById('hn-cerrado-'+i).checked,
+    hora_apertura:document.getElementById('hn-apertura-'+i).value||null,
+    hora_cierre:document.getElementById('hn-cierre-'+i).value||null
+  }));
+  const {error}=await sb.from('horario_negocio').upsert(payload,{onConflict:'barberia_id,dia_semana'});
+  if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar horario';return;}
+  await loadHorarioNegocio();renderHorarioNegocio();notify('Horario guardado ✓');
+  btn.disabled=false;btn.textContent='Guardar horario';
 }
 
 async function eliminar(tabla,id,reloader,renderer){
@@ -2082,6 +2233,8 @@ function renderConfig(){
     actualizarEjemploComision();
     document.getElementById('cfg-link-reservas').value=location.origin+'/reservar.html?id='+S.barberia.id;
   }
+  renderHorarioNegocio();
+  renderBloqueos();
   document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>{
     const avatar=s.foto_url
       ?`<img src="${s.foto_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
