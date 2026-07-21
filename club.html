@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Club VIP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+.header{padding:24px;text-align:center}
+.header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
+.container{max-width:480px;margin:0 auto;padding:0 16px 40px}
+.card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
+.hero{text-align:center;padding:32px 22px}
+.hero-badge{font-size:52px;margin-bottom:10px}
+.hero-nombre{font-size:18px;font-weight:700;color:#fff;margin-bottom:2px}
+.hero-nivel{font-size:22px;font-weight:700;margin-bottom:14px}
+.nivel-Plata{color:#aaa}
+.nivel-Oro{color:#d4a853}
+.nivel-Diamante{color:#6ab0e0}
+.nivel-Sinnivel{color:#666}
+.hero-beneficio{display:inline-block;background:#13142a;border:0.5px solid #7c6af7;border-radius:20px;padding:8px 18px;font-size:13px;color:#c9c3ff}
+.progreso-wrap{margin-top:20px}
+.progreso-label{font-size:11px;color:#555;margin-bottom:6px;text-align:center}
+.progreso-bar{height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden}
+.progreso-fill{height:100%;background:linear-gradient(90deg,#7c6af7,#5b8def);border-radius:4px;transition:width 0.4s}
+.card-title{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:14px}
+.alianza-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:0.5px solid #1a1a1a}
+.alianza-item:last-child{border-bottom:none}
+.alianza-logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#7c6af7,#5b8def);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;overflow:hidden}
+.alianza-logo img{width:100%;height:100%;object-fit:cover}
+.alianza-nombre{font-size:13px;font-weight:600;color:#e8e6e0}
+.alianza-beneficio{font-size:12px;color:#7c6af7;margin-top:2px}
+.alianza-desc{font-size:11px;color:#555;margin-top:2px}
+.alianza-link{font-size:11px;color:#5b8def;text-decoration:none}
+.hist-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
+.hist-item:last-child{border-bottom:none}
+.hist-nivel{font-weight:600}
+.hist-fecha{color:#555}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.b-silver{background:#2a2a2a;color:#ccc}
+.b-gold{background:#3a2f10;color:#d4a853}
+.b-blue{background:#13142a;color:#6ab0e0}
+.empty{text-align:center;color:#444;font-size:12px;padding:16px 0}
+.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="header"><h1 id="h-nombre">Mi Club VIP</h1></div>
+<div class="container" id="contenido">
+  <div class="msg-full">Cargando tu información...</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const params = new URLSearchParams(window.location.search);
+const BARBERIA_ID = params.get('id');
+const CLIENTE_ID = params.get('cliente');
+
+const NIVEL_ORDEN = {'Sin nivel':0,'Todos':0,'Plata':1,'Oro':2,'Diamante':3};
+const NIVEL_META = {'Sin nivel':5,'Plata':10,'Oro':20,'Diamante':null};
+const NIVEL_BENEFICIO = {'Plata':'10% de descuento','Oro':'Servicio gratis','Diamante':'VIP total'};
+const NIVEL_ICONO = {'Sin nivel':'🎫','Plata':'🥈','Oro':'🥇','Diamante':'💎'};
+
+function mostrarError(msg){
+  document.getElementById('contenido').innerHTML = `<div class="msg-full">${msg}</div>`;
+}
+
+async function init(){
+  if(!BARBERIA_ID || !CLIENTE_ID){ mostrarError('Este link no es válido. Falta información en la URL.'); return; }
+
+  const {data:barb} = await sb.from('barberias').select('nombre').eq('id',BARBERIA_ID).single();
+  if(!barb){ mostrarError('No encontramos este negocio.'); return; }
+  document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
+  document.title = 'Mi Club VIP — ' + barb.nombre;
+
+  const {data:clienteRows,error:eCli} = await sb.rpc('get_club_vip_publico',{p_barberia_id:BARBERIA_ID,p_cliente_id:CLIENTE_ID});
+  const cliente = clienteRows && clienteRows[0];
+  if(eCli || !cliente){ mostrarError('No encontramos tu perfil de cliente VIP. Consulta con el negocio.'); return; }
+
+  const [{data:historial},{data:alianzas}] = await Promise.all([
+    sb.rpc('get_club_vip_historial_publico',{p_barberia_id:BARBERIA_ID,p_cliente_id:CLIENTE_ID}),
+    sb.from('alianzas').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
+  ]);
+
+  render(cliente, historial||[], alianzas||[]);
+}
+
+function render(cliente, historial, alianzas){
+  const nivel = cliente.nivel || 'Sin nivel';
+  const nivelClass = 'nivel-'+nivel.replace(' ','');
+  const totalV = cliente.total_visitas||0;
+  const meta = NIVEL_META[nivel];
+  const beneficio = NIVEL_BENEFICIO[nivel] || 'Sigue viniendo para desbloquear beneficios';
+
+  let progresoHtml = '';
+  if(meta){
+    const previo = nivel==='Sin nivel'?0:(nivel==='Plata'?5:10);
+    const pct = Math.min(100, Math.round(((totalV-previo)/(meta-previo))*100));
+    const faltan = Math.max(0, meta-totalV);
+    progresoHtml = `<div class="progreso-wrap">
+      <div class="progreso-label">${faltan>0?`Te faltan ${faltan} visita${faltan===1?'':'s'} para el próximo nivel`:'¡Ya alcanzaste este nivel!'}</div>
+      <div class="progreso-bar"><div class="progreso-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  } else {
+    progresoHtml = `<div class="progreso-wrap"><div class="progreso-label">Alcanzaste el nivel máximo 🎉</div></div>`;
+  }
+
+  const nivelNum = NIVEL_ORDEN[nivel]||0;
+  const alianzasVisibles = alianzas.filter(a=>(NIVEL_ORDEN[a.nivel_minimo]??0) <= nivelNum);
+
+  const alianzasHtml = alianzasVisibles.length
+    ? alianzasVisibles.map(a=>`
+      <div class="alianza-item">
+        <div class="alianza-logo">${a.logo_url?`<img src="${a.logo_url}">`:'🤝'}</div>
+        <div style="flex:1">
+          <div class="alianza-nombre">${a.nombre}</div>
+          <div class="alianza-beneficio">${a.beneficio}</div>
+          ${a.descripcion?`<div class="alianza-desc">${a.descripcion}</div>`:''}
+          ${a.link?`<a class="alianza-link" href="${a.link}" target="_blank" rel="noopener">Ver más →</a>`:''}
+        </div>
+      </div>`).join('')
+    : '<div class="empty">Todavía no hay alianzas disponibles para tu nivel.</div>';
+
+  const badgeClass = nivel==='Oro'?'b-gold':nivel==='Diamante'?'b-blue':'b-silver';
+  const historialHtml = historial.length
+    ? historial.map(h=>`
+      <div class="hist-item">
+        <span><span class="badge ${h.nivel==='Oro'?'b-gold':h.nivel==='Diamante'?'b-blue':'b-silver'}">${NIVEL_ICONO[h.nivel]||'🏆'} ${h.nivel}</span></span>
+        <span class="hist-fecha">${h.fecha_ganado||'—'}</span>
+      </div>`).join('')
+    : '<div class="empty">Todavía no subiste de nivel — ¡sigue viniendo!</div>';
+
+  document.getElementById('contenido').innerHTML = `
+    <div class="card hero">
+      <div class="hero-badge">${NIVEL_ICONO[nivel]||'🎫'}</div>
+      <div class="hero-nombre">${cliente.nombre}</div>
+      <div class="hero-nivel ${nivelClass}">${nivel}</div>
+      <div class="hero-beneficio">${beneficio}</div>
+      ${progresoHtml}
+    </div>
+    <div class="card">
+      <div class="card-title">🤝 Alianzas disponibles para vos</div>
+      ${alianzasHtml}
+    </div>
+    <div class="card">
+      <div class="card-title">🏆 Tu historial VIP</div>
+      ${historialHtml}
+    </div>
+  `;
+}
+
+init();
+</script>
+</body>
+</html>

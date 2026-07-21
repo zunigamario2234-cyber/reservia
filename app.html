@@ -481,6 +481,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'cfg-neg')">Negocio</div>
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
+    <div class="tab vip-only" onclick="switchTab(this,'cfg-alz')">Alianzas</div>
     <div class="tab" onclick="switchTab(this,'cfg-int')" style="display:none">Integraciones</div>
   </div>
   <div id="cfg-neg">
@@ -539,6 +540,12 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-servicio')">+ Servicio</button></div>
     <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-servicios"></tbody></table></div></div>
+  </div>
+  <div id="cfg-alz" style="display:none">
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Convenios con negocios externos que tus clientes VIP pueden canjear. Se muestran en la página pública "Mi Club VIP" según el nivel del cliente.</p>
+    <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-alianza')">+ Alianza</button></div>
+    <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Beneficio</th><th>Nivel mínimo</th><th>Activa</th><th></th></tr></thead>
+    <tbody id="t-alianzas"></tbody></table></div></div>
   </div>
   <div id="cfg-int" style="display:none">
     <div class="card">
@@ -829,6 +836,33 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
 </div>
 
+<!-- Alianza -->
+<div class="overlay" id="m-alianza">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title" id="m-alz-title">Agregar alianza</span><button class="xbtn" onclick="closeM('m-alianza')">×</button></div>
+    <input type="hidden" id="alz-id">
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg2);border-radius:10px">
+      <div id="alz-foto-preview" style="width:72px;height:72px;border-radius:10px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;border:2px solid var(--p1)">🤝</div>
+      <div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Logo del negocio aliado</div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg4);border:0.5px solid var(--p1);border-radius:7px;cursor:pointer;font-size:12px;color:var(--p1)">
+          📷 Seleccionar logo
+          <input type="file" id="alz-foto" accept="image/jpeg,image/png,image/webp" onchange="previewFotoAlz(this)" style="display:none">
+        </label>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">JPG, PNG — máx 2MB</div>
+      </div>
+    </div>
+    <div class="fr"><div class="fg"><label>Nombre del negocio aliado *</label><input id="alz-nombre" type="text" placeholder="Gimnasio Fit"></div><div class="fg"><label>Nivel mínimo</label><select id="alz-nivel"><option value="Todos">Todos</option><option value="Plata">Plata</option><option value="Oro">Oro</option><option value="Diamante">Diamante</option></select></div></div>
+    <div class="fg"><label>Beneficio *</label><input id="alz-beneficio" type="text" placeholder="15% de descuento presentando tu carnet VIP"></div>
+    <div class="fg"><label>Descripción</label><input id="alz-desc" type="text" placeholder="Detalle del convenio (opcional)"></div>
+    <div class="fg"><label>Link (web/WhatsApp del aliado)</label><input id="alz-link" type="url" placeholder="https://..."></div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary" id="btn-guardar-alz" onclick="guardarAlianza()">Guardar</button>
+      <button class="btn btn-ghost" onclick="closeM('m-alianza')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div class="notif" id="notif"></div>
 
 <script>
@@ -838,7 +872,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[] };
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[] };
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
 
@@ -896,7 +930,7 @@ async function loadAll(){
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
   const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas()];
-  if(VIP_HABILITADO)cargas.push(loadVIP());
+  if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas());
   await Promise.all(cargas);
 }
 
@@ -908,6 +942,7 @@ async function loadBarberos(){ const {data}=await sb.from('barberos').select('*'
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
+async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
 async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').eq('barberia_id',S.barberia.id).order('evento'); S.plantillas=data||[]; }
 
 // ─── HELPERS ───
@@ -1012,6 +1047,7 @@ function getEstado(cid){ const d=diasDesde(getUltCita(cid)); const vis=getCitas(
 function getNivel(n){ if(n>=20)return'Diamante'; if(n>=10)return'Oro'; if(n>=5)return'Plata'; return'Sin nivel'; }
 function badgeNivel(nv){ const m={Diamante:'b-blue',Oro:'b-gold',Plata:'b-silver','Sin nivel':'b-silver'}; return`<span class="badge ${m[nv]||'b-silver'}">${nv}</span>`; }
 function abrirWA(wsp,msg){ const n=wsp.replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
+function linkClub(clienteId){ return S.barberia?.id&&clienteId?(location.origin+'/club.html?id='+S.barberia.id+'&cliente='+clienteId):''; }
 function buildMsg(evento, vars={}){
   const t=S.plantillas.find(p=>p.evento===evento&&p.activo);
   if(!t)return null;
@@ -1062,6 +1098,7 @@ function initModal(id){
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
+  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';document.getElementById('alz-nivel').value='Todos';document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
 }
 function sel(id,opts,addEmpty=false){
   const s=document.getElementById(id); if(!s)return;
@@ -1137,7 +1174,7 @@ async function guardarCita(){
       await sb.from('vip_historial').insert({barberia_id:S.barberia.id,cliente_id:cid,nivel:ahora,beneficio:ben,fecha_ganado:fecha,fecha_expira:expires.toISOString().split('T')[0]});
       await loadVIP();
       notify('🏆 '+cl?.nombre+' alcanzó nivel '+ahora+'!','warn');
-      if(cl){const msg=buildMsg('Club '+ahora,{nombre:cl.nombre});if(msg)abrirWA(cl.whatsapp,msg);}
+      if(cl){const msg=buildMsg('Club '+ahora,{nombre:cl.nombre,link_club:linkClub(cl.id)});if(msg)abrirWA(cl.whatsapp,msg);}
     }
   }
   closeM('m-cita');notify(id?'Cita actualizada ✓':'Cita registrada ✓');
@@ -1349,6 +1386,71 @@ async function guardarServicio(){
   }
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
   await loadServicios();closeM('m-servicio');notify('Servicio guardado ✓');renderConfig();
+  btn.disabled=false;btn.textContent='Guardar';
+}
+
+function previewFotoAlz(input){
+  if(input.files&&input.files[0]){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const prev=document.getElementById('alz-foto-preview');
+      prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+function editarAlianza(id){
+  const a=S.alianzas.find(x=>x.id===id);if(!a)return;
+  openM('m-alianza');
+  document.getElementById('m-alz-title').textContent='Editar alianza';
+  document.getElementById('alz-id').value=a.id;
+  document.getElementById('alz-nombre').value=a.nombre||'';
+  document.getElementById('alz-nivel').value=a.nivel_minimo||'Todos';
+  document.getElementById('alz-beneficio').value=a.beneficio||'';
+  document.getElementById('alz-desc').value=a.descripcion||'';
+  document.getElementById('alz-link').value=a.link||'';
+  const prev=document.getElementById('alz-foto-preview');
+  if(a.logo_url){
+    prev.innerHTML=`<img src="${a.logo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+  } else {
+    prev.innerHTML='🤝';
+  }
+}
+
+async function guardarAlianza(){
+  const n=document.getElementById('alz-nombre').value.trim();
+  const ben=document.getElementById('alz-beneficio').value.trim();
+  if(!n||!ben){notify('Nombre y beneficio son obligatorios','warn');return;}
+  const btn=document.getElementById('btn-guardar-alz');
+  btn.disabled=true;btn.textContent='Guardando...';
+  let logo_url=null;
+  const fotoFile=document.getElementById('alz-foto').files[0];
+  if(fotoFile){
+    const ext=fotoFile.name.split('.').pop();
+    const fname=`alianzas/${S.barberia.id}/${Date.now()}.${ext}`;
+    const {error:upErr}=await sb.storage.from('fotos').upload(fname,fotoFile,{upsert:true});
+    if(!upErr){
+      const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
+      logo_url=url.publicUrl;
+    }
+  }
+  const id=document.getElementById('alz-id').value;
+  const payload={
+    barberia_id:S.barberia.id,nombre:n,beneficio:ben,
+    nivel_minimo:document.getElementById('alz-nivel').value||'Todos',
+    descripcion:document.getElementById('alz-desc').value.trim()||null,
+    link:document.getElementById('alz-link').value.trim()||null,
+    ...(logo_url&&{logo_url})
+  };
+  let error;
+  if(id){
+    ({error}=await sb.from('alianzas').update(payload).eq('id',id));
+  } else {
+    ({error}=await sb.from('alianzas').insert(payload));
+  }
+  if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
+  await loadAlianzas();closeM('m-alianza');notify('Alianza guardada ✓');renderConfig();
   btn.disabled=false;btn.textContent='Guardar';
 }
 
@@ -1844,7 +1946,7 @@ function renderMensajes(){
     const vipPend=S.vipHist.filter(h=>!h.msg_enviado);
     document.getElementById('l-vip-msg').innerHTML=vipPend.length?vipPend.map(h=>{
       const cl=S.clientes.find(c=>c.id===h.cliente_id);
-      const msg=cl?buildMsg('Club '+h.nivel,{nombre:cl.nombre}):null;
+      const msg=cl?buildMsg('Club '+h.nivel,{nombre:cl.nombre,link_club:linkClub(cl.id)}):null;
       return`<div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div><strong style="color:var(--text)">${h.clientes?.nombre||'—'}</strong> ${badgeNivel(h.nivel)} <span style="font-size:11px;color:var(--text3)">desde ${h.fecha_ganado}</span></div>
         ${cl&&msg?`<button class="btn-wa" onclick="marcarVIPMsg('${h.id}');abrirWA('${cl.whatsapp}',\`${msg.replace(/`/g,"'")}\`)">📱 Enviar beneficio</button>`:''}
@@ -1861,7 +1963,7 @@ function renderMensajes(){
         </label>
       </div>
       <textarea style="width:100%;height:72px;font-size:11px" onchange="editPlantilla('${p.id}',this.value)">${p.mensaje}</textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px">Variables: {nombre} {barberia} {link_reservas} {reviews} {fecha} {hora} {servicio} {profesional} {dias} {direccion}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Variables: {nombre} {barberia} {link_reservas} {link_club} {reviews} {fecha} {hora} {servicio} {profesional} {dias} {direccion}</div>
     </div>`).join('');
 }
 
@@ -1990,6 +2092,19 @@ function renderConfig(){
     <td><button class="btn btn-ghost btn-sm" onclick="editarServicio('${s.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('servicios','${s.id}',loadServicios,renderConfig)">×</button></td>
   </tr>`;
   }).join('');
+  const tAlz=document.getElementById('t-alianzas');
+  if(tAlz){
+    tAlz.innerHTML=S.alianzas.map(a=>{
+      const avatar=a.logo_url
+        ?`<img src="${a.logo_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
+        :`<div style="width:32px;height:32px;border-radius:7px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:14px">🤝</div>`;
+      return `<tr>
+      <td>${avatar}</td><td>${a.nombre}</td><td>${a.beneficio}</td><td>${a.nivel_minimo}</td>
+      <td>${a.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="editarAlianza('${a.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('alianzas','${a.id}',loadAlianzas,renderConfig)">×</button></td>
+    </tr>`;
+    }).join('')||'<tr><td colspan="6" class="empty">Sin alianzas todavía</td></tr>';
+  }
 }
 
 
