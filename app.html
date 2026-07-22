@@ -158,6 +158,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .ag-ctx-menu button{display:flex;align-items:center;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer}
 .ag-ctx-menu button:hover{background:var(--bg4)}
 .ag-ctx-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;flex-shrink:0}
+.ag-mobile-pager{display:none}
 .chart-wrap{position:relative;height:220px}
 .chart-wrap.chart-sm{height:200px}
 .no-vip .vip-only{display:none!important}
@@ -165,6 +166,62 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .no-vip .g2-vip{grid-template-columns:1fr}
 .no-vip .g3-vip{grid-template-columns:repeat(2,1fr)}
 @media(max-width:768px){.sidebar{width:52px}.sidebar .nav-item span,.sidebar .nav-section,.sidebar .logo-text,.sidebar .user-info{display:none}.main{margin-left:52px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.content{padding:14px}.cal-hcell,.cal-col{width:140px}}
+
+/* ═══════════════════════════════════════════════════════════════
+   Responsive mobile — acotado a Agenda (grilla + modal de reserva) y
+   Comisiones ("Por profesional" en Reportes). Ninguna otra pestaña ni
+   modal se ve afectado: todo va scopeado por #id/.clase específica.
+   ═══════════════════════════════════════════════════════════════ */
+@media(max-width:700px){
+  /* Agenda: una sola columna de profesional a la vez ("paginado" con
+     ‹ › en vez de mostrar todas las columnas achicadas). Misma grilla,
+     mismos bloques, mismo drag&drop — solo CSS decide qué columna se ve. */
+  .cal-wrap{overflow-x:hidden}
+  .cal-grid{min-width:0;width:100%}
+  .cal-head,.cal-body{width:100%}
+  .cal-hcell:not(.cal-gutter-head){display:none}
+  .cal-col{display:none}
+  .cal-hcell.ag-mobile-active{display:flex;flex:1;width:auto;min-width:0}
+  .cal-col.ag-mobile-active{display:block;flex:1;width:auto;min-width:0}
+  .cal-gutter{width:36px}
+  .cal-gutter-head{width:36px}
+  .cal-hourlabel{font-size:9px;padding-right:4px}
+  .ag-mobile-pager{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:0.5px solid var(--border2)}
+  .ag-mobile-pager button{background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);width:34px;height:34px;flex-shrink:0;border-radius:7px;cursor:pointer;font-size:16px}
+  .ag-mobile-pager button:hover{color:var(--text);border-color:var(--p1)}
+  .ag-mobile-name{font-size:12px;font-weight:600;color:var(--text);flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:6px}
+  .ag-mobile-name img{width:18px;height:18px;border-radius:50%;object-fit:cover}
+  .ag-toolbar{gap:6px}
+  .ag-nav input[type=date]{width:118px;font-size:12px}
+  #ag-profesional{max-width:none;flex:1 1 100%;order:3}
+
+  /* Modal Nueva/Editar reserva: columnas pareadas se apilan, botones
+     del footer pasan a columna para no desbordar en 320-414px. */
+  #m-reserva .fr{grid-template-columns:1fr}
+  #m-reserva .rm-footer{flex-direction:column}
+  #m-reserva .rm-footer button{margin-left:0!important;width:100%}
+  #rm-tabs{flex-wrap:wrap}
+  #rm-tabs button{flex:1 1 auto}
+
+  /* Comisiones (Reportes → Por profesional): tablas anchas se
+     convierten en tarjetas apiladas, sin scroll horizontal. */
+  #rep-profesional .tbl-wrap{overflow-x:visible}
+  #rep-profesional table thead{display:none}
+  #rep-profesional table,#rep-profesional tbody,#rep-profesional tr,#rep-profesional td{display:block;width:100%}
+  #rep-profesional tr{margin-bottom:10px;border:0.5px solid var(--border2);border-radius:10px;padding:4px 10px;background:var(--bg2)}
+  #rep-profesional tr:last-child{margin-bottom:0}
+  #rep-profesional td{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:0.5px solid var(--border);padding:8px 0;text-align:right}
+  #rep-profesional td:last-child{border-bottom:none}
+  #rep-profesional td::before{content:attr(data-label);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.4px;text-align:left;flex-shrink:0}
+  #rep-profesional td.empty{display:block;text-align:center;padding:20px 0}
+  #rep-profesional td.empty::before{content:none}
+
+  /* Filtros de Comisiones: apilados, con más superficie de toque */
+  #rep-profesional .rep-filtros{flex-direction:column;align-items:stretch}
+  #rep-profesional .rep-filtros .btn{width:100%;padding:9px 14px;font-size:13px}
+  #rep-profesional select,#rep-profesional input[type=date]{max-width:none!important;width:100%;padding:10px 12px;font-size:13px}
+  #rep-profesional .rep-filtros span{text-align:center}
+}
 </style>
 </head>
 <body>
@@ -618,13 +675,13 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
   <!-- POR PROFESIONAL / COMISIONES -->
   <div id="rep-profesional" style="display:none">
-    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+    <div class="rep-filtros" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-ghost btn-sm" onclick="repProfRango('semana')">Esta semana</button>
       <button class="btn btn-ghost btn-sm" onclick="repProfRango('mes')">Este mes</button>
       <button class="btn btn-ghost btn-sm" onclick="repProfRango('mesant')">Mes anterior</button>
       <button class="btn btn-ghost btn-sm" onclick="repProfRango('anio')">Este año</button>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div class="rep-filtros" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <select id="rep-sel-prof" style="max-width:200px" onchange="renderReporteProfesional()"><option value="">Todos</option></select>
       <input type="date" id="rep-prof-desde" style="max-width:160px" onchange="renderReporteProfesional()">
       <span style="color:var(--text3);font-size:13px">hasta</span>
@@ -755,7 +812,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Cualquiera</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="rm-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarReserva()">Guardar reserva</button>
       <button class="btn btn-ghost" onclick="closeM('m-reserva')">Cancelar</button>
       <button id="r-btn-eliminar" class="btn btn-danger" style="display:none;margin-left:auto" onclick="eliminarReservaModal(document.getElementById('r-id').value)">Eliminar reserva</button>
@@ -2565,6 +2622,29 @@ function renderConfig(){
 
 // ─── AGENDA (calendario por columnas) ───
 const AG_START_HOUR=8, AG_END_HOUR=20, AG_PX_MIN=1.6, AG_SLOT_MIN=30;
+let AG_COLS=[], AG_MOBILE_IDX=0;
+
+// Paginado de la Agenda en mobile (ver @media(max-width:700px)): no
+// re-renderiza nada, solo alterna qué .cal-hcell/.cal-col tiene la clase
+// que el CSS usa para mostrarla a pantalla completa.
+function updateAgMobilePager(){
+  if(!AG_COLS.length)return;
+  if(AG_MOBILE_IDX>=AG_COLS.length)AG_MOBILE_IDX=0;
+  if(AG_MOBILE_IDX<0)AG_MOBILE_IDX=AG_COLS.length-1;
+  document.querySelectorAll('#agenda-container .cal-hcell[data-idx],#agenda-container .cal-col[data-idx]').forEach(el=>{
+    el.classList.toggle('ag-mobile-active',parseInt(el.dataset.idx,10)===AG_MOBILE_IDX);
+  });
+  const pager=document.getElementById('ag-mobile-pager');
+  if(pager)pager.style.display=AG_COLS.length>1?'':'none';
+  const nombre=AG_COLS[AG_MOBILE_IDX];
+  const barb=S.barberos.find(b=>b.nombre===nombre);
+  const nameEl=document.getElementById('ag-mobile-name');
+  if(nameEl)nameEl.innerHTML=`${barb?.foto_url?`<img src="${barb.foto_url}">`:'👤'} ${nombre||''}`;
+}
+function agMobilePage(dir){
+  AG_MOBILE_IDX+=dir;
+  updateAgMobilePager();
+}
 
 function agendaDia(delta){
   const inp=document.getElementById('ag-fecha');
@@ -2639,13 +2719,13 @@ function renderAgenda(){
   const slotH=AG_SLOT_MIN*AG_PX_MIN;
   const horas=[]; for(let hr=AG_START_HOUR;hr<=AG_END_HOUR;hr++) horas.push(hr);
 
-  const head=`<div class="cal-head"><div class="cal-hcell cal-gutter-head"></div>${cols.map(c=>{
+  const head=`<div class="cal-head"><div class="cal-hcell cal-gutter-head"></div>${cols.map((c,i)=>{
     const cnt=conHora.filter(x=>(x.barbero_nombre||'Sin asignar')===c).length+sinHora.filter(x=>(x.barbero_nombre||'Sin asignar')===c).length;
     const barb=S.barberos.find(b=>b.nombre===c);
     const avatar=barb?.foto_url
       ?`<img src="${barb.foto_url}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;flex-shrink:0">`
       :'👤';
-    return `<div class="cal-hcell">${avatar} ${c}<span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">${cnt}</span></div>`;
+    return `<div class="cal-hcell" data-idx="${i}">${avatar} ${c}<span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">${cnt}</span></div>`;
   }).join('')}</div>`;
 
   const gutter=`<div class="cal-gutter" style="height:${gridH}px">${horas.map(hr=>`<div class="cal-hourlabel" style="top:${(hr-AG_START_HOUR)*60*AG_PX_MIN}px">${String(hr).padStart(2,'0')}:00</div>`).join('')}</div>`;
@@ -2658,7 +2738,7 @@ function renderAgenda(){
     if(mins>=AG_START_HOUR*60&&mins<=AG_END_HOUR*60) nowLine=`<div class="cal-now" style="top:${(mins-AG_START_HOUR*60)*AG_PX_MIN}px"></div>`;
   }
 
-  const colsHtml=cols.map(barb=>{
+  const colsHtml=cols.map((barb,i)=>{
     const items=conHora.filter(x=>(x.barbero_nombre||'Sin asignar')===barb);
     const blocks=items.map(it=>{
       const info=resolveServicioInfo(it.servicio);
@@ -2677,10 +2757,21 @@ function renderAgenda(){
         <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
-    return `<div class="cal-col" data-barbero="${barb}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,#16172a ${slotH-1}px,#16172a ${slotH}px)" onclick="agendaColClick(event)">${nowLine}${blocks}</div>`;
+    return `<div class="cal-col" data-barbero="${barb}" data-idx="${i}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,#16172a ${slotH-1}px,#16172a ${slotH}px)" onclick="agendaColClick(event)">${nowLine}${blocks}</div>`;
   }).join('');
 
-  cont.innerHTML=`<div class="cal-grid">${head}<div class="cal-body">${gutter}${colsHtml}</div></div>`;
+  // Paginado mobile: en pantallas angostas se ve una sola columna de
+  // profesional a la vez (CSS oculta el resto) — misma grilla y mismo
+  // drag&drop de siempre, solo cambia qué columna está visible.
+  const pagerHtml=`<div class="ag-mobile-pager" id="ag-mobile-pager">
+    <button onclick="agMobilePage(-1)" title="Profesional anterior">‹</button>
+    <span class="ag-mobile-name" id="ag-mobile-name"></span>
+    <button onclick="agMobilePage(1)" title="Profesional siguiente">›</button>
+  </div>`;
+
+  cont.innerHTML=`${pagerHtml}<div class="cal-grid">${head}<div class="cal-body">${gutter}${colsHtml}</div></div>`;
+  AG_COLS=cols;
+  updateAgMobilePager();
 
   if(sinHora.length){
     sinHoraCont.innerHTML=`<div class="card" style="margin-top:14px">
@@ -2972,7 +3063,7 @@ function renderReporteProfesional(){
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
-    return`<tr><td><strong style="color:var(--text)">${p}</strong></td><td>${d.citas}</td><td>${fmt(d.ventas)}</td><td>${d.pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td><td><span class="badge b-purple">${topSrv}</span></td></tr>`;
+    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td><td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
   }).join('')||'<tr><td colspan="7" class="empty">Sin datos en este rango</td></tr>';
 
   // Desglose por servicio (por profesional)
@@ -2983,7 +3074,7 @@ function renderReporteProfesional(){
     });
   });
   document.getElementById('rep-tabla-prof-srv').innerHTML=filasSrv.map(f=>
-    `<tr><td>${f.profesional}</td><td>${f.servicio}</td><td>${f.cnt}</td><td>${fmt(f.val)}</td><td class="gold">${fmt(f.com)}</td></tr>`
+    `<tr><td data-label="Profesional">${f.profesional}</td><td data-label="Servicio">${f.servicio}</td><td data-label="Veces">${f.cnt}</td><td data-label="Ingresos">${fmt(f.val)}</td><td data-label="Comisión" class="gold">${fmt(f.com)}</td></tr>`
   ).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 
   // Historial detallado
@@ -2991,7 +3082,7 @@ function renderReporteProfesional(){
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
     const bar=S.barberos.find(b=>b.nombre===v.barbero_nombre);
     const com=Math.round(v.comision_monto??calcularComision(v.valor,bar?.comision_pct||50));
-    return`<tr><td>${v.fecha}</td><td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td>${resolveServicioInfo(v.servicio).nombre}</td><td>${fmt(v.valor)}</td><td class="gold">${fmt(com)}</td></tr>`;
+    return`<tr><td data-label="Fecha">${v.fecha}</td><td data-label="Cliente">${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td data-label="Servicio">${resolveServicioInfo(v.servicio).nombre}</td><td data-label="Valor">${fmt(v.valor)}</td><td data-label="Comisión" class="gold">${fmt(com)}</td></tr>`;
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 }
 
