@@ -171,8 +171,14 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let PERFIL = null;
 let BARBERO = null;
 let SERVICIOS = [];
+let NEGOCIO_NOMBRE = '';
 let CLIENTE_SEL = null;
 
+// Para pasar datos por onclick='...' (atributo delimitado por comillas
+// simples): JSON.stringify no escapa comillas simples, así que un nombre
+// o nota con apóstrofe (ej. "D'Elia") rompería el atributo a mitad de
+// camino. &#39; se decodifica de vuelta a ' antes de que el JS se ejecute.
+function jsonAttr(obj){ return JSON.stringify(obj).replace(/'/g,'&#39;'); }
 function fmt(n){ return '$'+Math.round(n||0).toLocaleString('es-CL'); }
 function fmtHora(h){ return h?h.slice(0,5):''; }
 function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg||''),'_blank'); }
@@ -225,6 +231,12 @@ async function afterLogin(){
   const {data:sv}=await sb.from('servicios').select('*').eq('barberia_id',perfil.barberia_id).eq('activo',true).order('precio');
   SERVICIOS=sv||[];
 
+  // barberias_select_public es pública (using(true)) — mismo patrón que
+  // reservar.html usa para leer B.barberia. Solo el nombre, una vez al
+  // loguear (no en cada mensaje de WhatsApp).
+  const {data:negocio}=await sb.from('barberias').select('nombre').eq('id',perfil.barberia_id).single();
+  NEGOCIO_NOMBRE=negocio?.nombre||'';
+
   document.getElementById('h-nombre').textContent='Mi Agenda — '+barbero.nombre;
   document.title='Mi Agenda — '+barbero.nombre;
   document.getElementById('login-view').style.display='none';
@@ -257,6 +269,24 @@ function estadoBadge(estado){
   return map[estado]||'b-gray';
 }
 
+// Mismo tono/tipo de datos que el mensaje de confirmación de reservar.html
+// (negocio, fecha, hora, servicio) — no literal porque ahí lo escribe el
+// cliente confirmando su propia reserva, acá es el profesional escribiéndole
+// al cliente. Caso aparte para "Cancelada": el botón de WhatsApp se muestra
+// para cualquier estado de la cita, así que "quedó confirmada" sería falso
+// para una cita ya cancelada.
+function mensajeWhatsAppCita(c){
+  const negocio=NEGOCIO_NOMBRE||'';
+  const nombre=c.nombre_cliente||'';
+  const fecha=c.fecha||'';
+  const hora=fmtHora(c.hora);
+  const servicio=c.servicio||'tu servicio';
+  if(c.estado==='Cancelada'){
+    return `Hola ${nombre}, te escribo por tu cita en ${negocio} del ${fecha} a las ${hora} hrs (${servicio}), que quedó cancelada. ¡Cualquier cosa, contáctanos!`;
+  }
+  return `¡Hola ${nombre}! Tu cita en ${negocio} quedó confirmada para el ${fecha} a las ${hora} hrs, servicio: ${servicio}. ¡Te esperamos!`;
+}
+
 function renderCitas(lista){
   const cont=document.getElementById('citas-lista');
   if(!lista.length){ cont.innerHTML='<div class="card"><div class="empty">Sin citas para este día.</div></div>'; return; }
@@ -268,7 +298,7 @@ function renderCitas(lista){
       <div class="cita-detalle">${c.servicio||'—'} · <span class="badge ${estadoBadge(c.estado)}">${c.estado}</span>${c.valor?' · '+fmt(c.valor):''}</div>
       ${c.notas?`<div class="cita-detalle">📝 ${c.notas}</div>`:''}
       <div class="cita-acciones">
-        ${c.whatsapp_cliente?`<a class="btn-wa" onclick="abrirWA('${c.whatsapp_cliente}','Hola ${c.nombre_cliente||''}')">📱 WhatsApp</a>`:''}
+        ${c.whatsapp_cliente?`<a class="btn-wa" onclick='abrirWA(${jsonAttr(c.whatsapp_cliente)},mensajeWhatsAppCita(${jsonAttr(c)}))'>📱 WhatsApp</a>`:''}
         ${cancelable?`<button class="btn btn-ghost btn-sm" onclick="cancelarCita('${c.id}','${c.tipo}')">Cancelar</button>`:''}
         <button class="btn btn-danger btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Eliminar de mi agenda</button>
       </div>
