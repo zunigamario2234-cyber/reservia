@@ -758,6 +758,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarReserva()">Guardar reserva</button>
       <button class="btn btn-ghost" onclick="closeM('m-reserva')">Cancelar</button>
+      <button id="r-btn-eliminar" class="btn btn-danger" style="display:none;margin-left:auto" onclick="eliminarReservaModal(document.getElementById('r-id').value)">Eliminar reserva</button>
     </div>
   </div>
 </div>
@@ -1187,6 +1188,7 @@ function initModal(id){
     setModoClienteReserva('existente');
     ['rn-nombre','rn-apellido','rn-wsp','rn-email','rn-notas'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('rn-cumple').value='';
+    document.getElementById('r-btn-eliminar').style.display='none';
     document.getElementById('rn-canal').value='Directo';
     sel('rn-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
@@ -1789,10 +1791,15 @@ async function guardarHorarioNegocio(){
 }
 
 async function eliminar(tabla,id,reloader,renderer){
-  if(!confirm('¿Eliminar este registro?'))return;
+  if(!confirm('¿Eliminar este registro?'))return false;
   const {error}=await sb.from(tabla).delete().eq('id',id);
-  if(error){notify(error.message,'err');return;}
+  if(error){notify(error.message,'err');return false;}
   await reloader();renderer();notify('Eliminado ✓');
+  return true;
+}
+
+async function eliminarReservaModal(id){
+  if(await eliminar('reservas',id,loadReservas,renderReservas))closeM('m-reserva');
 }
 
 async function procesarReserva(id){
@@ -2664,6 +2671,7 @@ function abrirEditarReserva(id){
   const selS=document.getElementById('r-servicio'); if(r.servicio)selS.value=r.servicio;
   const selP=document.getElementById('r-profesional'); if(r.barbero_nombre)selP.value=r.barbero_nombre;
   document.getElementById('rm-tabs').style.display='none';
+  document.getElementById('r-btn-eliminar').style.display='';
 }
 
 function abrirEditarCita(id){
