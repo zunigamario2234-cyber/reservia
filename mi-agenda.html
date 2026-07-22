@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mi Agenda</title>
+
+<!-- PWA: manifest + service worker exclusivos de esta página (ver
+     mi-agenda-manifest.json y mi-agenda-sw.js). No se referencian desde
+     app.html/reservar.html/club.html/index.html — esas páginas siguen
+     sirviéndose frescas del servidor, sin manifest ni service worker. -->
+<link rel="manifest" href="/mi-agenda-manifest.json">
+<meta name="theme-color" content="#08090d">
+
+<!-- "Agregar a inicio" en iOS/Safari no sigue el estándar de manifest.json
+     de Chrome/Android — necesita estos meta tags propios. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mi Agenda">
+<link rel="apple-touch-icon" href="/mi-agenda-icon-192.png">
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -399,6 +414,16 @@ async function init(){
   if(session) await afterLogin();
 }
 init();
+
+// PWA: registra el service worker acotado a esta página exacta (scope
+// "/mi-agenda.html") — nunca controla app.html/reservar.html/club.html/
+// index.html, que ni siquiera enlazan un manifest. El SW en sí no cachea
+// nada (ver mi-agenda-sw.js), así que esto no cambia el comportamiento de
+// login ni de las RPCs, solo habilita "Agregar a pantalla de inicio".
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/mi-agenda-sw.js',{scope:'/mi-agenda.html'})
+    .catch(err=>console.error('No se pudo registrar el service worker de Mi Agenda:',err));
+}
 </script>
 </body>
 </html>
