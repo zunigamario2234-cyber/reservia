@@ -524,7 +524,14 @@ function render(cliente, historial, alianzas, niveles){
   const idx = niveles.findIndex(nv=>nv.nombre===nivel);
   const nivelActual = idx>=0?niveles[idx]:null;
   const proximoNivel = niveles.find(nv=>nv.visitas_minimas>totalV);
-  const beneficio = nivelActual?.beneficio || 'Sigue viniendo para desbloquear beneficios';
+  // Cliente recién llegado (0 visitas — ej. justo reservó por primera vez
+  // desde reservar.html): "Sin nivel" + "Sigue viniendo..." lee como un
+  // estado administrativo, no como una bienvenida. Nada de esto cambia
+  // para clientes con ≥1 visita.
+  const esNuevo = totalV===0;
+  const beneficio = esNuevo
+    ? '¡Bienvenido/a a nuestro Club VIP! Sumá visitas para desbloquear beneficios.'
+    : (nivelActual?.beneficio || 'Sigue viniendo para desbloquear beneficios');
 
   let progresoHtml = '';
   if(proximoNivel){
@@ -532,8 +539,11 @@ function render(cliente, historial, alianzas, niveles){
     const meta = proximoNivel.visitas_minimas;
     const pct = Math.min(100, Math.round(((totalV-previo)/(meta-previo))*100));
     const faltan = Math.max(0, meta-totalV);
+    const label = esNuevo
+      ? `Llevás 0 de ${meta} visitas para tu primer nivel (${proximoNivel.nombre})`
+      : (faltan>0?`Te faltan ${faltan} visita${faltan===1?'':'s'} para ${proximoNivel.nombre}`:'¡Ya alcanzaste este nivel!');
     progresoHtml = `<div class="progreso-wrap">
-      <div class="progreso-label">${faltan>0?`Te faltan ${faltan} visita${faltan===1?'':'s'} para ${proximoNivel.nombre}`:'¡Ya alcanzaste este nivel!'}</div>
+      <div class="progreso-label">${label}</div>
       <div class="progreso-bar"><div class="progreso-fill" style="width:${pct}%"></div></div>
     </div>`;
   } else if(niveles.length){
@@ -584,9 +594,9 @@ function render(cliente, historial, alianzas, niveles){
 
   document.getElementById('contenido').innerHTML = `
     <div class="card hero">
-      <div class="hero-badge">${iconoPos(idx)}</div>
+      <div class="hero-badge">${esNuevo?'🎉':iconoPos(idx)}</div>
       <div class="hero-nombre">${cliente.nombre}</div>
-      <div class="hero-nivel" style="color:${colorPos(idx)}">${nivel}</div>
+      <div class="hero-nivel" style="color:${esNuevo?'#7c6af7':colorPos(idx)}">${esNuevo?'¡Bienvenido/a!':nivel}</div>
       <div class="hero-beneficio">${beneficio}</div>
       ${progresoHtml}
     </div>

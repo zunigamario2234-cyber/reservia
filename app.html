@@ -1962,7 +1962,13 @@ async function eliminarReservaModal(id){
 
 async function procesarReserva(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
-  let cl=S.clientes.find(c=>c.whatsapp===r.whatsapp_cliente);
+  // Chequeo fresco contra Supabase, no S.clientes (caché en memoria de
+  // cuando cargó la página): si el cliente reservó por reservar.html y
+  // buscar_o_crear_cliente_club() ya le creó la ficha mientras esta
+  // pestaña de app.html seguía abierta, S.clientes no se entera solo —
+  // sin este chequeo fresco, acá se insertaría un cliente duplicado con
+  // el mismo whatsapp.
+  let {data:cl}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).eq('whatsapp',r.whatsapp_cliente).maybeSingle();
   if(!cl){
     const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,cumpleanos:r.cumpleanos_cliente||null,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
     cl=data; await loadClientes();

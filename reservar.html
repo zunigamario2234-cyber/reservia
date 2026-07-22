@@ -187,6 +187,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       <div class="success-icon">✅</div>
       <div class="success-title">¡Reserva confirmada!</div>
       <div class="success-sub" id="success-msg"></div>
+      <button class="btn btn-primary" id="btn-club-vip" style="max-width:280px;margin:0 auto 12px;display:none" onclick="irAClubVip()">🎉 ¡Ya sos parte de nuestro Club VIP! Ver mi Club →</button>
       <button class="btn btn-wa" id="btn-wa-confirmar" style="max-width:260px;margin-left:auto;margin-right:auto" onclick="confirmarPorWhatsApp()">📱 Confirmar por WhatsApp a la barbería</button>
       <button class="btn btn-ghost" style="margin-top:12px;max-width:260px;margin-left:auto;margin-right:auto" onclick="nuevaReserva()">Hacer otra reserva</button>
     </div>
@@ -208,6 +209,7 @@ let SEL = { servicio:null, profesional:null, fecha:null, hora:null };
 let calMes = new Date();
 let ULTIMO_NOMBRE = '';
 let SALTAR_PROFESIONAL = false;
+let CLIENTE_CLUB_ID = null; // id del cliente ya resuelto (buscar_o_crear_cliente_club) — para armar el link de Club VIP en la pantalla de éxito
 
 const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
 
@@ -460,6 +462,20 @@ async function confirmarReserva(){
     // Email de confirmación automático (Vercel + Resend). No bloquea la UI ni
     // muestra error al cliente si falla — el servidor decide con qué datos reales.
     fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:data.id})}).catch(()=>{});
+    // Resuelve (busca o crea) la ficha de cliente para poder armar el link
+    // de Club VIP — paso adicional después de que la reserva ya se creó,
+    // no reemplaza nada del flujo existente. No bloquea el éxito de la
+    // reserva si falla: el cliente igual ve su confirmación, solo no ve
+    // el botón de Club VIP.
+    try{
+      const {data:clienteId,error:errCliente}=await sb.rpc('buscar_o_crear_cliente_club',{p_barberia_id:BARBERIA_ID,p_reserva_id:reservaId});
+      if(!errCliente&&clienteId){
+        CLIENTE_CLUB_ID=clienteId;
+        document.getElementById('btn-club-vip').style.display='';
+      }
+    }catch(e){
+      console.log('No se pudo resolver el cliente para el Club VIP:',e.message);
+    }
     // Mostrar éxito
     document.querySelectorAll('.step-content').forEach(s=>s.classList.remove('active'));
     document.getElementById('sc-exito').classList.add('active');
@@ -496,8 +512,15 @@ function confirmarPorWhatsApp(){
   abrirWA(B.barberia.whatsapp,msg);
 }
 
+function irAClubVip(){
+  if(!CLIENTE_CLUB_ID)return;
+  location.href='club.html?id='+BARBERIA_ID+'&cliente='+CLIENTE_CLUB_ID;
+}
+
 function nuevaReserva(){
   SEL={servicio:null,profesional:null,fecha:null,hora:null};
+  CLIENTE_CLUB_ID=null;
+  document.getElementById('btn-club-vip').style.display='none';
   document.querySelectorAll('.step-content').forEach(s=>s.classList.remove('active'));
   document.getElementById('sc-1').classList.add('active');
   document.querySelectorAll('.step-tab').forEach(t=>{t.classList.remove('active','done');});
