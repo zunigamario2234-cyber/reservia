@@ -63,14 +63,18 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
 .b-red{background:#2a0f0f;color:#e05050}
 .b-gray{background:#1a1a1a;color:#888}
 .cita-acciones{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-.mes-card{margin-bottom:14px}
-.mes-titulo{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:10px;text-transform:capitalize}
-.mes-totales{display:flex;gap:16px;margin-bottom:12px}
-.mes-total{flex:1;background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;padding:12px;text-align:center}
-.mes-total-label{font-size:10px;color:#999;margin-bottom:4px}
-.mes-total-val{font-size:16px;font-weight:700;color:#e8e6e0}
 .serv-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
 .serv-row:last-child{border-bottom:none}
+.com-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.com-chip{flex:1 1 calc(50% - 4px);padding:11px 8px;border-radius:10px;border:0.5px solid #222;background:#0f1018;color:#888;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit;text-align:center}
+.com-chip.active{border-color:#7c6af7;color:#e8e6e0;background:#13142a}
+.com-hero{background:#13142a;border:0.5px solid #7c6af7;border-radius:14px;padding:20px;margin-bottom:14px;text-align:center}
+.com-hero-label{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
+.com-hero-row{display:flex;gap:16px}
+.com-hero-item{flex:1}
+.com-hero-item .val{font-size:24px;font-weight:700;color:#e8e6e0;line-height:1.2}
+.com-hero-item .val.comision{color:#7c6af7}
+.com-hero-item .lbl{font-size:11px;color:#999;margin-top:6px}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:flex-start;justify-content:center;z-index:100;overflow-y:auto;padding:20px 0}
 .overlay.open{display:flex}
 .modal{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;max-width:440px;width:calc(100% - 32px);margin-top:20px}
@@ -116,8 +120,17 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
     </div>
 
     <div id="tab-comisiones" style="display:none">
+      <div class="com-chips" id="com-chips">
+        <button class="com-chip" data-rango="hoy" onclick="comSetRango('hoy')">Hoy</button>
+        <button class="com-chip" data-rango="semana" onclick="comSetRango('semana')">Esta semana</button>
+        <button class="com-chip active" data-rango="mes" onclick="comSetRango('mes')">Este mes</button>
+        <button class="com-chip" data-rango="personalizado" onclick="comSetRango('personalizado')">Personalizado</button>
+      </div>
+      <div class="fr" id="com-personalizado" style="display:none">
+        <div class="form-group"><label>Desde</label><input type="date" id="com-desde" onchange="comCargar()"></div>
+        <div class="form-group"><label>Hasta</label><input type="date" id="com-hasta" onchange="comCargar()"></div>
+      </div>
       <div id="com-resumen"><div class="msg-full">Cargando...</div></div>
-      <button class="btn btn-ghost" id="btn-historial" onclick="mostrarHistorialCompleto()" style="display:none">Ver historial completo</button>
     </div>
 
     <button class="btn btn-ghost" style="margin-top:20px" onclick="logout()">Cerrar sesión</button>
@@ -158,7 +171,6 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let PERFIL = null;
 let BARBERO = null;
 let SERVICIOS = [];
-let COM_CACHE = null;
 let CLIENTE_SEL = null;
 
 function fmt(n){ return '$'+Math.round(n||0).toLocaleString('es-CL'); }
@@ -226,7 +238,7 @@ function cambiarTab(tab){
   document.getElementById('tab-comisiones').style.display=tab==='comisiones'?'':'none';
   document.getElementById('tab-btn-agenda').classList.toggle('active',tab==='agenda');
   document.getElementById('tab-btn-comisiones').classList.toggle('active',tab==='comisiones');
-  if(tab==='comisiones' && !COM_CACHE) cargarComisiones();
+  if(tab==='comisiones') comCargar();
 }
 
 // ─── Agenda ───
@@ -352,59 +364,90 @@ async function guardarNuevaReserva(){
 
 // ─── Mis ventas y comisiones ───
 
-function mesLabel(ym){
-  const [y,m]=ym.split('-');
-  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  return meses[parseInt(m,10)-1]+' '+y;
+let COM_RANGO='mes'; // 'hoy' | 'semana' | 'mes' | 'personalizado'
+
+// Mismo criterio de rangos que ya usa app.html en Reportes → Por
+// profesional (repProfRango): "semana" es una ventana móvil de 7 días
+// terminando hoy, no la semana calendario — consistente en todo el
+// producto.
+function comRangoFechas(tipo){
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  const f=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if(tipo==='hoy') return {desde:f(hoy),hasta:f(hoy)};
+  if(tipo==='semana'){ const d=new Date(hoy); d.setDate(d.getDate()-6); return {desde:f(d),hasta:f(hoy)}; }
+  const y=hoy.getFullYear(), m=hoy.getMonth();
+  return {desde:f(new Date(y,m,1)),hasta:f(new Date(y,m+1,0))};
 }
 
-function agruparPorMes(filas){
-  const mapa={};
-  filas.forEach(f=>{
-    const ym=f.fecha.slice(0,7);
-    if(!mapa[ym]) mapa[ym]={ym,ventas:0,comision:0,servicios:{}};
-    mapa[ym].ventas+=f.valor||0;
-    mapa[ym].comision+=f.comision_monto||0;
-    const sName=f.servicio||'—';
-    if(!mapa[ym].servicios[sName]) mapa[ym].servicios[sName]={cant:0,ventas:0,comision:0};
-    mapa[ym].servicios[sName].cant++;
-    mapa[ym].servicios[sName].ventas+=f.valor||0;
-    mapa[ym].servicios[sName].comision+=f.comision_monto||0;
-  });
-  return Object.values(mapa).sort((a,b)=>b.ym.localeCompare(a.ym));
+function comSetRango(tipo){
+  COM_RANGO=tipo;
+  document.querySelectorAll('.com-chip').forEach(b=>b.classList.toggle('active',b.dataset.rango===tipo));
+  const personalizado=document.getElementById('com-personalizado');
+  if(tipo==='personalizado'){
+    personalizado.style.display='';
+    if(!document.getElementById('com-desde').value){
+      const r=comRangoFechas('mes');
+      document.getElementById('com-desde').value=r.desde;
+      document.getElementById('com-hasta').value=r.hasta;
+    }
+  } else {
+    personalizado.style.display='none';
+  }
+  comCargar();
 }
 
-function renderMeses(meses){
-  const cont=document.getElementById('com-resumen');
-  if(!meses.length){ cont.innerHTML='<div class="card"><div class="empty">Todavía no tenés ventas registradas.</div></div>'; return; }
-  cont.innerHTML=meses.map(m=>`
-    <div class="card mes-card">
-      <div class="mes-titulo">${mesLabel(m.ym)}</div>
-      <div class="mes-totales">
-        <div class="mes-total"><div class="mes-total-label">Ventas</div><div class="mes-total-val">${fmt(m.ventas)}</div></div>
-        <div class="mes-total"><div class="mes-total-label">Comisión</div><div class="mes-total-val" style="color:#7c6af7">${fmt(m.comision)}</div></div>
-      </div>
-      ${Object.entries(m.servicios).map(([nombre,d])=>`
-        <div class="serv-row"><span>${nombre} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
-      `).join('')}
-    </div>`).join('');
+function comEtiquetaRango(desde,hasta){
+  if(COM_RANGO==='hoy')return'Hoy';
+  if(COM_RANGO==='semana')return'Esta semana';
+  if(COM_RANGO==='mes')return'Este mes';
+  const fmtDia=d=>{ if(!d)return'—'; const [y,mm,dd]=d.split('-'); return dd+'/'+mm+'/'+y; };
+  return fmtDia(desde)+' – '+fmtDia(hasta);
 }
 
-async function cargarComisiones(){
+async function comCargar(){
+  let desde,hasta;
+  if(COM_RANGO==='personalizado'){
+    desde=document.getElementById('com-desde').value||null;
+    hasta=document.getElementById('com-hasta').value||null;
+  } else {
+    const r=comRangoFechas(COM_RANGO);
+    desde=r.desde; hasta=r.hasta;
+  }
   const cont=document.getElementById('com-resumen');
   cont.innerHTML='<div class="msg-full">Cargando...</div>';
-  const {data,error}=await sb.rpc('mi_agenda_comisiones',{p_desde:null,p_hasta:null});
+  const {data,error}=await sb.rpc('mi_agenda_comisiones',{p_desde:desde,p_hasta:hasta});
   if(error){ cont.innerHTML='<div class="msg-full">Error: '+error.message+'</div>'; return; }
-  COM_CACHE=data||[];
-  const meses=agruparPorMes(COM_CACHE);
-  renderMeses(meses.slice(0,2));
-  document.getElementById('btn-historial').style.display=meses.length>2?'':'none';
+  renderComisionResumen(data||[],desde,hasta);
 }
 
-function mostrarHistorialCompleto(){
-  const meses=agruparPorMes(COM_CACHE||[]);
-  renderMeses(meses);
-  document.getElementById('btn-historial').style.display='none';
+function renderComisionResumen(filas,desde,hasta){
+  const cont=document.getElementById('com-resumen');
+  const ventas=filas.reduce((s,f)=>s+(f.valor||0),0);
+  const comision=filas.reduce((s,f)=>s+(f.comision_monto||0),0);
+  const servicios={};
+  filas.forEach(f=>{
+    const nombre=f.servicio||'—';
+    if(!servicios[nombre]) servicios[nombre]={cant:0,ventas:0,comision:0};
+    servicios[nombre].cant++;
+    servicios[nombre].ventas+=f.valor||0;
+    servicios[nombre].comision+=f.comision_monto||0;
+  });
+  const serviciosHtml=Object.entries(servicios).sort((a,b)=>b[1].ventas-a[1].ventas).map(([nombre,d])=>`
+    <div class="serv-row"><span>${nombre} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
+  `).join('')||'<div class="empty">Sin ventas en este período.</div>';
+
+  cont.innerHTML=`
+    <div class="com-hero">
+      <div class="com-hero-label">${comEtiquetaRango(desde,hasta)}</div>
+      <div class="com-hero-row">
+        <div class="com-hero-item"><div class="val">${fmt(ventas)}</div><div class="lbl">Ventas</div></div>
+        <div class="com-hero-item"><div class="val comision">${fmt(comision)}</div><div class="lbl">Comisión</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Desglose por servicio</div>
+      ${serviciosHtml}
+    </div>`;
 }
 
 // ─── Init ───
