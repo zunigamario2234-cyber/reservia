@@ -180,7 +180,12 @@ async function doReg(){
     if(e1)throw e1;
     const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,rubro:RD.rubro,plan:document.getElementById('r-plan').value}).select().single();
     if(e2)throw e2;
-    await sb.from('perfiles').upsert({id:auth.user.id,barberia_id:barb.id,nombre:RD.nombre,rol:'dueno'});
+    // insert(), no upsert(): "perfiles" solo permite UPDATE de la columna
+    // "nombre" desde este rol (rol/barberia_id están bloqueadas por diseño,
+    // ver migration_mi_agenda.sql) — un upsert generaría un ON CONFLICT DO
+    // UPDATE sobre todas las columnas y fallaría por permisos aunque esta
+    // fila siempre sea nueva (recién se creó auth.user.id).
+    await sb.from('perfiles').insert({id:auth.user.id,barberia_id:barb.id,nombre:RD.nombre,rol:'dueno'});
     await sb.from('servicios').insert([
       {barberia_id:barb.id,nombre:'Servicio básico',precio:10000,duracion_min:30,comision_pct:50},
       {barberia_id:barb.id,nombre:'Servicio premium',precio:20000,duracion_min:60,comision_pct:50}

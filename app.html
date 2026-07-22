@@ -837,6 +837,29 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
 </div>
 
+<!-- Invitar profesional a Mi Agenda -->
+<div class="overlay" id="m-invitar-prof">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">Invitar a Mi Agenda</span><button class="xbtn" onclick="closeM('m-invitar-prof')">×</button></div>
+    <input type="hidden" id="inv-barbero-id">
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Esto crea una cuenta propia para <strong id="inv-nombre" style="color:var(--text)"></strong> — va a poder ver su agenda, cancelar/reservar citas y sus propias comisiones en <code>mi-agenda.html</code>, sin acceso al resto del negocio.</p>
+    <div id="inv-form">
+      <div class="fg"><label>Correo del profesional *</label><input id="inv-email" type="email" placeholder="profesional@correo.com"></div>
+      <div class="fg"><label>Contraseña inicial *</label><input id="inv-pass" type="text" placeholder="Mínimo 6 caracteres" value=""></div>
+      <div id="inv-alert" class="alert alert-err" style="display:none;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;background:#1f0000;border:0.5px solid #e05050;color:#e05050"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" id="btn-invitar" onclick="crearCuentaProfesional()">Crear cuenta</button>
+        <button class="btn btn-ghost" onclick="closeM('m-invitar-prof')">Cancelar</button>
+      </div>
+    </div>
+    <div id="inv-listo" style="display:none">
+      <div class="alert" style="padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;background:#0f2a1a;border:0.5px solid #5cd685;color:#5cd685">Cuenta creada ✓. Compartile estos datos por WhatsApp para que entre a <strong>mi-agenda.html</strong>.</div>
+      <button class="btn-wa" style="display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;padding:10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer" onclick="compartirInvitacionWA()">📱 Compartir por WhatsApp</button>
+      <button class="btn btn-ghost" style="margin-top:8px" onclick="closeM('m-invitar-prof')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Servicio -->
 <div class="overlay" id="m-servicio">
   <div class="modal">
@@ -1502,6 +1525,84 @@ async function guardarProfesional(){
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
   await loadBarberos();closeM('m-profesional');notify('Profesional guardado ✓');renderProfesionals();
   btn.disabled=false;btn.textContent='Guardar';
+}
+
+function generarPasswordSimple(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let out='';
+  for(let i=0;i<8;i++) out+=chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
+
+function abrirInvitarProfesional(id){
+  const b=S.barberos.find(x=>x.id===id); if(!b)return;
+  document.getElementById('inv-barbero-id').value=id;
+  document.getElementById('inv-nombre').textContent=b.nombre;
+  document.getElementById('inv-email').value=b.email||'';
+  document.getElementById('inv-pass').value=generarPasswordSimple();
+  document.getElementById('inv-alert').style.display='none';
+  document.getElementById('inv-form').style.display='';
+  document.getElementById('inv-listo').style.display='none';
+  openM('m-invitar-prof');
+}
+
+let INV_DATOS=null;
+
+async function crearCuentaProfesional(){
+  const barberoId=document.getElementById('inv-barbero-id').value;
+  const b=S.barberos.find(x=>x.id===barberoId); if(!b)return;
+  const email=document.getElementById('inv-email').value.trim();
+  const pass=document.getElementById('inv-pass').value;
+  if(!email||!pass||pass.length<6){
+    const al=document.getElementById('inv-alert');
+    al.textContent='Correo válido y contraseña de al menos 6 caracteres.'; al.style.display='';
+    return;
+  }
+  const btn=document.getElementById('btn-invitar');
+  btn.disabled=true;btn.textContent='Creando...';
+  // Cliente Supabase aislado (storageKey propio): auth.signUp() reemplaza la
+  // sesión activa del cliente que lo ejecuta — sin esto, invitar a un
+  // profesional desloguearía al dueño de su propia sesión en app.html.
+  const sbInvite=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{storageKey:'sb-invite-temp'}});
+  const {data:auth,error:e1}=await sbInvite.auth.signUp({email,password:pass});
+  if(e1){
+    const al=document.getElementById('inv-alert');
+    al.textContent='Error: '+e1.message; al.style.display='';
+    btn.disabled=false;btn.textContent='Crear cuenta';
+    return;
+  }
+  // insert(), no upsert(): "perfiles" solo permite UPDATE de la columna
+  // "nombre" (rol/barberia_id están bloqueadas por diseño, ver
+  // migration_mi_agenda.sql) — un upsert generaría un ON CONFLICT DO UPDATE
+  // sobre todas las columnas y fallaría por permisos aunque nunca haya
+  // conflicto real (esta fila siempre es nueva).
+  const {error:e2}=await sbInvite.from('perfiles').insert({id:auth.user.id,barberia_id:S.barberia.id,nombre:b.nombre,rol:'profesional'});
+  await sbInvite.auth.signOut();
+  if(e2){
+    const al=document.getElementById('inv-alert');
+    al.textContent='La cuenta se creó pero falló el vínculo de perfil: '+e2.message; al.style.display='';
+    btn.disabled=false;btn.textContent='Crear cuenta';
+    return;
+  }
+  const {error:e3}=await sb.from('barberos').update({auth_user_id:auth.user.id,email}).eq('id',barberoId);
+  btn.disabled=false;btn.textContent='Crear cuenta';
+  if(e3){
+    const al=document.getElementById('inv-alert');
+    al.textContent='La cuenta se creó pero no se pudo vincular al profesional: '+e3.message; al.style.display='';
+    return;
+  }
+  await loadBarberos();renderProfesionals();
+  INV_DATOS={nombre:b.nombre,email,pass,whatsapp:b.whatsapp};
+  document.getElementById('inv-form').style.display='none';
+  document.getElementById('inv-listo').style.display='';
+  notify('Cuenta de profesional creada ✓');
+}
+
+function compartirInvitacionWA(){
+  if(!INV_DATOS)return;
+  const link=location.origin+'/mi-agenda.html';
+  const msg=`Hola ${INV_DATOS.nombre}! Ya tenés tu acceso a Mi Agenda:\n${link}\n\nCorreo: ${INV_DATOS.email}\nContraseña: ${INV_DATOS.pass}\n\nTe recomiendo cambiar la contraseña la primera vez que entres.`;
+  abrirWA(INV_DATOS.whatsapp,msg);
 }
 
 async function guardarServicio(){
@@ -2409,6 +2510,7 @@ function renderProfesionals(){
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
         ${b.whatsapp?`<a class="btn-wa" href="https://wa.me/${(b.whatsapp||'').replace(/[^0-9]/g,'')}" target="_blank">📱 WhatsApp</a>`:''}
         <button class="btn btn-ghost btn-sm" onclick="copiarLinkProfesional('${b.id}')" title="Copiar link de reserva individual">🔗 Link individual</button>
+        ${b.auth_user_id?'<span class="badge b-green" title="Ya tiene cuenta en Mi Agenda">✓ Mi Agenda</span>':`<button class="btn btn-ghost btn-sm" onclick="abrirInvitarProfesional('${b.id}')" title="Crear cuenta de Mi Agenda">👤 Invitar a Mi Agenda</button>`}
       </div>
     </div>`;
   }).join('')||'<div class="empty" style="grid-column:1/-1">Agrega tu primer profesional.</div>';

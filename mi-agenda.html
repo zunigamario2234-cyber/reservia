@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Agenda</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+.header{padding:24px;text-align:center}
+.header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
+.container{max-width:560px;margin:0 auto;padding:0 16px 40px}
+.card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:20px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:14px}
+.empty{text-align:center;color:#444;font-size:12px;padding:16px 0}
+.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+.tabs-top{display:flex;gap:8px;margin-bottom:18px}
+.tab-btn{flex:1;padding:10px;border-radius:10px;border:0.5px solid #222;background:#0f1018;color:#666;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit}
+.tab-btn.active{border-color:#7c6af7;color:#e8e6e0;background:#13142a}
+label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+.form-group{margin-bottom:12px}
+input,textarea,select{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
+input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{width:100%;padding:12px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
+.btn-primary{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,#6b59e6,#4a7cde)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.btn-ghost{background:transparent;color:#777;border:0.5px solid #2a2a2a}
+.btn-ghost:hover{color:#e8e6e0}
+.btn-danger{background:#1f0000;color:#e05050;border:0.5px solid #e05050}
+.btn-danger:hover{background:#2a0000}
+.btn-wa{display:inline-block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600}
+.btn-wa:hover{background:#003318}
+.btn-sm{width:auto;padding:8px 12px;font-size:12px}
+.alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px}
+.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;border-top-color:#7c6af7;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.cita-item{border:0.5px solid #1a1a1a;border-radius:10px;padding:14px;margin-bottom:10px}
+.cita-hora{font-size:16px;font-weight:700;color:#7c6af7}
+.cita-cliente{font-size:14px;font-weight:600;color:#e8e6e0;margin-top:2px}
+.cita-detalle{font-size:12px;color:#777;margin-top:4px}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.b-green{background:#0f2a1a;color:#5cd685}
+.b-blue{background:#13142a;color:#6ab0e0}
+.b-red{background:#2a0f0f;color:#e05050}
+.b-gray{background:#1a1a1a;color:#888}
+.cita-acciones{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.mes-card{margin-bottom:14px}
+.mes-titulo{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:10px;text-transform:capitalize}
+.mes-totales{display:flex;gap:16px;margin-bottom:12px}
+.mes-total{flex:1;background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;padding:12px;text-align:center}
+.mes-total-label{font-size:10px;color:#999;margin-bottom:4px}
+.mes-total-val{font-size:16px;font-weight:700;color:#e8e6e0}
+.serv-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
+.serv-row:last-child{border-bottom:none}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:flex-start;justify-content:center;z-index:100;overflow-y:auto;padding:20px 0}
+.overlay.open{display:flex}
+.modal{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;max-width:440px;width:calc(100% - 32px);margin-top:20px}
+.modal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-title{font-size:14px;font-weight:600;color:#e8e6e0}
+.xbtn{background:none;border:none;color:#666;font-size:18px;cursor:pointer}
+.suggest-box{position:relative}
+.suggest-list{display:none;position:absolute;top:100%;left:0;right:0;background:#161616;border:0.5px solid #2a2a2a;border-radius:8px;z-index:50;max-height:160px;overflow-y:auto;margin-top:2px}
+.suggest-list.open{display:block}
+.suggest-item{padding:8px 12px;font-size:12px;cursor:pointer}
+.suggest-item:hover{background:#1a1a1a}
+</style>
+</head>
+<body>
+
+<div class="header"><h1 id="h-nombre">Mi Agenda</h1></div>
+<div class="container">
+
+  <div id="login-view">
+    <div class="card">
+      <div class="card-title">Iniciar sesión</div>
+      <div id="li-alert" class="alert alert-err" style="display:none"></div>
+      <div class="form-group"><label>Correo</label><input type="email" id="li-email" placeholder="tu@correo.com"></div>
+      <div class="form-group"><label>Contraseña</label><input type="password" id="li-pass" placeholder="••••••••"></div>
+      <button class="btn btn-primary" id="btn-login" onclick="login()">Entrar</button>
+    </div>
+  </div>
+
+  <div id="app-view" style="display:none">
+    <div class="tabs-top">
+      <button class="tab-btn active" id="tab-btn-agenda" onclick="cambiarTab('agenda')">📅 Agenda</button>
+      <button class="tab-btn" id="tab-btn-comisiones" onclick="cambiarTab('comisiones')">💰 Mis ventas</button>
+    </div>
+
+    <div id="tab-agenda">
+      <div class="card">
+        <div class="fr">
+          <div class="form-group"><label>Fecha</label><input type="date" id="ag-fecha" onchange="cargarAgenda()"></div>
+          <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="abrirNuevaReserva()">+ Reservar</button></div>
+        </div>
+      </div>
+      <div id="citas-lista"></div>
+    </div>
+
+    <div id="tab-comisiones" style="display:none">
+      <div id="com-resumen"><div class="msg-full">Cargando...</div></div>
+      <button class="btn btn-ghost" id="btn-historial" onclick="mostrarHistorialCompleto()" style="display:none">Ver historial completo</button>
+    </div>
+
+    <button class="btn btn-ghost" style="margin-top:20px" onclick="logout()">Cerrar sesión</button>
+  </div>
+
+</div>
+
+<!-- Modal: nueva reserva -->
+<div class="overlay" id="m-reserva">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">Nueva reserva</span><button class="xbtn" onclick="cerrarModal()">×</button></div>
+    <div id="nr-alert" class="alert alert-err" style="display:none"></div>
+    <div class="form-group suggest-box">
+      <label>Cliente (buscar existente o escribir nombre nuevo)</label>
+      <input type="text" id="nr-buscar" placeholder="Nombre o WhatsApp..." oninput="buscarClienteAgenda(this.value)" autocomplete="off">
+      <div class="suggest-list" id="nr-sugerencias"></div>
+    </div>
+    <div class="fr">
+      <div class="form-group"><label>Nombre *</label><input type="text" id="nr-nombre" placeholder="Juan Pérez"></div>
+      <div class="form-group"><label>WhatsApp *</label><input type="text" id="nr-wsp" placeholder="+56 9 XXXX XXXX"></div>
+    </div>
+    <div class="fr">
+      <div class="form-group"><label>Fecha *</label><input type="date" id="nr-fecha"></div>
+      <div class="form-group"><label>Hora *</label><input type="time" id="nr-hora"></div>
+    </div>
+    <div class="form-group"><label>Servicio</label><select id="nr-servicio"><option value="">Seleccionar...</option></select></div>
+    <div class="form-group"><label>Notas</label><textarea id="nr-notas" rows="2"></textarea></div>
+    <button class="btn btn-primary" id="btn-guardar-nr" onclick="guardarNuevaReserva()">Guardar reserva</button>
+    <button class="btn btn-ghost" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let PERFIL = null;
+let BARBERO = null;
+let SERVICIOS = [];
+let COM_CACHE = null;
+let CLIENTE_SEL = null;
+
+function fmt(n){ return '$'+Math.round(n||0).toLocaleString('es-CL'); }
+function fmtHora(h){ return h?h.slice(0,5):''; }
+function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg||''),'_blank'); }
+function hoyStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+function mostrarLoginError(msg){
+  const el=document.getElementById('li-alert');
+  el.textContent=msg; el.style.display='';
+}
+
+async function login(){
+  const email=document.getElementById('li-email').value.trim();
+  const pass=document.getElementById('li-pass').value;
+  if(!email||!pass){ mostrarLoginError('Ingresá correo y contraseña.'); return; }
+  const btn=document.getElementById('btn-login');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Entrando...';
+  const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
+  if(error){ mostrarLoginError('Correo o contraseña incorrectos.'); btn.disabled=false; btn.textContent='Entrar'; return; }
+  await afterLogin();
+  btn.disabled=false; btn.textContent='Entrar';
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  window.location.reload();
+}
+
+async function afterLogin(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){ return; }
+
+  const {data:perfil,error:eP}=await sb.from('perfiles').select('*').eq('id',session.user.id).single();
+  if(eP||!perfil||perfil.rol!=='profesional'){
+    mostrarLoginError('Esta cuenta no es de un profesional. Si sos el dueño del negocio, usá index.html.');
+    await sb.auth.signOut();
+    return;
+  }
+  PERFIL=perfil;
+
+  // barberos_select_public es pública (using(true)) — no hace falta RPC para
+  // este lookup, solo filtrar por el auth_user_id de la sesión.
+  const {data:barbero,error:eB}=await sb.from('barberos').select('*').eq('auth_user_id',session.user.id).eq('activo',true).maybeSingle();
+  if(eB||!barbero){
+    mostrarLoginError('Tu cuenta fue desactivada o ya no está vinculada a ningún profesional. Consultá con el dueño del negocio.');
+    await sb.auth.signOut();
+    return;
+  }
+  BARBERO=barbero;
+
+  const {data:sv}=await sb.from('servicios').select('*').eq('barberia_id',perfil.barberia_id).eq('activo',true).order('precio');
+  SERVICIOS=sv||[];
+
+  document.getElementById('h-nombre').textContent='Mi Agenda — '+barbero.nombre;
+  document.title='Mi Agenda — '+barbero.nombre;
+  document.getElementById('login-view').style.display='none';
+  document.getElementById('app-view').style.display='';
+  document.getElementById('ag-fecha').value=hoyStr();
+  cargarAgenda();
+}
+
+function cambiarTab(tab){
+  document.getElementById('tab-agenda').style.display=tab==='agenda'?'':'none';
+  document.getElementById('tab-comisiones').style.display=tab==='comisiones'?'':'none';
+  document.getElementById('tab-btn-agenda').classList.toggle('active',tab==='agenda');
+  document.getElementById('tab-btn-comisiones').classList.toggle('active',tab==='comisiones');
+  if(tab==='comisiones' && !COM_CACHE) cargarComisiones();
+}
+
+// ─── Agenda ───
+
+async function cargarAgenda(){
+  const fecha=document.getElementById('ag-fecha').value||hoyStr();
+  const cont=document.getElementById('citas-lista');
+  cont.innerHTML='<div class="msg-full">Cargando...</div>';
+  const {data,error}=await sb.rpc('mi_agenda_citas',{p_fecha:fecha});
+  if(error){ cont.innerHTML='<div class="msg-full">Error al cargar la agenda: '+error.message+'</div>'; return; }
+  renderCitas(data||[]);
+}
+
+function estadoBadge(estado){
+  const map={'Atendida':'b-green','Confirmada':'b-blue','Cancelada':'b-red','No asistió':'b-red'};
+  return map[estado]||'b-gray';
+}
+
+function renderCitas(lista){
+  const cont=document.getElementById('citas-lista');
+  if(!lista.length){ cont.innerHTML='<div class="card"><div class="empty">Sin citas para este día.</div></div>'; return; }
+  cont.innerHTML=lista.map(c=>{
+    const cancelable=c.estado!=='Cancelada';
+    return `<div class="cita-item">
+      <div class="cita-hora">${fmtHora(c.hora)}</div>
+      <div class="cita-cliente">${c.nombre_cliente||'Cliente'}</div>
+      <div class="cita-detalle">${c.servicio||'—'} · <span class="badge ${estadoBadge(c.estado)}">${c.estado}</span>${c.valor?' · '+fmt(c.valor):''}</div>
+      ${c.notas?`<div class="cita-detalle">📝 ${c.notas}</div>`:''}
+      <div class="cita-acciones">
+        ${c.whatsapp_cliente?`<a class="btn-wa" onclick="abrirWA('${c.whatsapp_cliente}','Hola ${c.nombre_cliente||''}')">📱 WhatsApp</a>`:''}
+        ${cancelable?`<button class="btn btn-ghost btn-sm" onclick="cancelarCita('${c.id}','${c.tipo}')">Cancelar</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Eliminar de mi agenda</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function cancelarCita(id,tipo){
+  if(!confirm('¿Cancelar esta cita? El negocio la va a ver como Cancelada.'))return;
+  const {error}=await sb.rpc('mi_agenda_cancelar_cita',{p_id:id,p_tipo:tipo});
+  if(error){ alert('Error: '+error.message); return; }
+  cargarAgenda();
+}
+
+async function eliminarCita(id,tipo){
+  if(!confirm('¿Eliminar esta cita de tu agenda? No se borra del sistema, solo deja de aparecer en tu vista.'))return;
+  const {error}=await sb.rpc('mi_agenda_eliminar_cita',{p_id:id,p_tipo:tipo});
+  if(error){ alert('Error: '+error.message); return; }
+  cargarAgenda();
+}
+
+// ─── Nueva reserva ───
+
+function abrirNuevaReserva(){
+  document.getElementById('nr-alert').style.display='none';
+  document.getElementById('nr-buscar').value='';
+  document.getElementById('nr-nombre').value='';
+  document.getElementById('nr-wsp').value='';
+  document.getElementById('nr-notas').value='';
+  document.getElementById('nr-fecha').value=document.getElementById('ag-fecha').value||hoyStr();
+  document.getElementById('nr-hora').value='';
+  document.getElementById('nr-sugerencias').classList.remove('open');
+  CLIENTE_SEL=null;
+  const sel=document.getElementById('nr-servicio');
+  sel.innerHTML='<option value="">Seleccionar...</option>'+SERVICIOS.map(s=>`<option value="${s.nombre}">${s.nombre} (${fmt(s.precio)})</option>`).join('');
+  document.getElementById('m-reserva').classList.add('open');
+}
+
+function cerrarModal(){
+  document.getElementById('m-reserva').classList.remove('open');
+}
+
+let buscarTimeout=null;
+function buscarClienteAgenda(q){
+  CLIENTE_SEL=null;
+  clearTimeout(buscarTimeout);
+  if(!q || q.trim().length<2){ document.getElementById('nr-sugerencias').classList.remove('open'); return; }
+  buscarTimeout=setTimeout(async ()=>{
+    const {data}=await sb.rpc('mi_agenda_buscar_cliente',{p_query:q.trim()});
+    const box=document.getElementById('nr-sugerencias');
+    if(!data || !data.length){ box.classList.remove('open'); return; }
+    box.innerHTML=data.map(c=>`<div class="suggest-item" onclick='seleccionarClienteAgenda(${JSON.stringify(c.id)},${JSON.stringify(c.nombre)},${JSON.stringify(c.whatsapp)})'>${c.nombre} · ${c.whatsapp||'—'}</div>`).join('');
+    box.classList.add('open');
+  },300);
+}
+
+function seleccionarClienteAgenda(id,nombre,whatsapp){
+  CLIENTE_SEL={id,nombre,whatsapp};
+  document.getElementById('nr-nombre').value=nombre;
+  document.getElementById('nr-wsp').value=whatsapp||'';
+  document.getElementById('nr-buscar').value=nombre;
+  document.getElementById('nr-sugerencias').classList.remove('open');
+}
+
+async function guardarNuevaReserva(){
+  const nombre=document.getElementById('nr-nombre').value.trim();
+  const wsp=document.getElementById('nr-wsp').value.trim();
+  const fecha=document.getElementById('nr-fecha').value;
+  const hora=document.getElementById('nr-hora').value;
+  const servicio=document.getElementById('nr-servicio').value;
+  const notas=document.getElementById('nr-notas').value.trim();
+  if(!nombre||!wsp||!fecha||!hora){
+    const al=document.getElementById('nr-alert');
+    al.textContent='Nombre, WhatsApp, fecha y hora son obligatorios.'; al.style.display='';
+    return;
+  }
+  const btn=document.getElementById('btn-guardar-nr');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Guardando...';
+  const {error}=await sb.rpc('mi_agenda_crear_reserva',{
+    p_nombre_cliente:nombre, p_whatsapp_cliente:wsp, p_fecha:fecha, p_hora:hora,
+    p_servicio:servicio||null, p_notas:notas||null
+  });
+  btn.disabled=false; btn.textContent='Guardar reserva';
+  if(error){
+    const al=document.getElementById('nr-alert');
+    al.textContent='Error: '+error.message; al.style.display='';
+    return;
+  }
+  cerrarModal();
+  document.getElementById('ag-fecha').value=fecha;
+  cargarAgenda();
+}
+
+// ─── Mis ventas y comisiones ───
+
+function mesLabel(ym){
+  const [y,m]=ym.split('-');
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  return meses[parseInt(m,10)-1]+' '+y;
+}
+
+function agruparPorMes(filas){
+  const mapa={};
+  filas.forEach(f=>{
+    const ym=f.fecha.slice(0,7);
+    if(!mapa[ym]) mapa[ym]={ym,ventas:0,comision:0,servicios:{}};
+    mapa[ym].ventas+=f.valor||0;
+    mapa[ym].comision+=f.comision_monto||0;
+    const sName=f.servicio||'—';
+    if(!mapa[ym].servicios[sName]) mapa[ym].servicios[sName]={cant:0,ventas:0,comision:0};
+    mapa[ym].servicios[sName].cant++;
+    mapa[ym].servicios[sName].ventas+=f.valor||0;
+    mapa[ym].servicios[sName].comision+=f.comision_monto||0;
+  });
+  return Object.values(mapa).sort((a,b)=>b.ym.localeCompare(a.ym));
+}
+
+function renderMeses(meses){
+  const cont=document.getElementById('com-resumen');
+  if(!meses.length){ cont.innerHTML='<div class="card"><div class="empty">Todavía no tenés ventas registradas.</div></div>'; return; }
+  cont.innerHTML=meses.map(m=>`
+    <div class="card mes-card">
+      <div class="mes-titulo">${mesLabel(m.ym)}</div>
+      <div class="mes-totales">
+        <div class="mes-total"><div class="mes-total-label">Ventas</div><div class="mes-total-val">${fmt(m.ventas)}</div></div>
+        <div class="mes-total"><div class="mes-total-label">Comisión</div><div class="mes-total-val" style="color:#7c6af7">${fmt(m.comision)}</div></div>
+      </div>
+      ${Object.entries(m.servicios).map(([nombre,d])=>`
+        <div class="serv-row"><span>${nombre} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
+      `).join('')}
+    </div>`).join('');
+}
+
+async function cargarComisiones(){
+  const cont=document.getElementById('com-resumen');
+  cont.innerHTML='<div class="msg-full">Cargando...</div>';
+  const {data,error}=await sb.rpc('mi_agenda_comisiones',{p_desde:null,p_hasta:null});
+  if(error){ cont.innerHTML='<div class="msg-full">Error: '+error.message+'</div>'; return; }
+  COM_CACHE=data||[];
+  const meses=agruparPorMes(COM_CACHE);
+  renderMeses(meses.slice(0,2));
+  document.getElementById('btn-historial').style.display=meses.length>2?'':'none';
+}
+
+function mostrarHistorialCompleto(){
+  const meses=agruparPorMes(COM_CACHE||[]);
+  renderMeses(meses);
+  document.getElementById('btn-historial').style.display='none';
+}
+
+// ─── Init ───
+
+async function init(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(session) await afterLogin();
+}
+init();
+</script>
+</body>
+</html>
