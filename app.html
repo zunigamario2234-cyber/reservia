@@ -2203,6 +2203,7 @@ function renderReservas(){
     <td style="white-space:nowrap">
       ${!r.procesado?`<button class="btn btn-ghost btn-sm" onclick="procesarReserva('${r.id}')">Procesar</button>`:''}
       <button class="btn-wa btn-sm" onclick="enviarConfirm('${r.id}')">📱</button>
+      <button class="btn btn-danger btn-sm" onclick="eliminar('reservas','${r.id}',loadReservas,renderReservas)">×</button>
     </td></tr>`).join('');
 }
 
