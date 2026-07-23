@@ -8,10 +8,17 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+.portada-wrap{width:100%;max-height:220px;overflow:hidden;background:#0d0e18}
+.portada-wrap img{width:100%;height:220px;object-fit:cover;display:block}
 .header{padding:20px 24px;border-bottom:0.5px solid #222;display:flex;align-items:center;gap:12px}
-.header-logo{font-size:22px}
+.header-logo{font-size:22px;flex-shrink:0}
+.header-logo-img{width:40px;height:40px;object-fit:contain;border-radius:8px;flex-shrink:0;background:#12131f}
 .header-info h1{font-size:16px;font-weight:600;color:#fff}
 .header-info p{font-size:12px;color:#555;margin-top:2px}
+.header-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px;color:#777}
+.header-meta a{color:#7c6af7;text-decoration:none}
+.header-meta a:hover{text-decoration:underline}
+@media(max-width:480px){.portada-wrap img{height:130px}}
 .container{max-width:640px;margin:0 auto;padding:24px 16px}
 .steps{display:flex;gap:0;margin-bottom:28px;border-bottom:0.5px solid #222}
 .step-tab{flex:1;padding:10px 4px;text-align:center;font-size:11px;color:#444;border-bottom:2px solid transparent;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;overflow:hidden}
@@ -38,6 +45,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .profesional-card.selected{border-color:#7c6af7;background:#1a1a18}
 .profesional-avatar{width:44px;height:44px;border-radius:50%;background:#1a1a18;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:18px;margin:0 auto 8px}
 .profesional-nombre{font-size:12px;font-weight:600;color:#e8e6e0}
+.perfil-profesional{display:flex;gap:14px;align-items:center;margin-top:16px;padding-top:16px;border-top:0.5px solid #222}
+.perfil-prof-foto{width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.perfil-prof-nombre{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:4px}
+.perfil-prof-bio{font-size:12px;color:#999;line-height:1.5}
 .calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:16px}
 .cal-header{text-align:center;font-size:10px;color:#444;padding:4px 0;font-weight:500;text-transform:uppercase}
 .cal-day{text-align:center;padding:8px 4px;min-height:38px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:13px;transition:all 0.15s;border:0.5px solid transparent}
@@ -95,11 +106,16 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
 </head>
 <body>
 
+<div class="portada-wrap" id="portada-wrap" style="display:none">
+  <img id="portada-img" alt="">
+</div>
 <div class="header">
-  <div class="header-logo" style="background:linear-gradient(135deg,#7c6af7,#5b8def);-webkit-background-clip:text;-webkit-text-fill-color:transparent">◈</div>
+  <div class="header-logo" id="header-logo-glifo" style="background:linear-gradient(135deg,#7c6af7,#5b8def);-webkit-background-clip:text;-webkit-text-fill-color:transparent">◈</div>
+  <img id="header-logo-img" class="header-logo-img" style="display:none" alt="">
   <div class="header-info">
     <h1 id="h-nombre">Cargando...</h1>
     <p id="h-dir"></p>
+    <div class="header-meta" id="header-meta"></div>
   </div>
 </div>
 
@@ -127,6 +143,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
     <div class="card">
       <div class="card-title">¿Con quién quieres atenderte?</div>
       <div class="profesional-grid" id="lista-profesionals"></div>
+      <div class="perfil-profesional" id="perfil-profesional" style="display:none"></div>
     </div>
     <button class="btn btn-primary" id="btn-s2" onclick="irPaso(3)" disabled>Continuar →</button>
     <button class="btn btn-ghost" onclick="irPaso(1)">← Volver</button>
@@ -263,32 +280,71 @@ function fillTemplate(str,vars){
   return m;
 }
 
+// Portada: solo se muestra si hay foto_portada, sin fallback roto (se
+// omite la franja entera). Logo: si existe, reemplaza el glifo ◈ en el
+// mismo lugar (un solo ícono, nunca los dos a la vez); si no hay logo,
+// el ◈ de siempre sigue ahí. Cada dato de contacto (dirección aparte,
+// el resto en header-meta) se omite si el negocio no lo cargó — mismo
+// criterio que ya usaba "dirección" antes de este cambio.
+function renderHeaderNegocio(barb){
+  document.getElementById('h-nombre').textContent = barb.nombre;
+  document.getElementById('h-dir').textContent = barb.direccion || '';
+
+  if(barb.foto_portada){
+    document.getElementById('portada-img').src = barb.foto_portada;
+    document.getElementById('portada-wrap').style.display = '';
+  }
+
+  if(barb.logo_url){
+    document.getElementById('header-logo-img').src = barb.logo_url;
+    document.getElementById('header-logo-img').style.display = '';
+    document.getElementById('header-logo-glifo').style.display = 'none';
+  }
+
+  const meta = [];
+  if(barb.telefono) meta.push(`📞 ${barb.telefono}`);
+  if(barb.whatsapp) meta.push(`📱 ${barb.whatsapp}`);
+  if(barb.instagram) meta.push(`<a href="https://instagram.com/${barb.instagram.replace(/^@/,'')}" target="_blank" rel="noopener">📷 ${barb.instagram}</a>`);
+  if(/^https?:\/\//i.test(barb.link_reviews||'')) meta.push(`<a href="${barb.link_reviews}" target="_blank" rel="noopener">⭐ Reseñas</a>`);
+  document.getElementById('header-meta').innerHTML = meta.join('');
+}
+
 async function init(){
   if(!BARBERIA_ID){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:#555">URL inválida. Falta el ID de la negocio.</div>'; return; }
   const {data:barb} = await sb.from('barberias').select('*').eq('id',BARBERIA_ID).single();
   if(!barb){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:#555">Negocio no encontrada.</div>'; return; }
   B.barberia = barb;
-  document.getElementById('h-nombre').textContent = barb.nombre;
-  document.getElementById('h-dir').textContent = barb.direccion || '';
+  renderHeaderNegocio(barb);
   document.title = 'Reservar — ' + barb.nombre;
-  const [{data:sv},{data:ba},{data:hn},{data:blq}] = await Promise.all([
+  const [{data:sv},{data:ba},{data:hn},{data:blq},{data:bs}] = await Promise.all([
     sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('precio'),
     sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).order('nombre'),
     sb.from('horario_negocio').select('*').eq('barberia_id',BARBERIA_ID),
-    sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
+    sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true),
+    sb.from('barbero_servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
   ]);
   B.servicios = sv||[]; B.profesionals = ba||[];
   B.horario = {}; (hn||[]).forEach(h=>{ B.horario[h.dia_semana]=h; });
   B.bloqueos = blq||[];
+  B.barberoServicios = bs||[];
   renderServicios(); renderProfesionals(); renderCalendario();
   const profParam = params.get('profesional');
   const profPreseleccionado = profParam && B.profesionals.find(b=>b.id===profParam);
   if(profPreseleccionado){
+    // El paso 2 (sc-2) queda oculto en este flujo — SALTAR_PROFESIONAL salta
+    // directo de paso 1 a paso 3, así que la foto+bio no se ve si solo se
+    // renderiza ahí (renderPerfilProfesional, vía selProfesional). Por eso
+    // el banner (siempre visible, arriba de los pasos) las incluye directo.
     selProfesional(profParam);
     SALTAR_PROFESIONAL = true;
     document.getElementById('st-2').style.display = 'none';
     const banner = document.getElementById('prof-preselec');
-    banner.innerHTML = `Reservando con: <strong style="color:#e8e6e0">${profPreseleccionado.nombre}</strong>`;
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;justify-content:center">
+        ${profPreseleccionado.foto_url?`<img src="${profPreseleccionado.foto_url}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0">`:''}
+        <span>Reservando con: <strong style="color:#e8e6e0">${profPreseleccionado.nombre}</strong></span>
+      </div>
+      ${profPreseleccionado.bio?`<div style="margin-top:8px;font-size:11px;color:#888">${profPreseleccionado.bio}</div>`:''}`;
     banner.style.display = '';
   }
 }
@@ -308,14 +364,30 @@ function selServicio(id){
   document.querySelectorAll('.servicio-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('sv-'+id).classList.add('selected');
   document.getElementById('btn-s1').disabled = false;
+  // El profesional elegido puede dejar de calificar para el nuevo servicio
+  // — se re-renderiza la grilla filtrada y se limpia cualquier selección
+  // previa del paso 2 para no arrastrar un profesional que ya no aparece.
+  SEL.profesional = null;
+  document.getElementById('btn-s2').disabled = true;
+  document.getElementById('perfil-profesional').style.display = 'none';
+  renderProfesionals();
 }
 
+// Filtra por barbero_servicios: solo profesionales con ese servicio activo
+// califican para el paso 2. "Cualquier profesional" siempre está disponible
+// (no depende de la relación) y nunca muestra foto — es una opción genérica,
+// no una persona. Si ningún profesional real califica para el servicio
+// elegido (mal configurado), la grilla queda con "Cualquiera" solamente —
+// no rompe la pantalla, solo se ve una opción en vez de varias.
 function renderProfesionals(){
-  const todos = {id:'cualquiera',nombre:'Cualquier profesional',emoji:'✂'};
-  const items = [todos,...B.profesionals];
+  const todos = {id:'cualquiera',nombre:'Cualquier profesional'};
+  const calificados = SEL.servicio
+    ? B.profesionals.filter(b=>B.barberoServicios.some(bs=>bs.barbero_id===b.id&&bs.servicio_id===SEL.servicio.id))
+    : B.profesionals;
+  const items = [todos,...calificados];
   document.getElementById('lista-profesionals').innerHTML = items.map(b=>`
     <div class="profesional-card" onclick="selProfesional('${b.id}')" id="ba-${b.id}">
-      <div class="profesional-avatar">${b.emoji||'✂'}</div>
+      <div class="profesional-avatar">${b.id!=='cualquiera'&&b.foto_url?`<img src="${b.foto_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`:'✂'}</div>
       <div class="profesional-nombre">${b.nombre}</div>
     </div>`).join('');
 }
@@ -325,6 +397,21 @@ function selProfesional(id){
   document.querySelectorAll('.profesional-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('ba-'+id).classList.add('selected');
   document.getElementById('btn-s2').disabled = false;
+  renderPerfilProfesional(SEL.profesional);
+}
+
+// Foto grande + bio del profesional elegido, antes de continuar — se omite
+// entero para "Cualquier profesional" o si el profesional no tiene bio ni foto.
+function renderPerfilProfesional(prof){
+  const cont = document.getElementById('perfil-profesional');
+  if(!prof || (!prof.foto_url && !prof.bio)){ cont.style.display = 'none'; return; }
+  cont.innerHTML = `
+    ${prof.foto_url?`<img src="${prof.foto_url}" class="perfil-prof-foto">`:''}
+    <div>
+      <div class="perfil-prof-nombre">${prof.nombre}</div>
+      ${prof.bio?`<div class="perfil-prof-bio">${prof.bio}</div>`:''}
+    </div>`;
+  cont.style.display = 'flex';
 }
 
 function renderCalendario(){

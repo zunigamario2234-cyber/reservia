@@ -556,6 +556,21 @@ input[readonly]{background:#111;color:#666;cursor:default}
         </div>
       </div>
     </div>
+    <!-- PORTADA -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Foto de portada</span></div>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <div id="portada-preview" style="width:160px;height:70px;border-radius:10px;background:var(--bg4);border:1px dashed #7c6af7;display:flex;align-items:center;justify-content:center;font-size:24px;overflow:hidden;flex-shrink:0">🖼️</div>
+        <div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Se muestra ancha arriba en tu link de reservas y en Club VIP — recomendado horizontal (ej. 1200×400)</div>
+          <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg4);border:0.5px solid var(--p1);border-radius:8px;cursor:pointer;font-size:13px;color:var(--p1)">
+            🖼️ Subir portada
+            <input type="file" id="portada-file" accept="image/*" onchange="subirPortada(this)" style="display:none">
+          </label>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px">JPG o PNG</div>
+        </div>
+      </div>
+    </div>
     <div class="card" style="margin-bottom:14px">
       <div class="card-hdr"><span class="card-title">Tu link de reservas</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Compartilo con tus clientes para que reserven online.</div>
@@ -568,7 +583,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="card-hdr"><span class="card-title">Datos del negocio</span></div>
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
       <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
-      <div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div>
+      <div class="fr"><div class="fg"><label>Teléfono</label><input id="cfg-telefono" type="text" placeholder="+56 2 XXXX XXXX"></div><div class="fg"><label>Email de contacto</label><input id="cfg-email" type="email" placeholder="contacto@tunegocio.cl"></div></div>
+      <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div></div>
       <div style="display:none"><input id="cfg-setmore" type="url"></div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
     </div>
@@ -899,6 +915,11 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="ba-nombre" type="text" placeholder="Carlos"></div><div class="fg"><label>WhatsApp *</label><input id="ba-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
     <div class="fr"><div class="fg"><label>% Comisión</label><input id="ba-com" type="number" value="50" min="0" max="100"></div><div class="fg"><label>Meta citas/mes</label><input id="ba-meta" type="number" value="80" min="0"></div></div>
     <div class="fg"><label>Correo</label><input id="ba-email" type="email" placeholder="profesional@correo.com"></div>
+    <div class="fg"><label>Bio (se muestra en el link de reservas)</label><textarea id="ba-bio" rows="2" placeholder="Ej: Especialista en fade y barba, 8 años de experiencia."></textarea></div>
+    <div class="fg">
+      <label>Servicios que realiza</label>
+      <div id="ba-servicios-list" style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 0"></div>
+    </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:8px;cursor:pointer">
       <input type="checkbox" id="ba-puede-pagos" style="width:auto">
       ✓ Puede procesar pagos desde Mi Agenda
@@ -1095,7 +1116,7 @@ async function loadAll(){
   S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadNivelesVip());
   await Promise.all(cargas);
 }
@@ -1105,6 +1126,7 @@ async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').
 async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
 async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.servicios=data||[]; }
 async function loadBarberos(){ const {data}=await sb.from('barberos').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.barberos=data||[]; }
+async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
@@ -1305,7 +1327,7 @@ function initModal(id){
     sel('cl-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
   if(id==='m-costo') document.getElementById('co-fecha').value=hoy;
-  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';}
+  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
@@ -1558,6 +1580,7 @@ function editarProfesional(id){
   document.getElementById('ba-email').value=b.email||'';
   document.getElementById('ba-com').value=b.comision_pct||50;
   document.getElementById('ba-meta').value=b.meta_citas||80;
+  document.getElementById('ba-bio').value=b.bio||'';
   document.getElementById('ba-puede-pagos').checked=!!b.puede_procesar_pagos;
   const prev=document.getElementById('ba-foto-preview');
   if(b.foto_url){
@@ -1565,6 +1588,26 @@ function editarProfesional(id){
   } else {
     prev.innerHTML='👤';
   }
+  renderChecklistServiciosBarbero(b.id);
+}
+
+// Checklist de servicios que ofrece un profesional (barbero_servicios).
+// Sin barberoId (alta nueva): todo tildado por default — mismo criterio
+// "todos hacen todo" que ya usa el backfill de la migración y guardarServicio()
+// para un servicio nuevo. Con barberoId (edición): tildado solo si existe una
+// fila activa=true; si el servicio es más nuevo que el profesional y todavía
+// no tiene fila, queda destildado (el dueño lo activa a mano).
+function renderChecklistServiciosBarbero(barberoId){
+  const cont=document.getElementById('ba-servicios-list');
+  if(!S.servicios.length){cont.innerHTML='<span style="font-size:12px;color:var(--text3)">Agregá servicios primero en Config → Servicios.</span>';return;}
+  cont.innerHTML=S.servicios.map(s=>{
+    const fila=barberoId?S.barberoServicios.find(bs=>bs.barbero_id===barberoId&&bs.servicio_id===s.id):null;
+    const checked=barberoId?!!fila?.activo:true;
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
+      <input type="checkbox" class="ba-srv-chk" data-servicio-id="${s.id}" ${checked?'checked':''} style="width:auto">
+      ${s.nombre}
+    </label>`;
+  }).join('');
 }
 
 async function eliminarProfesional(id){
@@ -1595,19 +1638,27 @@ async function guardarProfesional(){
   const payload={
     barberia_id:S.barberia.id,nombre:n,whatsapp:w,
     email:document.getElementById('ba-email').value.trim()||null,
+    bio:document.getElementById('ba-bio').value.trim()||null,
     comision_pct:parseFloat(document.getElementById('ba-com').value)||50,
     meta_citas:parseInt(document.getElementById('ba-meta').value)||80,
     puede_procesar_pagos:document.getElementById('ba-puede-pagos').checked,
     ...(foto_url&&{foto_url})
   };
-  let error;
+  let error,barberoId=id||null;
   if(id){
     ({error}=await sb.from('barberos').update(payload).eq('id',id));
   } else {
-    ({error}=await sb.from('barberos').insert(payload));
+    const res=await sb.from('barberos').insert(payload).select().single();
+    error=res.error;barberoId=res.data?.id;
   }
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
-  await loadBarberos();closeM('m-profesional');notify('Profesional guardado ✓');renderProfesionals();
+  if(barberoId){
+    const filas=[...document.querySelectorAll('.ba-srv-chk')].map(chk=>({
+      barberia_id:S.barberia.id,barbero_id:barberoId,servicio_id:chk.dataset.servicioId,activo:chk.checked
+    }));
+    if(filas.length) await sb.from('barbero_servicios').upsert(filas,{onConflict:'barbero_id,servicio_id'});
+  }
+  await loadBarberos();await loadBarberoServicios();closeM('m-profesional');notify('Profesional guardado ✓');renderProfesionals();
   btn.disabled=false;btn.textContent='Guardar';
 }
 
@@ -1714,13 +1765,24 @@ async function guardarServicio(){
     descripcion:document.getElementById('sv-desc').value.trim()||null,
     ...(foto_url&&{foto_url})
   };
-  let error;
+  let error,nuevoServicioId=null;
   if(id){
     ({error}=await sb.from('servicios').update(payload).eq('id',id));
   } else {
-    ({error}=await sb.from('servicios').insert(payload));
+    const res=await sb.from('servicios').insert(payload).select().single();
+    error=res.error;nuevoServicioId=res.data?.id;
   }
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
+  if(nuevoServicioId&&S.barberos.length){
+    // Un servicio nuevo lo pueden hacer todos los profesionales existentes
+    // por defecto — mismo criterio "todos hacen todo" del backfill de
+    // barbero_servicios; el dueño desactiva puntualmente después si hace
+    // falta, igual que con un profesional nuevo (ver renderChecklistServiciosBarbero).
+    await sb.from('barbero_servicios').insert(
+      S.barberos.map(b=>({barberia_id:S.barberia.id,barbero_id:b.id,servicio_id:nuevoServicioId,activo:true}))
+    );
+    await loadBarberoServicios();
+  }
   await loadServicios();closeM('m-servicio');notify('Servicio guardado ✓');renderConfig();
   btn.disabled=false;btn.textContent='Guardar';
 }
@@ -1929,6 +1991,9 @@ async function guardarConfig(){
     nombre:document.getElementById('cfg-nombre').value,
     whatsapp:document.getElementById('cfg-wsp').value,
     direccion:document.getElementById('cfg-dir').value,
+    telefono:document.getElementById('cfg-telefono').value,
+    email:document.getElementById('cfg-email').value,
+    instagram:document.getElementById('cfg-instagram').value,
     iva_pct:parseFloat(document.getElementById('cfg-iva').value)||19,
     link_setmore:document.getElementById('cfg-setmore').value,
     link_reviews:document.getElementById('cfg-reviews').value,
@@ -2618,9 +2683,13 @@ function renderProfesionals(){
 function renderConfig(){
   if(S.barberia){
     if(S.barberia.logo_url){const prev=document.getElementById('logo-preview');prev.innerHTML=`<img src="${S.barberia.logo_url}" style="width:100%;height:100%;object-fit:contain;padding:4px">`; }
+    if(S.barberia.foto_portada){const prevP=document.getElementById('portada-preview');prevP.innerHTML=`<img src="${S.barberia.foto_portada}" style="width:100%;height:100%;object-fit:cover">`; }
     document.getElementById('cfg-nombre').value=S.barberia.nombre||'';
     document.getElementById('cfg-wsp').value=S.barberia.whatsapp||'';
     document.getElementById('cfg-dir').value=S.barberia.direccion||'';
+    document.getElementById('cfg-telefono').value=S.barberia.telefono||'';
+    document.getElementById('cfg-email').value=S.barberia.email||'';
+    document.getElementById('cfg-instagram').value=S.barberia.instagram||'';
     document.getElementById('cfg-iva').value=S.barberia.iva_pct||19;
     document.getElementById('cfg-setmore').value=S.barberia.link_setmore||'';
     document.getElementById('cfg-reviews').value=S.barberia.link_reviews||'';
@@ -3315,6 +3384,27 @@ async function subirLogo(input){
       await sb.from('barberias').update({logo_url:url.publicUrl}).eq('id',S.barberia.id);
       S.barberia.logo_url=url.publicUrl;
       notify('Logo guardado ✓');
+    }
+  }
+}
+
+async function subirPortada(input){
+  if(!input.files||!input.files[0])return;
+  const file=input.files[0];
+  const reader=new FileReader();
+  reader.onload=e=>{
+    document.getElementById('portada-preview').innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
+  };
+  reader.readAsDataURL(file);
+  if(S.barberia){
+    const ext=file.name.split('.').pop();
+    const fname=`portadas/${S.barberia.id}/portada.${ext}`;
+    const {error}=await sb.storage.from('fotos').upload(fname,file,{upsert:true});
+    if(!error){
+      const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
+      await sb.from('barberias').update({foto_portada:url.publicUrl}).eq('id',S.barberia.id);
+      S.barberia.foto_portada=url.publicUrl;
+      notify('Portada guardada ✓');
     }
   }
 }

@@ -8,7 +8,12 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+.portada-wrap{width:100%;max-height:200px;overflow:hidden;background:#0d0e18}
+.portada-wrap img{width:100%;height:200px;object-fit:cover;display:block}
+@media(max-width:480px){.portada-wrap img{height:120px}}
 .header{padding:24px;text-align:center}
+.header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
+.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
 .header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
 .container{max-width:480px;margin:0 auto;padding:0 16px 40px}
 .card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
@@ -128,7 +133,13 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
 </head>
 <body>
 
-<div class="header"><h1 id="h-nombre">Mi Club VIP</h1></div>
+<div class="portada-wrap" id="portada-wrap" style="display:none"><img id="portada-img" alt=""></div>
+<div class="header">
+  <div class="header-title-row">
+    <img id="header-logo-img" class="header-logo-img" style="display:none" alt="">
+    <h1 id="h-nombre">Mi Club VIP</h1>
+  </div>
+</div>
 <div class="container">
   <div class="tabs-top" id="tabs-top" style="display:none">
     <button class="tab-btn active" id="tab-btn-club" onclick="cambiarTabTop('club')">🎟 Mi Club</button>
@@ -476,7 +487,7 @@ function rNuevaReserva(){
 const ICONOS_NIVEL = ['🥈','🥇','💎','⭐','🌟','👑'];
 const BADGES_NIVEL = ['b-silver','b-gold','b-blue','b-green'];
 const COLORES_NIVEL = ['#aaa','#d4a853','#6ab0e0','#5cd685'];
-function iconoPos(i){ return i>=0?ICONOS_NIVEL[i%ICONOS_NIVEL.length]:'🎫'; }
+function iconoPos(i){ return i>=0?ICONOS_NIVEL[i%ICONOS_NIVEL.length]:'🌱'; }
 function badgePos(i){ return i>=0?BADGES_NIVEL[i%BADGES_NIVEL.length]:'b-silver'; }
 const MESES_CORTOS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 function fmtFechaCorta(f){
@@ -496,11 +507,19 @@ function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('htt
 async function init(){
   if(!BARBERIA_ID || !CLIENTE_ID){ mostrarError('Este link no es válido. Falta información en la URL.'); return; }
 
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp').eq('id',BARBERIA_ID).single();
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
   document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
   document.title = 'Mi Club VIP — ' + barb.nombre;
+  if(barb.foto_portada){
+    document.getElementById('portada-img').src = barb.foto_portada;
+    document.getElementById('portada-wrap').style.display = '';
+  }
+  if(barb.logo_url){
+    document.getElementById('header-logo-img').src = barb.logo_url;
+    document.getElementById('header-logo-img').style.display = '';
+  }
 
   const {data:clienteRows,error:eCli} = await sb.rpc('get_club_vip_publico',{p_barberia_id:BARBERIA_ID,p_cliente_id:CLIENTE_ID});
   const cliente = clienteRows && clienteRows[0];
@@ -574,7 +593,7 @@ function render(cliente, historial, alianzas, niveles){
           <div class="alianza-nombre">${a.nombre}</div>
           <div class="alianza-beneficio">${a.beneficio}</div>
           ${a.descripcion?`<div class="alianza-desc">${a.descripcion}</div>`:''}
-          ${a.link?`<a class="alianza-link" href="${a.link}" target="_blank" rel="noopener">Ver más →</a>`:''}
+          ${/^https?:\/\//i.test(a.link||'')?`<a class="alianza-link" href="${a.link}" target="_blank" rel="noopener">Ver más →</a>`:''}
         </div>
       </div>`).join('')
     : '<div class="empty">Todavía no hay alianzas disponibles para tu nivel.</div>';
