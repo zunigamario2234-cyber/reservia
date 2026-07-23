@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reservia — Login</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#08090d;color:#e8e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.wrap{width:100%;max-width:420px;padding:24px}
+.logo{text-align:center;margin-bottom:36px}
+.logo svg{margin-bottom:12px}
+.logo h1{font-size:26px;font-weight:800;letter-spacing:-1px;background:linear-gradient(135deg,#7c6af7,#5b8def,#38c9b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.logo p{font-size:13px;color:#555;margin-top:4px}
+.card{background:#0f1020;border:0.5px solid #252545;border-radius:16px;padding:28px}
+.tabs{display:flex;border-bottom:0.5px solid #1e2030;margin-bottom:22px}
+.tab{flex:1;padding:10px;text-align:center;font-size:13px;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
+.tab.active{color:#7c6af7;border-bottom-color:#7c6af7}
+.fg{margin-bottom:12px}
+label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+input{background:#0d0e1a;border:0.5px solid #1e2030;border-radius:8px;color:#e8e8f0;padding:10px 14px;font-size:14px;width:100%;font-family:inherit;transition:all 0.15s}
+input:focus{outline:none;border-color:#7c6af7;box-shadow:0 0 0 3px rgba(124,106,247,0.15)}
+.btn{width:100%;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;margin-top:4px}
+.btn-p{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
+.btn-p:hover{filter:brightness(1.1)}
+.btn-p:disabled{opacity:0.5;cursor:not-allowed}
+.btn-g{background:transparent;color:#777;border:0.5px solid #1e2030;margin-top:8px}
+.btn-g:hover{color:#e8e8f0}
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
+.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
+.alert-ok{background:#001a0d;border:0.5px solid #00e096;color:#00e096}
+.step{display:none}.step.active{display:block}
+.dot{width:8px;height:8px;border-radius:50%;background:#252545;display:inline-block}
+.dot.on{background:#7c6af7}
+.dots{display:flex;gap:6px;margin-bottom:20px;align-items:center}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.plan{border:0.5px solid #1e2030;border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s}
+.plan:hover,.plan.sel{border-color:#7c6af7;background:#13142a}
+.plan-name{font-size:13px;font-weight:600;color:#e8e8f0;margin-bottom:4px}
+.plan-price{font-size:20px;font-weight:700;color:#7c6af7}
+.plan-price span{font-size:11px;color:#555}
+.plan-feat{font-size:11px;color:#555;margin-top:6px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+      <rect width="56" height="56" rx="16" fill="url(#lg)"/>
+      <rect x="12" y="17" width="32" height="26" rx="3" fill="none" stroke="white" stroke-width="2.2"/>
+      <path d="M20 13v8M36 13v8" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M12 27h32" stroke="white" stroke-width="2.2"/>
+      <path d="M20 36l3.5 3.5L36 30" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="56" y2="56"><stop stop-color="#7c6af7"/><stop offset="0.5" stop-color="#5b8def"/><stop offset="1" stop-color="#38c9b0"/></linearGradient></defs>
+    </svg>
+    <h1>Reservia</h1>
+    <p>Gestión inteligente para tu negocio</p>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('login')">Iniciar sesión</div>
+      <div class="tab" onclick="showTab('registro')">Registrar negocio</div>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="t-login">
+      <div id="alert-login" class="alert alert-err" style="display:none"></div>
+      <div class="fg"><label>Correo</label><input type="email" id="l-email" placeholder="tu@correo.com" autocomplete="email"></div>
+      <div class="fg"><label>Contraseña</label><input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="btn btn-p" id="btn-login" onclick="doLogin()">Entrar</button>
+      <button class="btn btn-g" onclick="doReset()">Olvidé mi contraseña</button>
+    </div>
+
+    <!-- REGISTRO -->
+    <div id="t-registro" style="display:none">
+      <div id="alert-reg" class="alert alert-err" style="display:none"></div>
+
+      <div class="step active" id="s1">
+        <div class="dots"><div class="dot on"></div><div class="dot"></div><div class="dot"></div><span style="font-size:11px;color:#555;margin-left:4px">Datos del negocio</span></div>
+        <div class="fg"><label>Nombre del negocio *</label><input type="text" id="r-neg" placeholder="Mi Negocio"></div>
+        <div class="fg"><label>Dirección</label><input type="text" id="r-dir" placeholder="Calle 123, Ciudad"></div>
+        <div class="fg"><label>WhatsApp *</label><input type="text" id="r-wsp" placeholder="+56 9 XXXX XXXX"></div>
+        <div class="fg"><label>Rubro del negocio *</label>
+          <select id="r-rubro">
+            <option value="Barbería / Peluquería / Centro de estética">Barbería / Peluquería / Centro de estética</option>
+            <option value="Salud">Salud (médico, dental, kinesiología, psicología, etc.)</option>
+            <option value="Legal">Legal (abogados, notarías)</option>
+            <option value="Otro">Otro servicio con agenda</option>
+          </select>
+        </div>
+        <button class="btn btn-p" onclick="s1()">Continuar →</button>
+      </div>
+
+      <div class="step" id="s2">
+        <div class="dots"><div class="dot on"></div><div class="dot on"></div><div class="dot"></div><span style="font-size:11px;color:#555;margin-left:4px">Tu cuenta</span></div>
+        <div class="fg"><label>Tu nombre *</label><input type="text" id="r-nombre" placeholder="Juan Pérez"></div>
+        <div class="fg"><label>Correo *</label><input type="email" id="r-email" placeholder="tu@correo.com"></div>
+        <div class="fg"><label>Contraseña *</label><input type="password" id="r-pass" placeholder="Mínimo 6 caracteres"></div>
+        <div class="fg"><label>Confirmar contraseña *</label><input type="password" id="r-pass2" placeholder="Repite la contraseña"></div>
+        <button class="btn btn-p" onclick="s2()">Continuar →</button>
+        <button class="btn btn-g" onclick="goS(1)">← Volver</button>
+      </div>
+
+      <div class="step" id="s3">
+        <div class="dots"><div class="dot on"></div><div class="dot on"></div><div class="dot on"></div><span style="font-size:11px;color:#555;margin-left:4px">Plan</span></div>
+        <div class="plan-grid">
+          <div class="plan sel" onclick="selPlan(this,'free')">
+            <div class="plan-name">Free</div>
+            <div class="plan-price">$0<span>/mes</span></div>
+            <div class="plan-feat">50 clientes · 1 profesional</div>
+          </div>
+          <div class="plan" onclick="selPlan(this,'pro')">
+            <div class="plan-name">Pro ⭐</div>
+            <div class="plan-price">$15<span>USD/mes</span></div>
+            <div class="plan-feat">Ilimitado · 5 profesionales</div>
+          </div>
+        </div>
+        <input type="hidden" id="r-plan" value="free">
+        <button class="btn btn-p" id="btn-reg" onclick="doReg()">Crear negocio</button>
+        <button class="btn btn-g" onclick="goS(2)">← Volver</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL='https://dqoqykngmtxtvbokxbzp.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+// Check session - show login or go to app
+async function checkSession(){
+  try{
+    const {data:{session}} = await sb.auth.getSession();
+    if(session){
+      window.location.replace('app.html');
+    }
+  }catch(e){}
+}
+checkSession();
+if(window.location.hash==='#registro') showTab('registro');
+
+let RD={};
+
+function showTab(t){
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===(t==='login'?0:1)));
+  document.getElementById('t-login').style.display=t==='login'?'':'none';
+  document.getElementById('t-registro').style.display=t==='registro'?'':'none';
+}
+function showAlert(id,msg,type='err'){const el=document.getElementById(id);el.textContent=msg;el.className='alert alert-'+type;el.style.display='';}
+function hideAlert(id){document.getElementById(id).style.display='none';}
+function goS(n){document.querySelectorAll('.step').forEach((s,i)=>s.classList.toggle('active',i===n-1));}
+function selPlan(el,p){document.querySelectorAll('.plan').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');document.getElementById('r-plan').value=p;}
+
+function s1(){
+  const n=document.getElementById('r-neg').value.trim();
+  const w=document.getElementById('r-wsp').value.trim();
+  if(!n||!w){showAlert('alert-reg','Nombre y WhatsApp son obligatorios');return;}
+  RD.neg=n;RD.dir=document.getElementById('r-dir').value.trim();RD.wsp=w;RD.rubro=document.getElementById('r-rubro').value;
+  hideAlert('alert-reg');goS(2);
+}
+function s2(){
+  const n=document.getElementById('r-nombre').value.trim();
+  const e=document.getElementById('r-email').value.trim();
+  const p=document.getElementById('r-pass').value;
+  const p2=document.getElementById('r-pass2').value;
+  if(!n||!e||!p){showAlert('alert-reg','Todos los campos son obligatorios');return;}
+  if(p.length<6){showAlert('alert-reg','Contraseña mínimo 6 caracteres');return;}
+  if(p!==p2){showAlert('alert-reg','Las contraseñas no coinciden');return;}
+  RD.nombre=n;RD.email=e;RD.pass=p;
+  hideAlert('alert-reg');goS(3);
+}
+
+async function doReg(){
+  const btn=document.getElementById('btn-reg');
+  btn.disabled=true;btn.textContent='Creando...';
+  try{
+    const{data:auth,error:e1}=await sb.auth.signUp({email:RD.email,password:RD.pass,options:{data:{nombre:RD.nombre,rol:'dueno'}}});
+    if(e1)throw e1;
+    const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,rubro:RD.rubro,plan:document.getElementById('r-plan').value}).select().single();
+    if(e2)throw e2;
+    // insert(), no upsert(): "perfiles" solo permite UPDATE de la columna
+    // "nombre" desde este rol (rol/barberia_id están bloqueadas por diseño,
+    // ver migration_mi_agenda.sql) — un upsert generaría un ON CONFLICT DO
+    // UPDATE sobre todas las columnas y fallaría por permisos aunque esta
+    // fila siempre sea nueva (recién se creó auth.user.id).
+    await sb.from('perfiles').insert({id:auth.user.id,barberia_id:barb.id,nombre:RD.nombre,rol:'dueno'});
+    await sb.from('servicios').insert([
+      {barberia_id:barb.id,nombre:'Servicio básico',precio:10000,duracion_min:30,comision_pct:50},
+      {barberia_id:barb.id,nombre:'Servicio premium',precio:20000,duracion_min:60,comision_pct:50}
+    ]);
+    await sb.from('horario_negocio').insert([
+      {barberia_id:barb.id,dia_semana:0,cerrado:true,hora_apertura:null,hora_cierre:null},
+      {barberia_id:barb.id,dia_semana:1,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:2,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:3,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:4,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:5,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
+      {barberia_id:barb.id,dia_semana:6,cerrado:false,hora_apertura:'09:00',hora_cierre:'14:00'}
+    ]);
+    await sb.from('niveles_vip').insert([
+      {barberia_id:barb.id,orden:1,nombre:'Plata',visitas_minimas:5,beneficio:'10% descuento'},
+      {barberia_id:barb.id,orden:2,nombre:'Oro',visitas_minimas:10,beneficio:'Servicio gratis'},
+      {barberia_id:barb.id,orden:3,nombre:'Diamante',visitas_minimas:20,beneficio:'VIP total'}
+    ]);
+    const plantillas=[
+      {barberia_id:barb.id,evento:'Bienvenida',mensaje:'¡Hola {nombre}! 👋 Bienvenido a {negocio}. Reserva cuando quieras: {link}',activo:true},
+      {barberia_id:barb.id,evento:'Confirmación reserva',mensaje:'✅ ¡Hola {nombre}! Tu reserva está confirmada.\n📅 {fecha} a las {hora}\n✂️ {servicio} con {profesional}\n📍 {direccion}',activo:true},
+      {barberia_id:barb.id,evento:'Cumpleaños',mensaje:'🎂 ¡Feliz cumpleaños {nombre}! Te regalamos un 15% de descuento en tu próxima visita.',activo:true},
+      {barberia_id:barb.id,evento:'Club nivel 1',mensaje:'🥈 ¡Felicitaciones {nombre}! Alcanzaste nivel Plata. Beneficio: 10% de descuento. Mira tu Club VIP acá: {link_club}',activo:true},
+      {barberia_id:barb.id,evento:'Club nivel 2',mensaje:'🥇 ¡{nombre}, llegaste a Oro! Tienes un servicio gratis en tu próxima visita. Mira tu Club VIP acá: {link_club}',activo:true},
+      {barberia_id:barb.id,evento:'Club nivel 3',mensaje:'💎 ¡DIAMANTE! {nombre}, eres uno de nuestros clientes más especiales. ¡Beneficio VIP activado! Mira tu Club VIP acá: {link_club}',activo:true},
+      {barberia_id:barb.id,evento:'Recuperar inactivo',mensaje:'👋 ¡Hola {nombre}! Te echamos de menos. Hace {dias} días que no te vemos. ¿Reservamos? {link}',activo:true},
+      {barberia_id:barb.id,evento:'Pedir reseña',mensaje:'⭐ ¡Gracias por visitarnos {nombre}! ¿Nos dejas una reseña? {reviews}',activo:true}
+    ];
+    await sb.from('plantillas_mensajes').insert(plantillas);
+    showAlert('alert-reg','¡Negocio creado! Iniciando sesión...','ok');
+    setTimeout(()=>window.location.replace('app.html'),1500);
+  }catch(e){
+    showAlert('alert-reg',e.message||'Error al crear la cuenta');
+    btn.disabled=false;btn.textContent='Crear negocio';
+  }
+}
+
+async function doLogin(){
+  const e=document.getElementById('l-email').value.trim();
+  const p=document.getElementById('l-pass').value;
+  if(!e||!p){showAlert('alert-login','Ingresa tu correo y contraseña');return;}
+  const btn=document.getElementById('btn-login');
+  btn.disabled=true;btn.textContent='Entrando...';
+  const{error}=await sb.auth.signInWithPassword({email:e,password:p});
+  if(error){showAlert('alert-login','Correo o contraseña incorrectos');btn.disabled=false;btn.textContent='Entrar';}
+  else window.location.replace('app.html');
+}
+
+async function doReset(){
+  const e=document.getElementById('l-email').value.trim();
+  if(!e){showAlert('alert-login','Ingresa tu correo primero');return;}
+  await sb.auth.resetPasswordForEmail(e);
+  showAlert('alert-login','Revisa tu correo para restablecer la contraseña','ok');
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('t-login').style.display!=='none')doLogin();});
+</script>
+</body>
+</html>

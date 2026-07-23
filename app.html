@@ -1032,13 +1032,13 @@ async function init(){
     // If coming from logout, sign out first
     if(window.location.search.includes('logout=1')){
       await sb.auth.signOut();
-      window.location.replace('index.html');
+      window.location.replace('ingresar.html');
       return;
     }
     const {data:{session},error} = await sb.auth.getSession();
-    if(error||!session){ 
-      window.location.replace('index.html'); 
-      return; 
+    if(error||!session){
+      window.location.replace('ingresar.html');
+      return;
     }
   S.user = session.user;
   await loadAll();
@@ -1050,9 +1050,9 @@ async function init(){
   nav('dashboard');cargarTemaGuardado();
   }catch(e){
     console.error(e);
-    // Si ya había una sesión válida, redirigir a index.html solo rebota de
-    // vuelta para acá (index.html ve la sesión activa) — eso es el loop
-    // silencioso. En vez de eso, mostramos el error acá mismo.
+    // Si ya había una sesión válida, redirigir a ingresar.html solo rebota
+    // de vuelta para acá (ingresar.html ve la sesión activa) — eso es el
+    // loop silencioso. En vez de eso, mostramos el error acá mismo.
     mostrarErrorCarga(e.message||'Ocurrió un error inesperado al cargar tu cuenta.');
   }
   setInterval(()=>{ if(document.getElementById('p-dashboard').classList.contains('active')) renderDashboard(); }, 60000);
@@ -2010,7 +2010,7 @@ function editarCliente(id){
   document.getElementById('cl-notas').value=c.notas||'';
 }
 
-async function doLogout(){ await sb.auth.signOut(); window.location.href='index.html'; }
+async function doLogout(){ await sb.auth.signOut(); window.location.href='ingresar.html'; }
 
 // ─── RENDERS ───
 // ─── DASHBOARD: período ───

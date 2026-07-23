@@ -3,245 +3,258 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reservia — Login</title>
+<title>Reservia — Gestión inteligente para tu negocio</title>
+<meta name="description" content="Agenda, reservas online, CRM de clientes, comisiones por profesional y Club VIP con alianzas — todo en una sola plataforma para barberías, salones, spas y clínicas en Chile.">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#08090d;color:#e8e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.wrap{width:100%;max-width:420px;padding:24px}
-.logo{text-align:center;margin-bottom:36px}
-.logo svg{margin-bottom:12px}
-.logo h1{font-size:26px;font-weight:800;letter-spacing:-1px;background:linear-gradient(135deg,#7c6af7,#5b8def,#38c9b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.logo p{font-size:13px;color:#555;margin-top:4px}
-.card{background:#0f1020;border:0.5px solid #252545;border-radius:16px;padding:28px}
-.tabs{display:flex;border-bottom:0.5px solid #1e2030;margin-bottom:22px}
-.tab{flex:1;padding:10px;text-align:center;font-size:13px;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
-.tab.active{color:#7c6af7;border-bottom-color:#7c6af7}
-.fg{margin-bottom:12px}
-label{font-size:11px;color:#555;display:block;margin-bottom:4px}
-input{background:#0d0e1a;border:0.5px solid #1e2030;border-radius:8px;color:#e8e8f0;padding:10px 14px;font-size:14px;width:100%;font-family:inherit;transition:all 0.15s}
-input:focus{outline:none;border-color:#7c6af7;box-shadow:0 0 0 3px rgba(124,106,247,0.15)}
-.btn{width:100%;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;margin-top:4px}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e8f0;line-height:1.5}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+/* ─── Nav ─── */
+.nav{position:sticky;top:0;z-index:10;background:rgba(8,9,13,0.85);backdrop-filter:blur(10px);border-bottom:0.5px solid #1e2030}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 20px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font-size:18px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(135deg,#7c6af7,#5b8def,#38c9b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nav-actions{display:flex;align-items:center;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;text-decoration:none;transition:filter 0.15s,background 0.15s}
 .btn-p{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
 .btn-p:hover{filter:brightness(1.1)}
-.btn-p:disabled{opacity:0.5;cursor:not-allowed}
-.btn-g{background:transparent;color:#777;border:0.5px solid #1e2030;margin-top:8px}
-.btn-g:hover{color:#e8e8f0}
-.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
-.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
-.alert-ok{background:#001a0d;border:0.5px solid #00e096;color:#00e096}
-.step{display:none}.step.active{display:block}
-.dot{width:8px;height:8px;border-radius:50%;background:#252545;display:inline-block}
-.dot.on{background:#7c6af7}
-.dots{display:flex;gap:6px;margin-bottom:20px;align-items:center}
-.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
-.plan{border:0.5px solid #1e2030;border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s}
-.plan:hover,.plan.sel{border-color:#7c6af7;background:#13142a}
-.plan-name{font-size:13px;font-weight:600;color:#e8e8f0;margin-bottom:4px}
-.plan-price{font-size:20px;font-weight:700;color:#7c6af7}
-.plan-price span{font-size:11px;color:#555}
-.plan-feat{font-size:11px;color:#555;margin-top:6px;line-height:1.5}
+.btn-g{background:transparent;color:#aaa;border:0.5px solid #2a2c40}
+.btn-g:hover{color:#e8e8f0;border-color:#444}
+.nav .btn-g{padding:9px 16px}
+
+/* ─── Hero ─── */
+.hero{padding:64px 0 48px;text-align:center}
+.hero-badge{display:inline-block;font-size:12px;color:#7c6af7;background:rgba(124,106,247,0.1);border:0.5px solid rgba(124,106,247,0.3);padding:6px 14px;border-radius:20px;margin-bottom:20px}
+.hero h2{font-size:clamp(28px,5vw,46px);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:18px}
+.hero h2 span{background:linear-gradient(135deg,#7c6af7,#5b8def,#38c9b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{font-size:16px;color:#8a8a9a;max-width:600px;margin:0 auto 32px}
+.hero-ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.hero-ctas .btn{padding:13px 24px;font-size:14px}
+
+/* ─── Rubros ─── */
+.rubros{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:40px}
+.rubro-chip{font-size:12px;color:#8a8a9a;border:0.5px solid #1e2030;border-radius:20px;padding:7px 14px;background:#0f1020}
+
+/* ─── Sections ─── */
+section{padding:56px 0}
+.section-title{text-align:center;margin-bottom:40px}
+.section-title h3{font-size:clamp(22px,3.5vw,30px);font-weight:800;letter-spacing:-0.5px;margin-bottom:10px}
+.section-title p{font-size:14px;color:#8a8a9a;max-width:520px;margin:0 auto}
+
+/* ─── Features grid ─── */
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.feature{background:#0f1020;border:0.5px solid #1e2030;border-radius:14px;padding:22px}
+.feature-icon{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(124,106,247,0.15),rgba(91,141,239,0.15));display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:14px}
+.feature h4{font-size:14px;font-weight:700;margin-bottom:6px}
+.feature p{font-size:12.5px;color:#8a8a9a}
+
+/* ─── Club VIP highlight ─── */
+.highlight{background:linear-gradient(160deg,#151328,#0f1020);border:0.5px solid #2a2555;border-radius:20px;padding:40px 32px;display:grid;grid-template-columns:1.1fr 1fr;gap:36px;align-items:center}
+.highlight-tag{display:inline-block;font-size:11px;font-weight:700;color:#0a0a0a;background:linear-gradient(135deg,#f7c948,#f7924a);padding:5px 12px;border-radius:6px;margin-bottom:14px;letter-spacing:0.3px}
+.highlight h3{font-size:clamp(20px,3vw,26px);font-weight:800;letter-spacing:-0.5px;margin-bottom:14px}
+.highlight p{font-size:13.5px;color:#a8a8ba;margin-bottom:10px}
+.highlight ul{list-style:none;padding:0}
+.highlight li{font-size:13px;color:#c8c8d8;padding:8px 0;border-bottom:0.5px solid #23204a;display:flex;gap:10px}
+.highlight li:last-child{border-bottom:none}
+.highlight li::before{content:'✓';color:#38c9b0;font-weight:700;flex-shrink:0}
+.vip-visual{background:#0a0a14;border:0.5px solid #23204a;border-radius:14px;padding:22px}
+.vip-levels{display:flex;flex-direction:column;gap:10px}
+.vip-level{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:#0f1020;border:0.5px solid #1e2030}
+.vip-level .em{font-size:20px}
+.vip-level .t{font-size:13px;font-weight:600}
+.vip-level .d{font-size:11px;color:#777}
+.vip-alianza{margin-top:14px;padding-top:14px;border-top:0.5px dashed #23204a;font-size:12px;color:#8a8a9a;display:flex;align-items:center;gap:8px}
+
+/* ─── Mi Agenda section ─── */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:36px;align-items:center}
+.split-card{background:#0f1020;border:0.5px solid #1e2030;border-radius:16px;padding:26px}
+.split h3{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin-bottom:14px}
+.split p{font-size:13.5px;color:#8a8a9a;margin-bottom:10px}
+.split ul{list-style:none;padding:0}
+.split li{font-size:13px;color:#c8c8d8;padding:7px 0;display:flex;gap:10px}
+.split li::before{content:'✓';color:#38c9b0;font-weight:700;flex-shrink:0}
+
+/* ─── Final CTA ─── */
+.cta-final{text-align:center;background:radial-gradient(ellipse at center,rgba(124,106,247,0.12),transparent 70%);border-radius:24px;padding:56px 24px}
+.cta-final h3{font-size:clamp(22px,4vw,32px);font-weight:800;letter-spacing:-0.5px;margin-bottom:14px}
+.cta-final p{font-size:14px;color:#8a8a9a;margin-bottom:26px}
+
+/* ─── Footer ─── */
+footer{border-top:0.5px solid #1e2030;padding:28px 0;text-align:center;font-size:12px;color:#555}
+footer a{color:#8a8a9a;text-decoration:none}
+footer a:hover{color:#e8e8f0}
+
+@media (max-width:820px){
+  .features{grid-template-columns:repeat(2,1fr)}
+  .highlight{grid-template-columns:1fr;padding:28px 20px}
+  .split{grid-template-columns:1fr}
+  .split.reverse .split-visual{order:2}
+}
+@media (max-width:560px){
+  .features{grid-template-columns:1fr}
+  .hero{padding:44px 0 36px}
+  section{padding:40px 0}
+  .nav .btn-g{display:none}
+}
 </style>
 </head>
 <body>
+
+<nav class="nav">
+  <div class="wrap">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 56 56" fill="none">
+        <rect width="56" height="56" rx="16" fill="url(#lg)"/>
+        <rect x="12" y="17" width="32" height="26" rx="3" fill="none" stroke="white" stroke-width="2.2"/>
+        <path d="M20 13v8M36 13v8" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M12 27h32" stroke="white" stroke-width="2.2"/>
+        <path d="M20 36l3.5 3.5L36 30" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="56" y2="56"><stop stop-color="#7c6af7"/><stop offset="0.5" stop-color="#5b8def"/><stop offset="1" stop-color="#38c9b0"/></linearGradient></defs>
+      </svg>
+      <h1>Reservia</h1>
+    </div>
+    <div class="nav-actions">
+      <a class="btn btn-g" href="ingresar.html">Ingresar</a>
+      <a class="btn btn-p" href="ingresar.html#registro">Crear cuenta gratis</a>
+    </div>
+  </div>
+</nav>
+
 <div class="wrap">
-  <div class="logo">
-    <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-      <rect width="56" height="56" rx="16" fill="url(#lg)"/>
-      <rect x="12" y="17" width="32" height="26" rx="3" fill="none" stroke="white" stroke-width="2.2"/>
-      <path d="M20 13v8M36 13v8" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
-      <path d="M12 27h32" stroke="white" stroke-width="2.2"/>
-      <path d="M20 36l3.5 3.5L36 30" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-      <defs><linearGradient id="lg" x1="0" y1="0" x2="56" y2="56"><stop stop-color="#7c6af7"/><stop offset="0.5" stop-color="#5b8def"/><stop offset="1" stop-color="#38c9b0"/></linearGradient></defs>
-    </svg>
-    <h1>Reservia</h1>
-    <p>Gestión inteligente para tu negocio</p>
-  </div>
 
-  <div class="card">
-    <div class="tabs">
-      <div class="tab active" onclick="showTab('login')">Iniciar sesión</div>
-      <div class="tab" onclick="showTab('registro')">Registrar negocio</div>
+  <div class="hero">
+    <span class="hero-badge">Hecho para negocios de agenda en Chile</span>
+    <h2>Tu negocio, <span>siempre organizado</span></h2>
+    <p>Agenda, reservas online, clientes y comisiones en un solo lugar — con un Club VIP y alianzas que fidelizan como ninguna otra plataforma en Chile.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-p" href="ingresar.html#registro">Crear cuenta gratis</a>
+      <a class="btn btn-g" href="#funciones">Ver funciones</a>
     </div>
-
-    <!-- LOGIN -->
-    <div id="t-login">
-      <div id="alert-login" class="alert alert-err" style="display:none"></div>
-      <div class="fg"><label>Correo</label><input type="email" id="l-email" placeholder="tu@correo.com" autocomplete="email"></div>
-      <div class="fg"><label>Contraseña</label><input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"></div>
-      <button class="btn btn-p" id="btn-login" onclick="doLogin()">Entrar</button>
-      <button class="btn btn-g" onclick="doReset()">Olvidé mi contraseña</button>
-    </div>
-
-    <!-- REGISTRO -->
-    <div id="t-registro" style="display:none">
-      <div id="alert-reg" class="alert alert-err" style="display:none"></div>
-
-      <div class="step active" id="s1">
-        <div class="dots"><div class="dot on"></div><div class="dot"></div><div class="dot"></div><span style="font-size:11px;color:#555;margin-left:4px">Datos del negocio</span></div>
-        <div class="fg"><label>Nombre del negocio *</label><input type="text" id="r-neg" placeholder="Mi Negocio"></div>
-        <div class="fg"><label>Dirección</label><input type="text" id="r-dir" placeholder="Calle 123, Ciudad"></div>
-        <div class="fg"><label>WhatsApp *</label><input type="text" id="r-wsp" placeholder="+56 9 XXXX XXXX"></div>
-        <div class="fg"><label>Rubro del negocio *</label>
-          <select id="r-rubro">
-            <option value="Barbería / Peluquería / Centro de estética">Barbería / Peluquería / Centro de estética</option>
-            <option value="Salud">Salud (médico, dental, kinesiología, psicología, etc.)</option>
-            <option value="Legal">Legal (abogados, notarías)</option>
-            <option value="Otro">Otro servicio con agenda</option>
-          </select>
-        </div>
-        <button class="btn btn-p" onclick="s1()">Continuar →</button>
-      </div>
-
-      <div class="step" id="s2">
-        <div class="dots"><div class="dot on"></div><div class="dot on"></div><div class="dot"></div><span style="font-size:11px;color:#555;margin-left:4px">Tu cuenta</span></div>
-        <div class="fg"><label>Tu nombre *</label><input type="text" id="r-nombre" placeholder="Juan Pérez"></div>
-        <div class="fg"><label>Correo *</label><input type="email" id="r-email" placeholder="tu@correo.com"></div>
-        <div class="fg"><label>Contraseña *</label><input type="password" id="r-pass" placeholder="Mínimo 6 caracteres"></div>
-        <div class="fg"><label>Confirmar contraseña *</label><input type="password" id="r-pass2" placeholder="Repite la contraseña"></div>
-        <button class="btn btn-p" onclick="s2()">Continuar →</button>
-        <button class="btn btn-g" onclick="goS(1)">← Volver</button>
-      </div>
-
-      <div class="step" id="s3">
-        <div class="dots"><div class="dot on"></div><div class="dot on"></div><div class="dot on"></div><span style="font-size:11px;color:#555;margin-left:4px">Plan</span></div>
-        <div class="plan-grid">
-          <div class="plan sel" onclick="selPlan(this,'free')">
-            <div class="plan-name">Free</div>
-            <div class="plan-price">$0<span>/mes</span></div>
-            <div class="plan-feat">50 clientes · 1 profesional</div>
-          </div>
-          <div class="plan" onclick="selPlan(this,'pro')">
-            <div class="plan-name">Pro ⭐</div>
-            <div class="plan-price">$15<span>USD/mes</span></div>
-            <div class="plan-feat">Ilimitado · 5 profesionales</div>
-          </div>
-        </div>
-        <input type="hidden" id="r-plan" value="free">
-        <button class="btn btn-p" id="btn-reg" onclick="doReg()">Crear negocio</button>
-        <button class="btn btn-g" onclick="goS(2)">← Volver</button>
-      </div>
+    <div class="rubros">
+      <span class="rubro-chip">💈 Barberías</span>
+      <span class="rubro-chip">💇 Peluquerías / Salones</span>
+      <span class="rubro-chip">🧖 Spas y centros de estética</span>
+      <span class="rubro-chip">🩺 Clínicas y consultas</span>
     </div>
   </div>
+
+  <section id="funciones">
+    <div class="section-title">
+      <h3>Todo lo que tu negocio necesita</h3>
+      <p>Seis herramientas que hoy manejás por separado — reunidas en una sola plataforma.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">📅</div>
+        <h4>Agenda con bloqueos</h4>
+        <p>Vacaciones, días libres o un horario fijo por profesional — la agenda respeta cada bloqueo automáticamente.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔗</div>
+        <h4>Reservas online</h4>
+        <p>Un link propio para que tus clientes reserven hora 24/7, eligiendo servicio, profesional y horario disponible.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">👥</div>
+        <h4>CRM de clientes</h4>
+        <p>Historial de visitas, cumpleaños, clientes inactivos y nivel VIP de cada persona, siempre a mano.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">💰</div>
+        <h4>Comisiones por profesional</h4>
+        <p>Configurá el % de cada profesional y Reservia calcula automáticamente lo que le corresponde por cada venta.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📱</div>
+        <h4>Mi Agenda para profesionales</h4>
+        <p>Cada profesional entra con su propia cuenta a ver su día, gestionar sus citas y revisar sus comisiones.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⭐</div>
+        <h4>Club VIP</h4>
+        <p>Niveles automáticos según visitas, con beneficios que premian a tus mejores clientes.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="highlight">
+      <div>
+        <span class="highlight-tag">Diferencial Reservia</span>
+        <h3>Club VIP con alianzas — algo que casi ninguna plataforma chilena ofrece hoy</h3>
+        <p>Tus clientes suben de nivel automáticamente según sus visitas y acceden a beneficios propios de tu negocio. Pero además, podés sumar alianzas con otros negocios — descuentos y beneficios cruzados que tus clientes VIP canjean directo desde su Club.</p>
+        <ul>
+          <li>Niveles automáticos por cantidad de visitas</li>
+          <li>Beneficios propios configurables por nivel</li>
+          <li>Alianzas con negocios externos como beneficio adicional</li>
+          <li>Página de Club VIP propia para cada cliente</li>
+        </ul>
+      </div>
+      <div class="vip-visual">
+        <div class="vip-levels">
+          <div class="vip-level"><span class="em">🥈</span><div><div class="t">Plata</div><div class="d">10% de descuento</div></div></div>
+          <div class="vip-level"><span class="em">🥇</span><div><div class="t">Oro</div><div class="d">Servicio gratis</div></div></div>
+          <div class="vip-level"><span class="em">💎</span><div><div class="t">Diamante</div><div class="d">Beneficios VIP totales</div></div></div>
+        </div>
+        <div class="vip-alianza">🤝 + Alianzas con negocios externos, canjeables desde el Club VIP</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="split">
+      <div>
+        <h3>Cada profesional, con su propia app</h3>
+        <p>Con Mi Agenda, cada profesional del equipo tiene su propio login — sin ver el resto del negocio.</p>
+        <ul>
+          <li>Ve su agenda del día, no la de todo el negocio</li>
+          <li>Puede agendar, cancelar y ordenar sus propias citas</li>
+          <li>Revisa sus ventas y comisiones en tiempo real</li>
+          <li>Instalable como app en el celular</li>
+        </ul>
+      </div>
+      <div class="split-card">
+        <div class="feature-icon">📱</div>
+        <h4 style="font-size:15px;margin-bottom:8px">Mi Agenda</h4>
+        <p style="font-size:12.5px;color:#8a8a9a">Login propio para profesionales, separado del panel del dueño. Ideal para equipos donde cada persona necesita ver solo lo suyo.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="cta-final">
+      <h3>Registrá tu negocio, gratis</h3>
+      <p>Empezá a usar Reservia hoy mismo — sin tarjeta de crédito.</p>
+      <a class="btn btn-p" href="ingresar.html#registro">Crear cuenta gratis</a>
+    </div>
+  </section>
+
 </div>
+
+<footer>
+  <div class="wrap">
+    © 2026 Reservia · <a href="ingresar.html">Ingresar</a>
+  </div>
+</footer>
 
 <script>
 const SUPABASE_URL='https://dqoqykngmtxtvbokxbzp.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-// Check session - show login or go to app
-async function checkSession(){
+// Un dueño que ya tiene sesión activa y entra a la raíz va directo al panel,
+// igual que hacía antes ingresar.html (entonces index.html) — no lo dejamos
+// varado viendo la landing.
+(async()=>{
   try{
     const {data:{session}} = await sb.auth.getSession();
-    if(session){
-      window.location.replace('app.html');
-    }
+    if(session) window.location.replace('app.html');
   }catch(e){}
-}
-checkSession();
-
-let RD={};
-
-function showTab(t){
-  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===(t==='login'?0:1)));
-  document.getElementById('t-login').style.display=t==='login'?'':'none';
-  document.getElementById('t-registro').style.display=t==='registro'?'':'none';
-}
-function showAlert(id,msg,type='err'){const el=document.getElementById(id);el.textContent=msg;el.className='alert alert-'+type;el.style.display='';}
-function hideAlert(id){document.getElementById(id).style.display='none';}
-function goS(n){document.querySelectorAll('.step').forEach((s,i)=>s.classList.toggle('active',i===n-1));}
-function selPlan(el,p){document.querySelectorAll('.plan').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');document.getElementById('r-plan').value=p;}
-
-function s1(){
-  const n=document.getElementById('r-neg').value.trim();
-  const w=document.getElementById('r-wsp').value.trim();
-  if(!n||!w){showAlert('alert-reg','Nombre y WhatsApp son obligatorios');return;}
-  RD.neg=n;RD.dir=document.getElementById('r-dir').value.trim();RD.wsp=w;RD.rubro=document.getElementById('r-rubro').value;
-  hideAlert('alert-reg');goS(2);
-}
-function s2(){
-  const n=document.getElementById('r-nombre').value.trim();
-  const e=document.getElementById('r-email').value.trim();
-  const p=document.getElementById('r-pass').value;
-  const p2=document.getElementById('r-pass2').value;
-  if(!n||!e||!p){showAlert('alert-reg','Todos los campos son obligatorios');return;}
-  if(p.length<6){showAlert('alert-reg','Contraseña mínimo 6 caracteres');return;}
-  if(p!==p2){showAlert('alert-reg','Las contraseñas no coinciden');return;}
-  RD.nombre=n;RD.email=e;RD.pass=p;
-  hideAlert('alert-reg');goS(3);
-}
-
-async function doReg(){
-  const btn=document.getElementById('btn-reg');
-  btn.disabled=true;btn.textContent='Creando...';
-  try{
-    const{data:auth,error:e1}=await sb.auth.signUp({email:RD.email,password:RD.pass,options:{data:{nombre:RD.nombre,rol:'dueno'}}});
-    if(e1)throw e1;
-    const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,rubro:RD.rubro,plan:document.getElementById('r-plan').value}).select().single();
-    if(e2)throw e2;
-    // insert(), no upsert(): "perfiles" solo permite UPDATE de la columna
-    // "nombre" desde este rol (rol/barberia_id están bloqueadas por diseño,
-    // ver migration_mi_agenda.sql) — un upsert generaría un ON CONFLICT DO
-    // UPDATE sobre todas las columnas y fallaría por permisos aunque esta
-    // fila siempre sea nueva (recién se creó auth.user.id).
-    await sb.from('perfiles').insert({id:auth.user.id,barberia_id:barb.id,nombre:RD.nombre,rol:'dueno'});
-    await sb.from('servicios').insert([
-      {barberia_id:barb.id,nombre:'Servicio básico',precio:10000,duracion_min:30,comision_pct:50},
-      {barberia_id:barb.id,nombre:'Servicio premium',precio:20000,duracion_min:60,comision_pct:50}
-    ]);
-    await sb.from('horario_negocio').insert([
-      {barberia_id:barb.id,dia_semana:0,cerrado:true,hora_apertura:null,hora_cierre:null},
-      {barberia_id:barb.id,dia_semana:1,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
-      {barberia_id:barb.id,dia_semana:2,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
-      {barberia_id:barb.id,dia_semana:3,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
-      {barberia_id:barb.id,dia_semana:4,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
-      {barberia_id:barb.id,dia_semana:5,cerrado:false,hora_apertura:'09:00',hora_cierre:'19:00'},
-      {barberia_id:barb.id,dia_semana:6,cerrado:false,hora_apertura:'09:00',hora_cierre:'14:00'}
-    ]);
-    await sb.from('niveles_vip').insert([
-      {barberia_id:barb.id,orden:1,nombre:'Plata',visitas_minimas:5,beneficio:'10% descuento'},
-      {barberia_id:barb.id,orden:2,nombre:'Oro',visitas_minimas:10,beneficio:'Servicio gratis'},
-      {barberia_id:barb.id,orden:3,nombre:'Diamante',visitas_minimas:20,beneficio:'VIP total'}
-    ]);
-    const plantillas=[
-      {barberia_id:barb.id,evento:'Bienvenida',mensaje:'¡Hola {nombre}! 👋 Bienvenido a {negocio}. Reserva cuando quieras: {link}',activo:true},
-      {barberia_id:barb.id,evento:'Confirmación reserva',mensaje:'✅ ¡Hola {nombre}! Tu reserva está confirmada.\n📅 {fecha} a las {hora}\n✂️ {servicio} con {profesional}\n📍 {direccion}',activo:true},
-      {barberia_id:barb.id,evento:'Cumpleaños',mensaje:'🎂 ¡Feliz cumpleaños {nombre}! Te regalamos un 15% de descuento en tu próxima visita.',activo:true},
-      {barberia_id:barb.id,evento:'Club nivel 1',mensaje:'🥈 ¡Felicitaciones {nombre}! Alcanzaste nivel Plata. Beneficio: 10% de descuento. Mira tu Club VIP acá: {link_club}',activo:true},
-      {barberia_id:barb.id,evento:'Club nivel 2',mensaje:'🥇 ¡{nombre}, llegaste a Oro! Tienes un servicio gratis en tu próxima visita. Mira tu Club VIP acá: {link_club}',activo:true},
-      {barberia_id:barb.id,evento:'Club nivel 3',mensaje:'💎 ¡DIAMANTE! {nombre}, eres uno de nuestros clientes más especiales. ¡Beneficio VIP activado! Mira tu Club VIP acá: {link_club}',activo:true},
-      {barberia_id:barb.id,evento:'Recuperar inactivo',mensaje:'👋 ¡Hola {nombre}! Te echamos de menos. Hace {dias} días que no te vemos. ¿Reservamos? {link}',activo:true},
-      {barberia_id:barb.id,evento:'Pedir reseña',mensaje:'⭐ ¡Gracias por visitarnos {nombre}! ¿Nos dejas una reseña? {reviews}',activo:true}
-    ];
-    await sb.from('plantillas_mensajes').insert(plantillas);
-    showAlert('alert-reg','¡Negocio creado! Iniciando sesión...','ok');
-    setTimeout(()=>window.location.replace('app.html'),1500);
-  }catch(e){
-    showAlert('alert-reg',e.message||'Error al crear la cuenta');
-    btn.disabled=false;btn.textContent='Crear negocio';
-  }
-}
-
-async function doLogin(){
-  const e=document.getElementById('l-email').value.trim();
-  const p=document.getElementById('l-pass').value;
-  if(!e||!p){showAlert('alert-login','Ingresa tu correo y contraseña');return;}
-  const btn=document.getElementById('btn-login');
-  btn.disabled=true;btn.textContent='Entrando...';
-  const{error}=await sb.auth.signInWithPassword({email:e,password:p});
-  if(error){showAlert('alert-login','Correo o contraseña incorrectos');btn.disabled=false;btn.textContent='Entrar';}
-  else window.location.replace('app.html');
-}
-
-async function doReset(){
-  const e=document.getElementById('l-email').value.trim();
-  if(!e){showAlert('alert-login','Ingresa tu correo primero');return;}
-  await sb.auth.resetPasswordForEmail(e);
-  showAlert('alert-login','Revisa tu correo para restablecer la contraseña','ok');
-}
-
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('t-login').style.display!=='none')doLogin();});
+})();
 </script>
 </body>
 </html>

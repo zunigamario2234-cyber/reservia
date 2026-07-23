@@ -7,7 +7,7 @@
 
 <!-- PWA: manifest + service worker exclusivos de esta página (ver
      mi-agenda-manifest.json y mi-agenda-sw.js). No se referencian desde
-     app.html/reservar.html/club.html/index.html — esas páginas siguen
+     app.html/reservar.html/club.html/index.html/ingresar.html — esas páginas siguen
      sirviéndose frescas del servidor, sin manifest ni service worker. -->
 <link rel="manifest" href="/mi-agenda-manifest.json">
 <meta name="theme-color" content="#08090d">
@@ -212,7 +212,7 @@ async function afterLogin(){
 
   const {data:perfil,error:eP}=await sb.from('perfiles').select('*').eq('id',session.user.id).single();
   if(eP||!perfil||perfil.rol!=='profesional'){
-    mostrarLoginError('Esta cuenta no es de un profesional. Si sos el dueño del negocio, usá index.html.');
+    mostrarLoginError('Esta cuenta no es de un profesional. Si sos el dueño del negocio, usá ingresar.html.');
     await sb.auth.signOut();
     return;
   }
@@ -490,7 +490,7 @@ init();
 
 // PWA: registra el service worker acotado a esta página exacta (scope
 // "/mi-agenda.html") — nunca controla app.html/reservar.html/club.html/
-// index.html, que ni siquiera enlazan un manifest. El SW en sí no cachea
+// index.html/ingresar.html, que ni siquiera enlazan un manifest. El SW en sí no cachea
 // nada (ver mi-agenda-sw.js), así que esto no cambia el comportamiento de
 // login ni de las RPCs, solo habilita "Agregar a pantalla de inicio".
 if('serviceWorker' in navigator){
