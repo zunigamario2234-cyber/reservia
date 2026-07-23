@@ -173,6 +173,9 @@ let BARBERO = null;
 let SERVICIOS = [];
 let NEGOCIO_NOMBRE = '';
 let CLIENTE_SEL = null;
+let CITAS_ACTUALES = [];
+let PAGO_ABIERTO_MIAGENDA = null;
+const METODOS_PAGO_MIAGENDA = ['Efectivo','Transferencia','Débito','Crédito'];
 
 // Para pasar datos por onclick='...' (atributo delimitado por comillas
 // simples): JSON.stringify no escapa comillas simples, así que un nombre
@@ -261,7 +264,8 @@ async function cargarAgenda(){
   cont.innerHTML='<div class="msg-full">Cargando...</div>';
   const {data,error}=await sb.rpc('mi_agenda_citas',{p_fecha:fecha});
   if(error){ cont.innerHTML='<div class="msg-full">Error al cargar la agenda: '+error.message+'</div>'; return; }
-  renderCitas(data||[]);
+  CITAS_ACTUALES=data||[];
+  renderCitas(CITAS_ACTUALES);
 }
 
 function estadoBadge(estado){
@@ -292,6 +296,8 @@ function renderCitas(lista){
   if(!lista.length){ cont.innerHTML='<div class="card"><div class="empty">Sin citas para este día.</div></div>'; return; }
   cont.innerHTML=lista.map(c=>{
     const cancelable=c.estado!=='Cancelada';
+    const puedePagar=BARBERO?.puede_procesar_pagos&&c.tipo==='reserva'&&c.estado!=='Cancelada';
+    const pagoAbierto=PAGO_ABIERTO_MIAGENDA===c.id;
     return `<div class="cita-item">
       <div class="cita-hora">${fmtHora(c.hora)}</div>
       <div class="cita-cliente">${c.nombre_cliente||'Cliente'}</div>
@@ -299,11 +305,25 @@ function renderCitas(lista){
       ${c.notas?`<div class="cita-detalle">📝 ${c.notas}</div>`:''}
       <div class="cita-acciones">
         ${c.whatsapp_cliente?`<a class="btn-wa" onclick='abrirWA(${jsonAttr(c.whatsapp_cliente)},mensajeWhatsAppCita(${jsonAttr(c)}))'>📱 WhatsApp</a>`:''}
-        ${cancelable?`<button class="btn btn-ghost btn-sm" onclick="cancelarCita('${c.id}','${c.tipo}')">Cancelar</button>`:''}
-        <button class="btn btn-danger btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Eliminar de mi agenda</button>
+        ${puedePagar&&pagoAbierto?METODOS_PAGO_MIAGENDA.map(m=>`<button class="btn btn-primary btn-sm" onclick="pagarCitaMiAgenda('${c.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Cancelar</button>`:''}
+        ${puedePagar&&!pagoAbierto?`<button class="btn btn-primary btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Pagar</button>`:''}
+        ${!pagoAbierto&&cancelable?`<button class="btn btn-ghost btn-sm" onclick="cancelarCita('${c.id}','${c.tipo}')">Cancelar</button>`:''}
+        ${!pagoAbierto?`<button class="btn btn-danger btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Eliminar de mi agenda</button>`:''}
       </div>
     </div>`;
   }).join('');
+}
+
+function togglePagoMiAgenda(id){
+  PAGO_ABIERTO_MIAGENDA=PAGO_ABIERTO_MIAGENDA===id?null:id;
+  renderCitas(CITAS_ACTUALES);
+}
+
+async function pagarCitaMiAgenda(id,metodo){
+  const {error}=await sb.rpc('mi_agenda_procesar_pago',{p_reserva_id:id,p_metodo_pago:metodo});
+  if(error){ alert('Error: '+error.message); return; }
+  PAGO_ABIERTO_MIAGENDA=null;
+  cargarAgenda();
 }
 
 async function cancelarCita(id,tipo){

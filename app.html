@@ -402,10 +402,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- RESERVAS -->
 <div id="p-reservas" class="page">
-  <div class="alert al-info" style="margin-bottom:14px">Reservas manuales o desde tu link público de reservas. Procesarlas crea la cita y el cliente automáticamente.</div>
+  <div class="alert al-info" style="margin-bottom:14px">Reservas manuales o desde tu link público de reservas. Pagarlas crea la cita y el cliente automáticamente.</div>
   <div style="display:flex;gap:8px;margin-bottom:14px">
     <button class="btn btn-primary" onclick="openM('m-reserva')">+ Nueva reserva</button>
-    <button class="btn btn-ghost" onclick="procesarTodas()">Procesar todas pendientes</button>
   </div>
   <div class="card">
     <div class="tbl-wrap">
@@ -693,6 +692,10 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
     </div>
+    <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Totales por método de pago</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Método</th><th>Citas</th><th>Total</th></tr></thead>
+      <tbody id="rep-tabla-pago"></tbody></table></div>
+    </div>
     <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Desglose por servicio</span></div>
       <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Servicio</th><th>Veces</th><th>Ingresos</th><th>Comisión</th></tr></thead>
       <tbody id="rep-tabla-prof-srv"></tbody></table></div>
@@ -812,10 +815,19 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Cualquiera</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
-    <div class="rm-footer" style="display:flex;gap:8px;margin-top:6px">
+    <input type="hidden" id="r-procesado" value="0">
+    <div class="rm-footer" id="rm-footer-normal" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarReserva()">Guardar reserva</button>
       <button class="btn btn-ghost" onclick="closeM('m-reserva')">Cancelar</button>
-      <button id="r-btn-eliminar" class="btn btn-danger" style="display:none;margin-left:auto" onclick="eliminarReservaModal(document.getElementById('r-id').value)">Eliminar reserva</button>
+      <button id="r-btn-pagar" class="btn btn-primary" style="display:none;margin-left:auto" onclick="togglePagoModal()">Pagar</button>
+      <button id="r-btn-eliminar" class="btn btn-danger" style="display:none" onclick="eliminarReservaModal(document.getElementById('r-id').value)">Eliminar reserva</button>
+    </div>
+    <div class="rm-footer" id="rm-footer-pago" style="display:none;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Efectivo')">Efectivo</button>
+      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Transferencia')">Transferencia</button>
+      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Débito')">Débito</button>
+      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Crédito')">Crédito</button>
+      <button class="btn btn-ghost btn-sm" onclick="togglePagoModal()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -887,6 +899,10 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="ba-nombre" type="text" placeholder="Carlos"></div><div class="fg"><label>WhatsApp *</label><input id="ba-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
     <div class="fr"><div class="fg"><label>% Comisión</label><input id="ba-com" type="number" value="50" min="0" max="100"></div><div class="fg"><label>Meta citas/mes</label><input id="ba-meta" type="number" value="80" min="0"></div></div>
     <div class="fg"><label>Correo</label><input id="ba-email" type="email" placeholder="profesional@correo.com"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:8px;cursor:pointer">
+      <input type="checkbox" id="ba-puede-pagos" style="width:auto">
+      ✓ Puede procesar pagos desde Mi Agenda
+    </label>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-primary" id="btn-guardar-prof" onclick="guardarProfesional()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-profesional')">Cancelar</button>
@@ -1269,6 +1285,10 @@ function initModal(id){
     ['rn-nombre','rn-apellido','rn-wsp','rn-email','rn-notas'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('rn-cumple').value='';
     document.getElementById('r-btn-eliminar').style.display='none';
+    document.getElementById('r-btn-pagar').style.display='none';
+    document.getElementById('r-procesado').value='0';
+    document.getElementById('rm-footer-normal').style.display='flex';
+    document.getElementById('rm-footer-pago').style.display='none';
     document.getElementById('rn-canal').value='Directo';
     sel('rn-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
@@ -1280,7 +1300,7 @@ function initModal(id){
     sel('cl-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
   if(id==='m-costo') document.getElementById('co-fecha').value=hoy;
-  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';}
+  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
@@ -1533,6 +1553,7 @@ function editarProfesional(id){
   document.getElementById('ba-email').value=b.email||'';
   document.getElementById('ba-com').value=b.comision_pct||50;
   document.getElementById('ba-meta').value=b.meta_citas||80;
+  document.getElementById('ba-puede-pagos').checked=!!b.puede_procesar_pagos;
   const prev=document.getElementById('ba-foto-preview');
   if(b.foto_url){
     prev.innerHTML=`<img src="${b.foto_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
@@ -1571,6 +1592,7 @@ async function guardarProfesional(){
     email:document.getElementById('ba-email').value.trim()||null,
     comision_pct:parseFloat(document.getElementById('ba-com').value)||50,
     meta_citas:parseInt(document.getElementById('ba-meta').value)||80,
+    puede_procesar_pagos:document.getElementById('ba-puede-pagos').checked,
     ...(foto_url&&{foto_url})
   };
   let error;
@@ -1960,7 +1982,7 @@ async function eliminarReservaModal(id){
   if(await eliminar('reservas',id,loadReservas,renderReservas))closeM('m-reserva');
 }
 
-async function procesarReserva(id){
+async function procesarReserva(id,metodoPago){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   // Chequeo fresco contra Supabase, no S.clientes (caché en memoria de
   // cuando cargó la página): si el cliente reservó por reservar.html y
@@ -1978,17 +2000,12 @@ async function procesarReserva(id){
   const valor=svObj?.precio||0;
   const barObj=S.barberos.find(b=>b.nombre===r.barbero_nombre);
   const comision_monto=calcularComision(valor,barObj?.comision_pct||50);
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto});
+  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto,metodo_pago:metodoPago});
   await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
-  await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva procesada ✓');
+  await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva pagada ✓');
+  cerrarSelectorPago(id);
+  closeM('m-reserva');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
-}
-
-async function procesarTodas(){
-  const pend=S.reservas.filter(r=>!r.procesado);
-  if(!pend.length){notify('No hay reservas pendientes','warn');return;}
-  for(const r of pend) await procesarReserva(r.id);
-  notify(pend.length+' reservas procesadas ✓');
 }
 
 async function canjearVIP(id){
@@ -2361,6 +2378,17 @@ function renderVisitas(){
   }).join('');
 }
 
+const METODOS_PAGO=['Efectivo','Transferencia','Débito','Crédito'];
+let PAGO_ABIERTO_RESERVA=null;
+
+function togglePagoReserva(id){
+  PAGO_ABIERTO_RESERVA=PAGO_ABIERTO_RESERVA===id?null:id;
+  renderReservas();
+}
+function cerrarSelectorPago(id){
+  if(PAGO_ABIERTO_RESERVA===id)PAGO_ABIERTO_RESERVA=null;
+}
+
 function renderReservas(){
   const tb=document.getElementById('t-reservas');
   document.getElementById('e-reservas').style.display=S.reservas.length?'none':'';
@@ -2372,7 +2400,10 @@ function renderReservas(){
     <td><span class="badge b-green">${r.estado}</span></td>
     <td>${r.procesado?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
     <td style="white-space:nowrap">
-      ${!r.procesado?`<button class="btn btn-ghost btn-sm" onclick="procesarReserva('${r.id}')">Procesar</button>`:''}
+      ${!r.procesado?(PAGO_ABIERTO_RESERVA===r.id
+        ?METODOS_PAGO.map(m=>`<button class="btn btn-primary btn-sm" onclick="procesarReserva('${r.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoReserva('${r.id}')">×</button>`
+        :`<button class="btn btn-ghost btn-sm" onclick="togglePagoReserva('${r.id}')">Pagar</button>`
+      ):''}
       <button class="btn-wa btn-sm" onclick="enviarConfirm('${r.id}')">📱</button>
       <button class="btn btn-danger btn-sm" onclick="eliminar('reservas','${r.id}',loadReservas,renderReservas)">×</button>
     </td></tr>`).join('');
@@ -2871,6 +2902,18 @@ function abrirEditarReserva(id){
   const selP=document.getElementById('r-profesional'); if(r.barbero_nombre)selP.value=r.barbero_nombre;
   document.getElementById('rm-tabs').style.display='none';
   document.getElementById('r-btn-eliminar').style.display='';
+  document.getElementById('r-procesado').value=r.procesado?'1':'0';
+  document.getElementById('r-btn-pagar').style.display=r.procesado?'none':'';
+}
+
+function togglePagoModal(){
+  const procesado=document.getElementById('r-procesado').value==='1';
+  if(procesado)return;
+  const normal=document.getElementById('rm-footer-normal');
+  const pago=document.getElementById('rm-footer-pago');
+  const abierto=pago.style.display!=='none';
+  normal.style.display=abierto?'flex':'none';
+  pago.style.display=abierto?'none':'flex';
 }
 
 function abrirEditarCita(id){
@@ -3071,6 +3114,17 @@ function renderReporteProfesional(){
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
     return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td><td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
   }).join('')||'<tr><td colspan="7" class="empty">Sin datos en este rango</td></tr>';
+
+  // Totales por método de pago, mismo rango ya filtrado que el resto de esta pestaña.
+  const byPago={};
+  citas.forEach(v=>{
+    const m=v.metodo_pago||'Sin especificar';
+    if(!byPago[m])byPago[m]={cnt:0,total:0};
+    byPago[m].cnt++;byPago[m].total+=(v.valor||0);
+  });
+  document.getElementById('rep-tabla-pago').innerHTML=Object.entries(byPago).sort((a,b)=>b[1].total-a[1].total).map(([m,d])=>
+    `<tr><td data-label="Método">${m}</td><td data-label="Citas">${d.cnt}</td><td data-label="Total" class="gold">${fmt(d.total)}</td></tr>`
+  ).join('')||'<tr><td colspan="3" class="empty">Sin datos en este rango</td></tr>';
 
   // Desglose por servicio (por profesional)
   const filasSrv=[];
