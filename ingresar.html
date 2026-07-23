@@ -213,7 +213,9 @@ async function doReg(){
       {barberia_id:barb.id,evento:'Club nivel 2',mensaje:'🥇 ¡{nombre}, llegaste a Oro! Tienes un servicio gratis en tu próxima visita. Mira tu Club VIP acá: {link_club}',activo:true},
       {barberia_id:barb.id,evento:'Club nivel 3',mensaje:'💎 ¡DIAMANTE! {nombre}, eres uno de nuestros clientes más especiales. ¡Beneficio VIP activado! Mira tu Club VIP acá: {link_club}',activo:true},
       {barberia_id:barb.id,evento:'Recuperar inactivo',mensaje:'👋 ¡Hola {nombre}! Te echamos de menos. Hace {dias} días que no te vemos. ¿Reservamos? {link}',activo:true},
-      {barberia_id:barb.id,evento:'Pedir reseña',mensaje:'⭐ ¡Gracias por visitarnos {nombre}! ¿Nos dejas una reseña? {reviews}',activo:true}
+      {barberia_id:barb.id,evento:'Pedir reseña',mensaje:'⭐ ¡Gracias por visitarnos {nombre}! ¿Nos dejas una reseña? {reviews}',activo:true},
+      {barberia_id:barb.id,evento:'Cita cancelada',mensaje:'Hola {nombre}, te escribo por tu cita en {barberia} del {fecha} a las {hora} hrs ({servicio}), que quedó cancelada. ¡Cualquier cosa, contáctanos!',activo:true},
+      {barberia_id:barb.id,evento:'Cliente confirma reserva',mensaje:'Hola! Quiero confirmar mi reserva en {barberia}:\n📅 {fecha} a las {hora} hrs\n✂️ {servicio} con {profesional}\nNombre: {nombre}',activo:true}
     ];
     await sb.from('plantillas_mensajes').insert(plantillas);
     showAlert('alert-reg','¡Negocio creado! Iniciando sesión...','ok');

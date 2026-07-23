@@ -254,6 +254,15 @@ function bloqueoCubreSlot(b, hora, fecha, diaSemana){
 function fmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
 
+// Mismo criterio de reemplazo de {clave} que buildMsg() en app.html —
+// duplicado acá porque este archivo no comparte JS con app.html (ver
+// nota de arquitectura: cada HTML es standalone).
+function fillTemplate(str,vars){
+  let m=str;
+  Object.entries(vars).forEach(([k,v])=>{ m=m.replace(new RegExp('{'+k+'}','g'),v||''); });
+  return m;
+}
+
 async function init(){
   if(!BARBERIA_ID){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:#555">URL inválida. Falta el ID de la negocio.</div>'; return; }
   const {data:barb} = await sb.from('barberias').select('*').eq('id',BARBERIA_ID).single();
@@ -506,9 +515,16 @@ async function enviarCorreos({nombre,apellido,email,wsp,reserva}){
   }
 }
 
-function confirmarPorWhatsApp(){
+async function confirmarPorWhatsApp(){
   if(!B.barberia?.whatsapp)return;
-  const msg=`Hola! Quiero confirmar mi reserva en ${B.barberia.nombre}:\n📅 ${SEL.fecha} a las ${SEL.hora} hrs\n✂️ ${SEL.servicio?.nombre||''}${SEL.profesional?' con '+SEL.profesional.nombre:''}\nNombre: ${ULTIMO_NOMBRE}`;
+  const fallback=`Hola! Quiero confirmar mi reserva en ${B.barberia.nombre}:\n📅 ${SEL.fecha} a las ${SEL.hora} hrs\n✂️ ${SEL.servicio?.nombre||''}${SEL.profesional?' con '+SEL.profesional.nombre:''}\nNombre: ${ULTIMO_NOMBRE}`;
+  let msg=fallback;
+  try{
+    const {data:plantilla}=await sb.rpc('obtener_plantilla_publica',{p_barberia_id:BARBERIA_ID,p_evento:'Cliente confirma reserva'});
+    if(plantilla) msg=fillTemplate(plantilla,{nombre:ULTIMO_NOMBRE,fecha:SEL.fecha,hora:SEL.hora,servicio:SEL.servicio?.nombre||'',profesional:SEL.profesional?.nombre||'',barberia:B.barberia.nombre,direccion:B.barberia.direccion||''});
+  }catch(e){
+    console.log('No se pudo cargar la plantilla, usando mensaje por defecto:',e.message);
+  }
   abrirWA(B.barberia.whatsapp,msg);
 }
 

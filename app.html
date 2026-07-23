@@ -1239,7 +1239,12 @@ function buildMsg(evento, vars={}){
   if(!t)return null;
   let m=t.mensaje;
   const linkReservas=S.barberia?.id?(location.origin+'/reservar.html?id='+S.barberia.id):'';
-  const all={barberia:S.barberia?.nombre||'',link_reservas:linkReservas,setmore:linkReservas,reviews:S.barberia?.link_reviews||'',direccion:S.barberia?.direccion||'',...vars};
+  // "negocio" y "link" son alias de "barberia"/"link_reservas": las plantillas
+  // seed de Bienvenida/Recuperar inactivo usaban esos nombres pero nunca se
+  // reemplazaban (bug real, mensajes reales le llegaban al cliente con el
+  // placeholder literal sin resolver) — se agregan acá en vez de reescribir
+  // las plantillas ya guardadas de negocios existentes.
+  const all={barberia:S.barberia?.nombre||'',negocio:S.barberia?.nombre||'',link_reservas:linkReservas,setmore:linkReservas,link:linkReservas,reviews:S.barberia?.link_reviews||'',direccion:S.barberia?.direccion||'',...vars};
   Object.entries(all).forEach(([k,v])=>{ m=m.replace(new RegExp('{'+k+'}','g'),v||''); });
   return m;
 }
