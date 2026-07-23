@@ -397,7 +397,7 @@ async function guardarNuevaReserva(){
   }
   const btn=document.getElementById('btn-guardar-nr');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Guardando...';
-  const {error}=await sb.rpc('mi_agenda_crear_reserva',{
+  const {data:reservaId,error}=await sb.rpc('mi_agenda_crear_reserva',{
     p_nombre_cliente:nombre, p_whatsapp_cliente:wsp, p_fecha:fecha, p_hora:hora,
     p_servicio:servicio||null, p_notas:notas||null
   });
@@ -406,6 +406,14 @@ async function guardarNuevaReserva(){
     const al=document.getElementById('nr-alert');
     al.textContent='Error: '+error.message; al.style.display='';
     return;
+  }
+  // Resuelve (busca o crea) la ficha de cliente al instante, mismo patrón
+  // no bloqueante que reservar.html — si falla, la reserva ya se creó
+  // igual, solo no queda la ficha lista hasta que se procese/pague.
+  try{
+    await sb.rpc('buscar_o_crear_cliente_club',{p_barberia_id:PERFIL.barberia_id,p_reserva_id:reservaId});
+  }catch(e){
+    console.log('No se pudo resolver el cliente al instante:',e.message);
   }
   cerrarModal();
   document.getElementById('ag-fecha').value=fecha;
