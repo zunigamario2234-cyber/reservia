@@ -7,6 +7,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -585,6 +587,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
       <div class="fr"><div class="fg"><label>Teléfono</label><input id="cfg-telefono" type="text" placeholder="+56 2 XXXX XXXX"></div><div class="fg"><label>Email de contacto</label><input id="cfg-email" type="email" placeholder="contacto@tunegocio.cl"></div></div>
       <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div></div>
+      <div class="fg"><label>Descripción del local (se muestra en el link de reservas)</label><textarea id="cfg-descripcion" rows="2" placeholder="Ej: Barbería especializada en cortes clásicos y modernos, en el corazón de Providencia."></textarea></div>
       <div style="display:none"><input id="cfg-setmore" type="url"></div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
     </div>
@@ -767,6 +770,20 @@ input[readonly]{background:#111;color:#666;cursor:default}
 </main>
 
 <!-- ===== MODALS ===== -->
+<!-- Recorte de imagen (portada/logo/foto profesional) — reutilizable, ver
+     abrirRecorteImagen() -->
+<div class="overlay" id="m-recortar">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-hdr"><span class="modal-title">Ajustar imagen</span><button class="xbtn" onclick="cancelarRecorte()">×</button></div>
+    <div style="max-height:60vh;overflow:hidden;background:#000;border-radius:8px">
+      <img id="recorte-img" style="display:block;max-width:100%">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="aplicarRecorte()">✓ Aplicar recorte</button>
+      <button class="btn btn-ghost" onclick="cancelarRecorte()">Cancelar</button>
+    </div>
+  </div>
+</div>
 <!-- Cliente -->
 <div class="overlay" id="m-cliente">
   <div class="modal">
@@ -913,6 +930,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       </div>
     </div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="ba-nombre" type="text" placeholder="Carlos"></div><div class="fg"><label>WhatsApp *</label><input id="ba-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
+    <div class="fg"><label>Especialidad</label><input id="ba-especialidad" type="text" placeholder="Ej: Barbero, Estilista, Colorista"></div>
     <div class="fr"><div class="fg"><label>% Comisión</label><input id="ba-com" type="number" value="50" min="0" max="100"></div><div class="fg"><label>Meta citas/mes</label><input id="ba-meta" type="number" value="80" min="0"></div></div>
     <div class="fg"><label>Correo</label><input id="ba-email" type="email" placeholder="profesional@correo.com"></div>
     <div class="fg"><label>Bio (se muestra en el link de reservas)</label><textarea id="ba-bio" rows="2" placeholder="Ej: Especialista en fade y barba, 8 años de experiencia."></textarea></div>
@@ -1327,7 +1345,7 @@ function initModal(id){
     sel('cl-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
   if(id==='m-costo') document.getElementById('co-fecha').value=hoy;
-  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';renderChecklistServiciosBarbero(null);}
+  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
@@ -1530,14 +1548,23 @@ async function guardarEntrada(){
   await loadInventario();closeM('m-entrada');notify('Stock actualizado ✓');renderInventario();
 }
 
+// Recorte al elegir el archivo (igual que portada/logo), pero NO sube todavía
+// — el blob recortado queda en FOTO_PROF_CROPPED_BLOB y guardarProfesional()
+// lo sube recién al guardar, mismo momento en que ya subía la foto antes de
+// esto (el archivo crudo nunca llega a subirse).
+let FOTO_PROF_CROPPED_BLOB=null;
 function previewFotoPro(input){
   if(input.files&&input.files[0]){
-    const reader=new FileReader();
-    reader.onload=e=>{
-      const prev=document.getElementById('ba-foto-preview');
-      prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-    };
-    reader.readAsDataURL(input.files[0]);
+    abrirRecorteImagen(input.files[0],1,512,512,blob=>{
+      FOTO_PROF_CROPPED_BLOB=blob;
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const prev=document.getElementById('ba-foto-preview');
+        prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+      };
+      reader.readAsDataURL(blob);
+    });
+    input.value='';
   }
 }
 
@@ -1578,6 +1605,7 @@ function editarProfesional(id){
   document.getElementById('ba-nombre').value=b.nombre||'';
   document.getElementById('ba-wsp').value=b.whatsapp||'';
   document.getElementById('ba-email').value=b.email||'';
+  document.getElementById('ba-especialidad').value=b.especialidad||'';
   document.getElementById('ba-com').value=b.comision_pct||50;
   document.getElementById('ba-meta').value=b.meta_citas||80;
   document.getElementById('ba-bio').value=b.bio||'';
@@ -1624,11 +1652,9 @@ async function guardarProfesional(){
   const btn=document.getElementById('btn-guardar-prof');
   btn.disabled=true;btn.textContent='Guardando...';
   let foto_url=null;
-  const fotoFile=document.getElementById('ba-foto').files[0];
-  if(fotoFile){
-    const ext=fotoFile.name.split('.').pop();
-    const fname=`profesionales/${S.barberia.id}/${Date.now()}.${ext}`;
-    const {error:upErr}=await sb.storage.from('fotos').upload(fname,fotoFile,{upsert:true});
+  if(FOTO_PROF_CROPPED_BLOB){
+    const fname=`profesionales/${S.barberia.id}/${Date.now()}.jpg`;
+    const {error:upErr}=await sb.storage.from('fotos').upload(fname,FOTO_PROF_CROPPED_BLOB,{upsert:true,contentType:'image/jpeg'});
     if(!upErr){
       const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
       foto_url=url.publicUrl;
@@ -1638,6 +1664,7 @@ async function guardarProfesional(){
   const payload={
     barberia_id:S.barberia.id,nombre:n,whatsapp:w,
     email:document.getElementById('ba-email').value.trim()||null,
+    especialidad:document.getElementById('ba-especialidad').value.trim()||null,
     bio:document.getElementById('ba-bio').value.trim()||null,
     comision_pct:parseFloat(document.getElementById('ba-com').value)||50,
     meta_citas:parseInt(document.getElementById('ba-meta').value)||80,
@@ -1658,6 +1685,7 @@ async function guardarProfesional(){
     }));
     if(filas.length) await sb.from('barbero_servicios').upsert(filas,{onConflict:'barbero_id,servicio_id'});
   }
+  FOTO_PROF_CROPPED_BLOB=null;
   await loadBarberos();await loadBarberoServicios();closeM('m-profesional');notify('Profesional guardado ✓');renderProfesionals();
   btn.disabled=false;btn.textContent='Guardar';
 }
@@ -1994,6 +2022,7 @@ async function guardarConfig(){
     telefono:document.getElementById('cfg-telefono').value,
     email:document.getElementById('cfg-email').value,
     instagram:document.getElementById('cfg-instagram').value,
+    descripcion:document.getElementById('cfg-descripcion').value.trim()||null,
     iva_pct:parseFloat(document.getElementById('cfg-iva').value)||19,
     link_setmore:document.getElementById('cfg-setmore').value,
     link_reviews:document.getElementById('cfg-reviews').value,
@@ -2690,6 +2719,7 @@ function renderConfig(){
     document.getElementById('cfg-telefono').value=S.barberia.telefono||'';
     document.getElementById('cfg-email').value=S.barberia.email||'';
     document.getElementById('cfg-instagram').value=S.barberia.instagram||'';
+    document.getElementById('cfg-descripcion').value=S.barberia.descripcion||'';
     document.getElementById('cfg-iva').value=S.barberia.iva_pct||19;
     document.getElementById('cfg-setmore').value=S.barberia.link_setmore||'';
     document.getElementById('cfg-reviews').value=S.barberia.link_reviews||'';
@@ -3358,12 +3388,57 @@ function exportarExcel(tipo){
 }
 
 
+// ─── RECORTE DE IMÁGENES (portada/logo/foto profesional) ───
+// Modal único reutilizable (m-recortar) — cada llamado define su propia
+// proporción y tamaño de salida. El resultado siempre es un Blob JPEG,
+// nunca el archivo crudo; portada y logo lo suben directo, la foto de
+// profesional lo guarda en FOTO_PROF_CROPPED_BLOB para subirlo recién al
+// guardar el profesional (mismo momento en que ya subía la foto sin recorte).
+let CROPPER_INSTANCE=null, CROPPER_CALLBACK=null, CROPPER_TARGET=null;
+
+function abrirRecorteImagen(file,aspectRatio,targetW,targetH,onCropped){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    openM('m-recortar');
+    const img=document.getElementById('recorte-img');
+    CROPPER_CALLBACK=onCropped;
+    CROPPER_TARGET={w:targetW,h:targetH};
+    img.onload=()=>{
+      if(CROPPER_INSTANCE)CROPPER_INSTANCE.destroy();
+      CROPPER_INSTANCE=new Cropper(img,{aspectRatio,viewMode:1,autoCropArea:1});
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function aplicarRecorte(){
+  if(!CROPPER_INSTANCE)return;
+  CROPPER_INSTANCE.getCroppedCanvas({width:CROPPER_TARGET.w,height:CROPPER_TARGET.h}).toBlob(blob=>{
+    const cb=CROPPER_CALLBACK;
+    cerrarRecorte();
+    cb(blob);
+  },'image/jpeg',0.92);
+}
+
+function cancelarRecorte(){ cerrarRecorte(); }
+
+function cerrarRecorte(){
+  if(CROPPER_INSTANCE){CROPPER_INSTANCE.destroy();CROPPER_INSTANCE=null;}
+  closeM('m-recortar');
+  CROPPER_CALLBACK=null;CROPPER_TARGET=null;
+}
+
 // ─── LOGO Y COLORES AUTOMÁTICOS ───
 let paletaDetectada=[];
 
-async function subirLogo(input){
+function subirLogo(input){
   if(!input.files||!input.files[0])return;
-  const file=input.files[0];
+  abrirRecorteImagen(input.files[0],1,512,512,blob=>subirLogoBlob(blob));
+  input.value='';
+}
+
+async function subirLogoBlob(blob){
   // Preview
   const reader=new FileReader();
   reader.onload=async e=>{
@@ -3373,12 +3448,11 @@ async function subirLogo(input){
     paletaDetectada=await extraerColores(e.target.result);
     mostrarPaleta(paletaDetectada);
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(blob);
   // Upload to Supabase
   if(S.barberia){
-    const ext=file.name.split('.').pop();
-    const fname=`logos/${S.barberia.id}/logo.${ext}`;
-    const {error}=await sb.storage.from('fotos').upload(fname,file,{upsert:true});
+    const fname=`logos/${S.barberia.id}/logo.jpg`;
+    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:'image/jpeg'});
     if(!error){
       const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
       await sb.from('barberias').update({logo_url:url.publicUrl}).eq('id',S.barberia.id);
@@ -3388,18 +3462,21 @@ async function subirLogo(input){
   }
 }
 
-async function subirPortada(input){
+function subirPortada(input){
   if(!input.files||!input.files[0])return;
-  const file=input.files[0];
+  abrirRecorteImagen(input.files[0],1200/400,1200,400,blob=>subirPortadaBlob(blob));
+  input.value='';
+}
+
+async function subirPortadaBlob(blob){
   const reader=new FileReader();
   reader.onload=e=>{
     document.getElementById('portada-preview').innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(blob);
   if(S.barberia){
-    const ext=file.name.split('.').pop();
-    const fname=`portadas/${S.barberia.id}/portada.${ext}`;
-    const {error}=await sb.storage.from('fotos').upload(fname,file,{upsert:true});
+    const fname=`portadas/${S.barberia.id}/portada.jpg`;
+    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:'image/jpeg'});
     if(!error){
       const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
       await sb.from('barberias').update({foto_portada:url.publicUrl}).eq('id',S.barberia.id);

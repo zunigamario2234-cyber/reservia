@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mi Club VIP</title>
+<!-- Ícono real al "Agregar a inicio": manifest y apple-touch-icon se
+     completan en runtime (configurarManifestDinamico(), en init()) con el
+     logo_url del negocio actual — estos tags arrancan vacíos/genéricos. -->
+<link rel="manifest" id="dynamic-manifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" id="apple-title" content="Mi Club VIP">
+<link rel="apple-touch-icon" id="apple-touch-icon-link" href="/mi-agenda-icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -14,6 +21,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .header{padding:24px;text-align:center}
 .header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
 .header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
+.header-descripcion{font-size:12px;color:#888;line-height:1.5;margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto}
 .header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
 .container{max-width:480px;margin:0 auto;padding:0 16px 40px}
 .card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
@@ -139,6 +147,7 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
     <img id="header-logo-img" class="header-logo-img" style="display:none" alt="">
     <h1 id="h-nombre">Mi Club VIP</h1>
   </div>
+  <p class="header-descripcion" id="h-descripcion" style="display:none"></p>
 </div>
 <div class="container">
   <div class="tabs-top" id="tabs-top" style="display:none">
@@ -504,17 +513,46 @@ function mostrarError(msg){
 
 function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
 
+// "Agregar a inicio" con el ícono real del negocio — mismo criterio y
+// mismo alcance limitado (sin service worker, sin uso offline) que
+// reservar.html. Ver esa función para el detalle del fallback sin logo.
+function configurarManifestDinamico(barb){
+  const icon192 = barb.logo_url || '/mi-agenda-icon-192.png';
+  const icon512 = barb.logo_url || '/mi-agenda-icon-512.png';
+  const manifest = {
+    name: barb.nombre + ' — Club VIP',
+    short_name: barb.nombre,
+    start_url: location.pathname + location.search,
+    display: 'standalone',
+    background_color: '#08090d',
+    theme_color: '#08090d',
+    icons: [
+      { src: icon192, sizes: '192x192', type: 'image/png' },
+      { src: icon512, sizes: '512x512', type: 'image/png' }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
+  document.getElementById('dynamic-manifest').href = URL.createObjectURL(blob);
+  document.getElementById('apple-touch-icon-link').href = icon192;
+  document.getElementById('apple-title').content = barb.nombre;
+}
+
 async function init(){
   if(!BARBERIA_ID || !CLIENTE_ID){ mostrarError('Este link no es válido. Falta información en la URL.'); return; }
 
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url').eq('id',BARBERIA_ID).single();
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
   document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
   document.title = 'Mi Club VIP — ' + barb.nombre;
+  configurarManifestDinamico(barb);
   if(barb.foto_portada){
     document.getElementById('portada-img').src = barb.foto_portada;
     document.getElementById('portada-wrap').style.display = '';
+  }
+  if(barb.descripcion){
+    document.getElementById('h-descripcion').textContent = barb.descripcion;
+    document.getElementById('h-descripcion').style.display = '';
   }
   if(barb.logo_url){
     document.getElementById('header-logo-img').src = barb.logo_url;
