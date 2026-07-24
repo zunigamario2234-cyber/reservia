@@ -673,7 +673,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div id="cfg-alz" style="display:none">
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Convenios con negocios externos que tus clientes VIP pueden canjear. Se muestran en la página pública "Mi Club VIP" según el nivel del cliente.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-alianza')">+ Alianza</button></div>
-    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Beneficio</th><th>Nivel mínimo</th><th>Activa</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Beneficio</th><th>Nivel mínimo</th><th>Activa</th><th>Canjes</th><th></th></tr></thead>
     <tbody id="t-alianzas"></tbody></table></div></div>
   </div>
   <div id="cfg-vip" style="display:none">
@@ -1107,10 +1107,42 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Nombre del negocio aliado *</label><input id="alz-nombre" type="text" placeholder="Gimnasio Fit"></div><div class="fg"><label>Nivel mínimo</label><select id="alz-nivel"><option value="">Todos</option></select></div></div>
     <div class="fg"><label>Beneficio *</label><input id="alz-beneficio" type="text" placeholder="15% de descuento presentando tu carnet VIP"></div>
     <div class="fg"><label>Descripción</label><input id="alz-desc" type="text" placeholder="Detalle del convenio (opcional)"></div>
+    <div class="fg"><label>Qué recibe el cliente DEL ALIADO en tu negocio</label><input id="alz-beneficio-reciproco" type="text" placeholder="Ej: 10% de descuento en cualquier corte (se lo muestra el aliado a su cliente)"></div>
     <div class="fg"><label>Link (web/WhatsApp del aliado)</label><input id="alz-link" type="url" placeholder="https://..."></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" id="btn-guardar-alz" onclick="guardarAlianza()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-alianza')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Canjes de alianza -->
+<div class="overlay" id="m-canjes">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title" id="m-canjes-title">Canjes</span><button class="xbtn" onclick="closeM('m-canjes')">×</button></div>
+    <input type="hidden" id="cnj-alianza-id">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Link para el aliado</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Compartilo con el negocio aliado — desde ahí valida los códigos de tus clientes y genera códigos para los suyos.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="cnj-link-aliado" type="text" readonly style="flex:1;min-width:200px">
+        <button class="btn btn-primary btn-sm" onclick="copiarLinkAliado()">📋 Copiar</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Validar código de un cliente del aliado</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">El código que trae el cliente del negocio aliado para canjear acá.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="cnj-codigo" type="text" placeholder="XXXXXXXX" maxlength="8" style="flex:1;min-width:140px;text-transform:uppercase" onkeydown="if(event.key==='Enter')validarCodigoNegocio()">
+        <button class="btn btn-primary btn-sm" id="btn-validar-cnj" onclick="validarCodigoNegocio()">Validar</button>
+      </div>
+      <div id="cnj-resultado" style="margin-top:8px;font-size:12px"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Historial de canjes</span></div>
+      <div id="cnj-contadores" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
+      <div class="tbl-wrap" style="max-height:280px;overflow-y:auto"><table><thead><tr><th>Fecha</th><th>Dirección</th><th>Cliente</th></tr></thead>
+      <tbody id="t-cnj-historial"></tbody></table></div>
     </div>
   </div>
 </div>
@@ -1124,7 +1156,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], horario:[], bloqueos:[], nivelesVip:[] };
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[] };
 const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
@@ -1183,7 +1215,7 @@ async function loadAll(){
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
   const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
-  if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadNivelesVip());
+  if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
 }
 
@@ -1197,6 +1229,12 @@ async function loadInventario(){ const {data}=await sb.from('inventario').select
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
+// Join embebido de PostgREST (alianza_canjes_select_own ya lo permite, scoped
+// por barberia_id) — sin RPC nueva, mismo criterio que el resto de los load*.
+async function loadAlianzaCanjes(){
+  const {data}=await sb.from('alianza_canjes').select('fecha, alianza_codigos(alianza_id, tipo, clientes(nombre))').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false});
+  S.alianzaCanjes=data||[];
+}
 async function loadNivelesVip(){ const {data}=await sb.from('niveles_vip').select('*').eq('barberia_id',S.barberia.id).order('orden'); S.nivelesVip=data||[]; }
 async function loadHorarioNegocio(){
   const {data}=await sb.from('horario_negocio').select('*').eq('barberia_id',S.barberia.id);
@@ -1322,6 +1360,7 @@ function badgeNivel(nv){
 }
 function abrirWA(wsp,msg){ const n=wsp.replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
 function linkClub(clienteId){ return S.barberia?.id&&clienteId?(location.origin+'/club.html?id='+S.barberia.id+'&cliente='+clienteId):''; }
+function linkAliado(alianzaId){ return S.barberia?.id&&alianzaId?(location.origin+'/aliado.html?id='+S.barberia.id+'&alianza='+alianzaId):''; }
 function buildMsg(evento, vars={}){
   const t=S.plantillas.find(p=>p.evento===evento&&p.activo);
   if(!t)return null;
@@ -1397,7 +1436,7 @@ function initModal(id){
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
-  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
+  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
     document.getElementById('blq-tipo').value='puntual';
@@ -1883,6 +1922,7 @@ function editarAlianza(id){
   document.getElementById('alz-nivel').value=a.nivel_minimo_id||'';
   document.getElementById('alz-beneficio').value=a.beneficio||'';
   document.getElementById('alz-desc').value=a.descripcion||'';
+  document.getElementById('alz-beneficio-reciproco').value=a.beneficio_reciproco||'';
   document.getElementById('alz-link').value=a.link||'';
   const prev=document.getElementById('alz-foto-preview');
   if(a.logo_url){
@@ -1915,6 +1955,7 @@ async function guardarAlianza(){
     nivel_minimo_id:document.getElementById('alz-nivel').value||null,
     nivel_sin_restriccion:!document.getElementById('alz-nivel').value,
     descripcion:document.getElementById('alz-desc').value.trim()||null,
+    beneficio_reciproco:document.getElementById('alz-beneficio-reciproco').value.trim()||null,
     link:document.getElementById('alz-link').value.trim()||null,
     ...(logo_url&&{logo_url})
   };
@@ -1927,6 +1968,55 @@ async function guardarAlianza(){
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
   await loadAlianzas();closeM('m-alianza');notify('Alianza guardada ✓');renderConfig();
   btn.disabled=false;btn.textContent='Guardar';
+}
+
+function contarCanjesAlianza(alianzaId){
+  const rows=S.alianzaCanjes.filter(c=>c.alianza_codigos?.alianza_id===alianzaId);
+  return {
+    a: rows.filter(c=>c.alianza_codigos?.tipo==='cliente').length,
+    b: rows.filter(c=>c.alianza_codigos?.tipo==='generico').length
+  };
+}
+
+function renderHistorialCanjes(alianzaId){
+  const rows=S.alianzaCanjes.filter(c=>c.alianza_codigos?.alianza_id===alianzaId);
+  const {a:cntA,b:cntB}=contarCanjesAlianza(alianzaId);
+  document.getElementById('cnj-contadores').innerHTML=`Dirección A (tu cliente canjeó en el aliado): <strong>${cntA}</strong> · Dirección B (cliente del aliado canjeó acá): <strong>${cntB}</strong>`;
+  document.getElementById('t-cnj-historial').innerHTML = rows.length ? rows.map(c=>{
+    const esA = c.alianza_codigos?.tipo==='cliente';
+    const cliente = esA ? (c.alianza_codigos?.clientes?.nombre?.split(' ')[0]||'—') : '—';
+    return `<tr><td data-label="Fecha">${new Date(c.fecha).toLocaleString('es-CL')}</td><td data-label="Dirección">${esA?'A · En el aliado':'B · Acá'}</td><td data-label="Cliente">${cliente}</td></tr>`;
+  }).join('') : '<tr><td colspan="3" class="empty">Sin canjes todavía</td></tr>';
+}
+
+function abrirCanjesAlianza(id){
+  const a=S.alianzas.find(x=>x.id===id);if(!a)return;
+  openM('m-canjes');
+  document.getElementById('m-canjes-title').textContent='Canjes — '+a.nombre;
+  document.getElementById('cnj-alianza-id').value=id;
+  document.getElementById('cnj-link-aliado').value=linkAliado(id);
+  document.getElementById('cnj-codigo').value='';
+  document.getElementById('cnj-resultado').innerHTML='';
+  renderHistorialCanjes(id);
+}
+
+function copiarLinkAliado(){ copiarAlPortapapeles(document.getElementById('cnj-link-aliado').value); }
+
+async function validarCodigoNegocio(){
+  const alianzaId=document.getElementById('cnj-alianza-id').value;
+  const codigo=document.getElementById('cnj-codigo').value.trim();
+  if(!codigo){notify('Ingresá un código','warn');return;}
+  const btn=document.getElementById('btn-validar-cnj');
+  btn.disabled=true;btn.textContent='Validando...';
+  const {data:fecha,error}=await sb.rpc('validar_codigo_alianza_negocio',{p_alianza_id:alianzaId,p_codigo:codigo});
+  btn.disabled=false;btn.textContent='Validar';
+  const res=document.getElementById('cnj-resultado');
+  if(error){ res.innerHTML=`<span style="color:#e05050">${error.message}</span>`; return; }
+  res.innerHTML=`<span style="color:#4caf87">✓ Código válido, canje registrado (${new Date(fecha).toLocaleString('es-CL')})</span>`;
+  document.getElementById('cnj-codigo').value='';
+  await loadAlianzaCanjes();
+  renderHistorialCanjes(alianzaId);
+  renderConfig();
 }
 
 function onChangeTipoBloqueo(){
@@ -2799,12 +2889,14 @@ function renderConfig(){
         :(a.nivel_minimo_id
           ?(S.nivelesVip.find(nv=>nv.id===a.nivel_minimo_id)?.nombre||'Todos')
           :'<span style="color:#e0a030">⚠️ Sin nivel asignado — no visible para clientes, revisala</span>');
+      const cnt=contarCanjesAlianza(a.id);
       return `<tr>
       <td class="td-avatar">${avatar}</td><td data-label="Nombre">${a.nombre}</td><td data-label="Beneficio">${a.beneficio}</td><td data-label="Nivel mínimo">${nivelCelda}</td>
       <td data-label="Activa">${a.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
+      <td data-label="Canjes"><button class="btn btn-ghost btn-sm" onclick="abrirCanjesAlianza('${a.id}')">🎟 A:${cnt.a} · B:${cnt.b}</button></td>
       <td data-label=""><button class="btn btn-ghost btn-sm" onclick="editarAlianza('${a.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('alianzas','${a.id}',loadAlianzas,renderConfig)">×</button></td>
     </tr>`;
-    }).join('')||'<tr><td colspan="6" class="empty">Sin alianzas todavía</td></tr>';
+    }).join('')||'<tr><td colspan="7" class="empty">Sin alianzas todavía</td></tr>';
   }
 }
 

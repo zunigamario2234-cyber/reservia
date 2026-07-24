@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validar código — Alianza</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+.header{padding:24px;text-align:center}
+.header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
+.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
+.header h1{font-size:15px;font-weight:600;color:#e8e6e0;letter-spacing:0.3px}
+.header-sub{font-size:12px;color:#666;margin-top:6px}
+.container{max-width:460px;margin:0 auto;padding:0 16px 40px}
+.card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
+.card-title{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:10px}
+.tabs-top{display:flex;gap:8px;margin-bottom:18px}
+.tab-btn{flex:1;padding:10px;border-radius:10px;border:0.5px solid #222;background:#0f1018;color:#666;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit}
+.tab-btn.active{border-color:#7c6af7;color:#e8e6e0;background:#13142a}
+input,textarea{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
+input:focus{outline:none;border-color:#7c6af7}
+label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+.form-group{margin-bottom:14px}
+.btn{width:100%;padding:12px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
+.btn-primary{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,#6b59e6,#4a7cde)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.btn-ghost{background:transparent;color:#777;border:0.5px solid #2a2a2a}
+.btn-ghost:hover{color:#e8e6e0}
+.alert{padding:10px 14px;border-radius:8px;font-size:12px}
+.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
+.alert-ok{background:#0a2015;border:0.5px solid #4caf87;color:#4caf87}
+.codigo-box{background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;text-align:center;padding:20px}
+.codigo-label{font-size:11px;color:#999;margin-bottom:8px}
+.codigo-val{font-size:28px;font-weight:700;letter-spacing:4px;color:#fff;margin-bottom:14px;word-break:break-all}
+.codigo-nota{font-size:11px;color:#666;margin-top:12px;line-height:1.5}
+.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;border-top-color:#7c6af7;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:360px){.container{padding:0 12px 32px}.card{padding:16px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title-row">
+    <img id="header-logo-img" class="header-logo-img" style="display:none" alt="">
+    <h1 id="h-nombre">Cargando...</h1>
+  </div>
+  <p class="header-sub" id="h-sub"></p>
+</div>
+
+<div class="container" id="container">
+  <div class="msg-full" id="msg-carga">Cargando...</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const params = new URLSearchParams(window.location.search);
+const BARBERIA_ID = params.get('id');
+const ALIANZA_ID = params.get('alianza');
+
+let BARBERIA_NOMBRE = '';
+
+function mostrarError(msg){
+  document.getElementById('container').innerHTML = `<div class="msg-full">${msg}</div>`;
+}
+
+function pintarLayout(alianza){
+  document.getElementById('container').innerHTML = `
+    <div class="tabs-top">
+      <button class="tab-btn active" id="tab-btn-validar" onclick="cambiarTab('validar')">✅ Validar código</button>
+      <button class="tab-btn" id="tab-btn-generar" onclick="cambiarTab('generar')">🎟 Generar código</button>
+    </div>
+
+    <div id="tab-validar">
+      <div class="card">
+        <div class="card-title">Validar código de un cliente</div>
+        <p style="font-size:12px;color:#777;margin-bottom:14px">El cliente te muestra un código corto que trae desde su Club VIP. Escribilo acá para confirmar el canje — vas a ver su nombre, nada más.</p>
+        <div class="form-group"><label>Código</label><input id="val-codigo" type="text" placeholder="XXXXXXXX" maxlength="8" style="text-transform:uppercase;letter-spacing:3px;font-size:16px;text-align:center" onkeydown="if(event.key==='Enter')validarCodigo()"></div>
+        <button class="btn btn-primary" id="btn-validar" onclick="validarCodigo()">Validar código</button>
+        <div id="val-resultado" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <div id="tab-generar" style="display:none">
+      <div class="card">
+        <div class="card-title">Generar código para tu cliente</div>
+        <p style="font-size:12px;color:#777;margin-bottom:14px">${alianza.beneficio_reciproco ? 'Lo que recibe en '+BARBERIA_NOMBRE+': <strong style="color:#c9c3ff">'+alianza.beneficio_reciproco+'</strong>' : 'Generá un código y dáselo a tu cliente para que lo canjee en '+BARBERIA_NOMBRE+'.'}</p>
+        <button class="btn btn-primary" id="btn-generar" onclick="generarCodigo()">Generar código nuevo</button>
+        <div id="gen-resultado" style="margin-top:14px"></div>
+      </div>
+    </div>
+  `;
+}
+
+function cambiarTab(tab){
+  document.getElementById('tab-validar').style.display = tab==='validar'?'':'none';
+  document.getElementById('tab-generar').style.display = tab==='generar'?'':'none';
+  document.getElementById('tab-btn-validar').classList.toggle('active',tab==='validar');
+  document.getElementById('tab-btn-generar').classList.toggle('active',tab==='generar');
+}
+
+async function validarCodigo(){
+  const input = document.getElementById('val-codigo');
+  const codigo = input.value.trim();
+  const res = document.getElementById('val-resultado');
+  if(!codigo){ res.innerHTML = '<div class="alert alert-err">Ingresá un código</div>'; return; }
+  const btn = document.getElementById('btn-validar');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Validando...';
+  const {data:nombre, error} = await sb.rpc('validar_codigo_alianza_publico',{p_barberia_id:BARBERIA_ID,p_alianza_id:ALIANZA_ID,p_codigo:codigo});
+  btn.disabled = false; btn.textContent = 'Validar código';
+  if(error){ res.innerHTML = `<div class="alert alert-err">${error.message}</div>`; return; }
+  res.innerHTML = `<div class="alert alert-ok">✓ Código válido — cliente: <strong>${nombre}</strong>. Canje registrado.</div>`;
+  input.value = '';
+}
+
+async function generarCodigo(){
+  const btn = document.getElementById('btn-generar');
+  const res = document.getElementById('gen-resultado');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Generando...';
+  const {data:codigo, error} = await sb.rpc('generar_codigo_generico_publico',{p_barberia_id:BARBERIA_ID,p_alianza_id:ALIANZA_ID});
+  btn.disabled = false; btn.textContent = 'Generar código nuevo';
+  if(error){ res.innerHTML = `<div class="alert alert-err">${error.message}</div>`; return; }
+  res.innerHTML = `
+    <div class="codigo-box">
+      <div class="codigo-label">Código para tu cliente</div>
+      <div class="codigo-val">${codigo}</div>
+      <button class="btn btn-ghost" onclick="copiarCodigo('${codigo}')">📋 Copiar código</button>
+      <div class="codigo-nota">Es de un solo uso — dáselo para que lo canjee en ${BARBERIA_NOMBRE}.</div>
+    </div>`;
+}
+
+function copiarCodigo(codigo){
+  navigator.clipboard?.writeText(codigo).catch(()=>{});
+}
+
+async function init(){
+  if(!BARBERIA_ID || !ALIANZA_ID){ mostrarError('Este link no es válido. Falta información en la URL.'); return; }
+
+  const [{data:barb},{data:alianza}] = await Promise.all([
+    sb.from('barberias').select('nombre').eq('id',BARBERIA_ID).single(),
+    sb.from('alianzas').select('*').eq('id',ALIANZA_ID).eq('barberia_id',BARBERIA_ID).single()
+  ]);
+  if(!barb){ mostrarError('No encontramos este negocio.'); return; }
+  if(!alianza){ mostrarError('No encontramos esta alianza.'); return; }
+  BARBERIA_NOMBRE = barb.nombre;
+
+  document.title = 'Canjes — ' + alianza.nombre;
+  document.getElementById('h-nombre').textContent = alianza.nombre;
+  document.getElementById('h-sub').textContent = 'Canjes de tu alianza con ' + barb.nombre;
+  if(alianza.logo_url){
+    document.getElementById('header-logo-img').src = alianza.logo_url;
+    document.getElementById('header-logo-img').style.display = '';
+  }
+
+  if(!alianza.activo){
+    mostrarError('Esta alianza fue desactivada por ' + barb.nombre + '. Si creés que es un error, contactalos.');
+    return;
+  }
+
+  pintarLayout(alianza);
+}
+
+init();
+</script>
+</body>
+</html>
