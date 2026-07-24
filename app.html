@@ -223,6 +223,54 @@ input[readonly]{background:#111;color:#666;cursor:default}
   #rep-profesional .rep-filtros .btn{width:100%;padding:9px 14px;font-size:13px}
   #rep-profesional select,#rep-profesional input[type=date]{max-width:none!important;width:100%;padding:10px 12px;font-size:13px}
   #rep-profesional .rep-filtros span{text-align:center}
+
+  /* ═══════════════════════════════════════════════════════════════
+     Continuación del responsive (sesión siguiente): Dashboard, Clientes,
+     Inventario, Costos, Reportes (Resumen/Cliente/Servicio) y Config
+     (Servicios/Equipo/Alianzas/Club VIP/Horarios). Mismas técnicas que
+     arriba, generalizadas en clases reutilizables en vez de repetir el
+     bloque tabla→tarjeta por cada sección:
+     - .tbl-cards: mismo patrón exacto que #rep-profesional de arriba,
+       aplicado a cualquier .tbl-wrap que lo use (data-label en cada <td>,
+       agregado en las funciones de render correspondientes — ningún
+       cálculo cambia, solo el atributo).
+     - .filtros-bar: barras de búsqueda/filtro apiladas a ancho completo.
+     - .modal .fr / .modal-footer: mismo criterio que #m-reserva arriba,
+       generalizado a todos los modales (m-reserva ya tenía su propia
+       regla más específica, ésta es redundante ahí y nueva en el resto).
+     ═══════════════════════════════════════════════════════════════ */
+
+  .tbl-cards{overflow-x:visible}
+  .tbl-cards table thead{display:none}
+  .tbl-cards table,.tbl-cards tbody,.tbl-cards tr,.tbl-cards td{display:block;width:100%}
+  .tbl-cards tr{margin-bottom:10px;border:0.5px solid var(--border2);border-radius:10px;padding:4px 10px;background:var(--bg2)}
+  .tbl-cards tr:last-child{margin-bottom:0}
+  .tbl-cards td{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:0.5px solid var(--border);padding:8px 0;text-align:right}
+  .tbl-cards td:last-child{border-bottom:none}
+  .tbl-cards td::before{content:attr(data-label);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.4px;text-align:left;flex-shrink:0}
+  .tbl-cards td.empty{display:block;text-align:center;padding:20px 0}
+  .tbl-cards td.empty::before{content:none}
+  /* Celda con solo una foto/avatar (Servicios, Alianzas): sin data-label
+     (no hay texto que etiquetar), se centra sola arriba de la tarjeta. */
+  .tbl-cards td.td-avatar{justify-content:center;border-bottom:none;padding-bottom:0}
+  .tbl-cards td.td-avatar::before{content:none}
+
+  .filtros-bar{flex-direction:column;align-items:stretch}
+  .filtros-bar input,.filtros-bar select,.filtros-bar button{width:100%;max-width:none!important}
+
+  .overlay .modal .fr{grid-template-columns:1fr}
+  .modal-footer{flex-direction:column}
+  .modal-footer button{width:100%;margin-left:0!important}
+
+  /* Dashboard, Costos, Reportes, Profesionales: tarjetas de métricas e
+     info a una sola columna (antes de esto, .g4/.g3 ya bajaban a 2
+     columnas a los 768px vía la regla existente más arriba). */
+  .g4,.g3{grid-template-columns:1fr}
+
+  /* Horario del negocio (Config → Negocio): cada día en su propia fila,
+     sin inputs de hora amontonados. */
+  #horario-dias > div{flex-direction:column;align-items:flex-start!important;gap:6px!important}
+  #horario-dias input[type=time]{width:auto;flex:1}
 }
 </style>
 </head>
@@ -365,7 +413,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- CLIENTES -->
 <div id="p-clientes" class="page">
-  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+  <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <input type="text" id="q-cliente" placeholder="Buscar nombre, WhatsApp, correo..." style="max-width:300px" oninput="renderClientes()">
     <select id="f-estado-cl" onchange="renderClientes()" style="max-width:150px">
       <option value="">Todos</option><option>Activo</option><option>En riesgo</option><option>Inactivo</option>
@@ -373,7 +421,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <button class="btn btn-primary" onclick="openM('m-cliente')">+ Nuevo cliente</button>
   </div>
   <div class="card">
-    <div class="tbl-wrap">
+    <div class="tbl-wrap tbl-cards">
       <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Citas</th><th>Última cita</th><th class="vip-only">Nivel VIP</th><th>Estado</th><th></th></tr></thead>
       <tbody id="t-clientes"></tbody></table>
     </div>
@@ -467,7 +515,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- INVENTARIO -->
 <div id="p-inventario" class="page">
-  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+  <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <input type="text" id="q-inv" placeholder="Buscar producto..." style="max-width:260px" oninput="renderInventario()">
     <button class="btn btn-primary" onclick="openM('m-producto')">+ Producto</button>
     <button class="btn btn-ghost" onclick="openM('m-entrada')">📦 Entrada stock</button>
@@ -480,7 +528,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
   <div id="i-alertas"></div>
   <div class="card">
-    <div class="tbl-wrap"><table><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Stock</th><th>Mín</th><th>Máx</th><th>Estado</th><th>Costo</th><th>Precio</th><th></th></tr></thead>
+    <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Stock</th><th>Mín</th><th>Máx</th><th>Estado</th><th>Costo</th><th>Precio</th><th></th></tr></thead>
     <tbody id="t-inv"></tbody></table></div>
   </div>
 </div>
@@ -493,7 +541,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab" onclick="switchTab(this,'tc-com')">Comisiones</div>
   </div>
   <div id="tc-gastos">
-    <div style="display:flex;gap:8px;margin-bottom:14px">
+    <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px">
       <button class="btn btn-primary" onclick="openM('m-costo')">+ Gasto</button>
       <select id="f-mes-co" onchange="renderCostos()" style="max-width:180px"><option value="">Todos</option></select>
     </div>
@@ -502,7 +550,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="mc"><div class="mc-label">Costos variables</div><div class="mc-val" id="co-var">$0</div></div>
       <div class="mc"><div class="mc-label">Total gastos</div><div class="mc-val down" id="co-tot">$0</div></div>
     </div>
-    <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Categoría</th><th>Neto</th><th>IVA</th><th>Total</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Categoría</th><th>Neto</th><th>IVA</th><th>Total</th><th></th></tr></thead>
     <tbody id="t-costos"></tbody></table></div></div>
   </div>
   <div id="tc-iva" style="display:none">
@@ -513,7 +561,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card"><div class="card-hdr"><span class="card-title">Resultado IVA mensual</span></div><div id="iva-resultado"></div></div>
   </div>
   <div id="tc-com" style="display:none">
-    <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Para negocio</th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Para negocio</th></tr></thead>
     <tbody id="t-comisiones"></tbody></table></div></div>
   </div>
 </div>
@@ -613,7 +661,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
   <div id="cfg-srv" style="display:none">
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-servicio')">+ Servicio</button></div>
-    <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-servicios"></tbody></table></div></div>
   </div>
   <div id="cfg-blq" style="display:none">
@@ -625,13 +673,13 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div id="cfg-alz" style="display:none">
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Convenios con negocios externos que tus clientes VIP pueden canjear. Se muestran en la página pública "Mi Club VIP" según el nivel del cliente.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-alianza')">+ Alianza</button></div>
-    <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Beneficio</th><th>Nivel mínimo</th><th>Activa</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Beneficio</th><th>Nivel mínimo</th><th>Activa</th><th></th></tr></thead>
     <tbody id="t-alianzas"></tbody></table></div></div>
   </div>
   <div id="cfg-vip" style="display:none">
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Configurá los niveles de tu Club VIP — cuántas visitas hacen falta para cada uno, cómo se llaman, y su beneficio. Necesitás al menos un nivel siempre.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-nivel')">+ Nivel</button></div>
-    <div class="card"><div class="tbl-wrap"><table><thead><tr><th></th><th>Nombre</th><th>Visitas mínimas</th><th>Beneficio</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Visitas mínimas</th><th>Beneficio</th><th></th></tr></thead>
     <tbody id="t-niveles-vip"></tbody></table></div></div>
   </div>
   <div id="cfg-int" style="display:none">
@@ -673,7 +721,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
   <!-- RESUMEN GENERAL -->
   <div id="rep-resumen">
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <input type="month" id="rep-mes-ini" style="max-width:160px">
       <span style="color:var(--text3);font-size:13px">hasta</span>
       <input type="month" id="rep-mes-fin" style="max-width:160px">
@@ -686,7 +734,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="card"><div class="card-hdr"><span class="card-title">Ventas por servicio</span></div><div id="rep-por-servicio"></div></div>
     </div>
     <div class="card"><div class="card-hdr"><span class="card-title">Detalle de citas</span><button class="btn btn-ghost btn-sm" onclick="exportarExcel('citas')">📥 Excel</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Valor neto</th><th>IVA</th><th>Total</th><th>Pago</th></tr></thead>
+      <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Valor neto</th><th>IVA</th><th>Total</th><th>Pago</th></tr></thead>
       <tbody id="rep-tabla-citas"></tbody></table></div>
     </div>
   </div>
@@ -727,14 +775,14 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
   <!-- POR CLIENTE -->
   <div id="rep-cliente" style="display:none">
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <input type="text" id="rep-buscar-cl" placeholder="Buscar cliente..." style="max-width:260px" oninput="renderReporteCliente()">
       <select id="rep-filtro-estado-cl" onchange="renderReporteCliente()" style="max-width:150px">
         <option value="">Todos</option><option>Activo</option><option>En riesgo</option><option>Inactivo</option>
       </select>
       <button class="btn btn-ghost" onclick="exportarExcel('clientes')">📥 Exportar Excel</button>
     </div>
-    <div class="card"><div class="tbl-wrap">
+    <div class="card"><div class="tbl-wrap tbl-cards">
       <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Total citas</th><th>Última cita</th><th>Valor histórico</th><th>Ticket prom.</th><th class="vip-only">Nivel VIP</th><th>Estado</th><th></th></tr></thead>
       <tbody id="rep-tabla-cl"></tbody></table>
     </div></div>
@@ -745,18 +793,18 @@ input[readonly]{background:#111;color:#666;cursor:default}
       </div>
       <div class="g3" id="rep-cl-metrics" style="margin-bottom:0"></div>
       <div style="margin-top:14px"><div class="card-title" style="margin-bottom:10px">Historial completo</div>
-      <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Valor</th><th>Pago</th></tr></thead>
+      <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Valor</th><th>Pago</th></tr></thead>
       <tbody id="rep-cl-hist"></tbody></table></div></div>
     </div></div>
   </div>
 
   <!-- POR SERVICIO -->
   <div id="rep-servicios" style="display:none">
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <input type="month" id="rep-mes-srv" style="max-width:160px" onchange="renderReporteServicios()">
       <button class="btn btn-ghost" onclick="exportarExcel('servicios')">📥 Exportar Excel</button>
     </div>
-    <div class="card"><div class="tbl-wrap">
+    <div class="card"><div class="tbl-wrap tbl-cards">
       <table><thead><tr><th>Servicio</th><th>Citas</th><th>% del total</th><th>Ventas brutas</th><th>Ticket promedio</th><th>Profesional top</th></tr></thead>
       <tbody id="rep-tabla-srv"></tbody></table>
     </div></div>
@@ -794,7 +842,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Cumpleaños</label><input id="cl-cumple" type="date"></div><div class="fg"><label>Profesional preferido</label><select id="cl-profesional"><option value="">Sin preferencia</option></select></div></div>
     <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="cl-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Reserva Web</option><option>Directo</option><option>Otro</option><option value="Setmore">Setmore (antiguo)</option></select></div><div class="fg"></div></div>
     <div class="fg"><label>Notas</label><textarea id="cl-notas" rows="2" placeholder="Observaciones..."></textarea></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCliente()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-cliente')">Cancelar</button>
     </div>
@@ -876,7 +924,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="fr"><div class="fg"><label>Monto neto ($) *</label><input id="co-monto" type="number" placeholder="0" oninput="calcIvaCo()"></div><div class="fg"><label>¿Lleva IVA?</label><select id="co-iva-opt" onchange="calcIvaCo()"><option value="si">Sí (19%)</option><option value="no">No</option></select></div></div>
     <div class="fr"><div class="fg"><label>IVA calculado</label><input id="co-iva-val" readonly></div><div class="fg"><label>Total</label><input id="co-total-val" readonly style="color:#d4a853"></div></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCosto()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-costo')">Cancelar</button>
     </div>
@@ -892,7 +940,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Stock inicial</label><input id="pr-stock" type="number" value="0" min="0"></div><div class="fg"><label>Stock mínimo</label><input id="pr-min" type="number" value="2" min="0"></div></div>
     <div class="fr"><div class="fg"><label>Stock máximo</label><input id="pr-max" type="number" value="20" min="0"></div><div class="fg"><label>Costo unitario ($)</label><input id="pr-costo" type="number" value="0" min="0"></div></div>
     <div class="fg"><label>Precio venta ($)</label><input id="pr-precio" type="number" value="0" min="0"></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarProducto()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-producto')">Cancelar</button>
     </div>
@@ -906,7 +954,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Producto *</label><select id="en-prod"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Cantidad *</label><input id="en-cant" type="number" value="1" min="1"></div></div>
     <div class="fr"><div class="fg"><label>Costo unitario</label><input id="en-costo" type="number" value="0"></div><div class="fg"><label>Proveedor</label><input id="en-prov" type="text"></div></div>
     <div class="fg"><label>Notas</label><textarea id="en-notas" rows="2"></textarea></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarEntrada()">Registrar entrada</button>
       <button class="btn btn-ghost" onclick="closeM('m-entrada')">Cancelar</button>
     </div>
@@ -942,7 +990,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <input type="checkbox" id="ba-puede-pagos" style="width:auto">
       ✓ Puede procesar pagos desde Mi Agenda
     </label>
-    <div style="display:flex;gap:8px;margin-top:8px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-primary" id="btn-guardar-prof" onclick="guardarProfesional()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-profesional')">Cancelar</button>
     </div>
@@ -991,7 +1039,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="sv-nombre" type="text" placeholder="Corte Clásico"></div><div class="fg"><label>Precio ($)</label><input id="sv-precio" type="number" value="0"></div></div>
     <div class="fr"><div class="fg"><label>Duración (min)</label><input id="sv-dur" type="number" value="30"></div><div class="fg"><label>Comisión %</label><input id="sv-com" type="number" value="50"></div></div>
     <div class="fg"><label>Descripción</label><textarea id="sv-desc" rows="2" placeholder="Detalle del servicio para que el cliente sepa en qué consiste (opcional)"></textarea></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarServicio()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-servicio')">Cancelar</button>
     </div>
@@ -1005,7 +1053,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <input type="hidden" id="niv-id">
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="niv-nombre" type="text" placeholder="Plata"></div><div class="fg"><label>Visitas mínimas *</label><input id="niv-visitas" type="number" min="1" value="5"></div></div>
     <div class="fg"><label>Beneficio</label><input id="niv-beneficio" type="text" placeholder="10% de descuento"></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" id="btn-guardar-niv" onclick="guardarNivelVip()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-nivel')">Cancelar</button>
     </div>
@@ -1060,7 +1108,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fg"><label>Beneficio *</label><input id="alz-beneficio" type="text" placeholder="15% de descuento presentando tu carnet VIP"></div>
     <div class="fg"><label>Descripción</label><input id="alz-desc" type="text" placeholder="Detalle del convenio (opcional)"></div>
     <div class="fg"><label>Link (web/WhatsApp del aliado)</label><input id="alz-link" type="url" placeholder="https://..."></div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" id="btn-guardar-alz" onclick="guardarAlianza()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-alianza')">Cancelar</button>
     </div>
@@ -2004,8 +2052,8 @@ function renderNivelesVipConfig(){
   if(!cont)return;
   const niveles=nivelesOrdenados();
   cont.innerHTML=niveles.map((nv,i)=>`<tr>
-    <td>${ICONO_NIVEL(i)}</td><td>${nv.nombre}</td><td>${nv.visitas_minimas}</td><td>${nv.beneficio||'—'}</td>
-    <td style="white-space:nowrap">
+    <td class="td-avatar">${ICONO_NIVEL(i)}</td><td data-label="Nombre">${nv.nombre}</td><td data-label="Visitas mínimas">${nv.visitas_minimas}</td><td data-label="Beneficio">${nv.beneficio||'—'}</td>
+    <td data-label="" style="white-space:nowrap">
       <button class="btn btn-ghost btn-sm" onclick="moverNivelVip('${nv.id}','up')" ${i===0?'disabled':''} title="Subir">↑</button>
       <button class="btn btn-ghost btn-sm" onclick="moverNivelVip('${nv.id}','down')" ${i===niveles.length-1?'disabled':''} title="Bajar">↓</button>
       <button class="btn btn-ghost btn-sm" onclick="editarNivelVip('${nv.id}')" title="Editar">✏️</button>
@@ -2391,11 +2439,11 @@ function renderClientes(){
     const vis=getCitas(c.id); const uv=getUltCita(c.id); const nv=getNivel(vis); const est=getEstado(c.id);
     const eb=est==='Activo'?'b-green':est==='En riesgo'?'b-orange':'b-red';
     return`<tr>
-      <td><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong><br><span style="font-size:10px;color:var(--text3)">${c.canal||''}</span></td>
-      <td><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')">${c.whatsapp}</a></td>
-      <td>${vis}</td><td style="color:var(--text3);font-size:11px">${uv||'—'}</td>
-      <td class="vip-only">${badgeNivel(nv)}</td><td><span class="badge ${eb}">${est}</span></td>
-      <td style="white-space:nowrap">
+      <td data-label="Cliente"><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong><br><span style="font-size:10px;color:var(--text3)">${c.canal||''}</span></td>
+      <td data-label="WhatsApp"><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')">${c.whatsapp}</a></td>
+      <td data-label="Citas">${vis}</td><td data-label="Última cita" style="color:var(--text3);font-size:11px">${uv||'—'}</td>
+      <td data-label="Nivel VIP" class="vip-only">${badgeNivel(nv)}</td><td data-label="Estado"><span class="badge ${eb}">${est}</span></td>
+      <td data-label="" style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="verCliente('${c.id}')">Ver</button>
         <button class="btn btn-ghost btn-sm" onclick="editarCliente('${c.id}')">Editar</button>
       </td></tr>`;
@@ -2627,12 +2675,12 @@ function renderInventario(){
   document.getElementById('t-inv').innerHTML=list.map(p=>{
     const est=p.stock<=p.stock_min?'Crítico':p.stock>p.stock_max?'Sobrestock':'Normal';
     const eb=est==='Crítico'?'b-red':est==='Sobrestock'?'b-orange':'b-green';
-    return`<tr><td style="font-size:10px;color:var(--text3)">${p.codigo||'—'}</td><td><strong style="color:var(--text)">${p.nombre}</strong></td><td>${p.categoria||'—'}</td>
-    <td style="color:${p.stock<=p.stock_min?'#e05050':'inherit'};font-weight:600">${p.stock}</td>
-    <td style="color:var(--text3)">${p.stock_min}</td><td style="color:var(--text3)">${p.stock_max}</td>
-    <td><span class="badge ${eb}">${est}</span></td>
-    <td>${fmt(p.costo_unitario)}</td><td>${fmt(p.precio_venta)}</td>
-    <td><button class="btn btn-danger btn-sm" onclick="eliminar('inventario','${p.id}',loadInventario,renderInventario)">×</button></td></tr>`;
+    return`<tr><td data-label="Código" style="font-size:10px;color:var(--text3)">${p.codigo||'—'}</td><td data-label="Producto"><strong style="color:var(--text)">${p.nombre}</strong></td><td data-label="Categoría">${p.categoria||'—'}</td>
+    <td data-label="Stock" style="color:${p.stock<=p.stock_min?'#e05050':'inherit'};font-weight:600">${p.stock}</td>
+    <td data-label="Mín" style="color:var(--text3)">${p.stock_min}</td><td data-label="Máx" style="color:var(--text3)">${p.stock_max}</td>
+    <td data-label="Estado"><span class="badge ${eb}">${est}</span></td>
+    <td data-label="Costo">${fmt(p.costo_unitario)}</td><td data-label="Precio">${fmt(p.precio_venta)}</td>
+    <td data-label=""><button class="btn btn-danger btn-sm" onclick="eliminar('inventario','${p.id}',loadInventario,renderInventario)">×</button></td></tr>`;
   }).join('');
 }
 
@@ -2647,11 +2695,11 @@ function renderCostos(){
   document.getElementById('co-var').textContent=fmt(varbl);
   document.getElementById('co-tot').textContent=fmt(fijo+varbl);
   document.getElementById('t-costos').innerHTML=list.map(c=>`<tr>
-    <td>${c.fecha}</td><td>${c.descripcion}</td>
-    <td><span class="badge ${c.tipo==='fijo'?'b-blue':'b-purple'}">${c.tipo}</span></td>
-    <td>${c.categoria||'—'}</td><td>${fmt(c.monto_neto)}</td>
-    <td class="gold">${fmt(c.iva)}</td><td style="font-weight:600">${fmt(c.total)}</td>
-    <td><button class="btn btn-danger btn-sm" onclick="eliminar('costos','${c.id}',loadCostos,renderCostos)">×</button></td>
+    <td data-label="Fecha">${c.fecha}</td><td data-label="Descripción">${c.descripcion}</td>
+    <td data-label="Tipo"><span class="badge ${c.tipo==='fijo'?'b-blue':'b-purple'}">${c.tipo}</span></td>
+    <td data-label="Categoría">${c.categoria||'—'}</td><td data-label="Neto">${fmt(c.monto_neto)}</td>
+    <td data-label="IVA" class="gold">${fmt(c.iva)}</td><td data-label="Total" style="font-weight:600">${fmt(c.total)}</td>
+    <td data-label=""><button class="btn btn-danger btn-sm" onclick="eliminar('costos','${c.id}',loadCostos,renderCostos)">×</button></td>
   </tr>`).join('');
   // IVA
   const mes=mesActual();
@@ -2669,7 +2717,7 @@ function renderCostos(){
   const byB=agregarComisionesPorProfesional(S.visitas.filter(v=>v.fecha?.startsWith(mes2)));
   document.getElementById('t-comisiones').innerHTML=Object.entries(byB).map(([b,d])=>{
     const com=Math.round(d.comision);
-    return`<tr><td>${b}</td><td>${d.citas}</td><td>${fmt(d.ventas)}</td><td>${d.pct}%</td><td class="gold">${fmt(com)}</td><td>${fmt(d.ventas-com)}</td></tr>`;
+    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td></tr>`;
   }).join('')||'<tr><td colspan="6" class="empty">Sin ventas este mes.</td></tr>';
 }
 
@@ -2735,9 +2783,9 @@ function renderConfig(){
       ?`<img src="${s.foto_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
       :`<div style="width:32px;height:32px;border-radius:7px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:14px">✂️</div>`;
     return `<tr>
-    <td>${avatar}</td><td>${s.nombre}</td><td>${fmt(s.precio)}</td><td>${s.duracion_min} min</td>
-    <td>${s.comision_pct}%</td><td>${s.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
-    <td><button class="btn btn-ghost btn-sm" onclick="editarServicio('${s.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('servicios','${s.id}',loadServicios,renderConfig)">×</button></td>
+    <td class="td-avatar">${avatar}</td><td data-label="Nombre">${s.nombre}</td><td data-label="Precio">${fmt(s.precio)}</td><td data-label="Duración">${s.duracion_min} min</td>
+    <td data-label="Comisión %">${s.comision_pct}%</td><td data-label="Activo">${s.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
+    <td data-label=""><button class="btn btn-ghost btn-sm" onclick="editarServicio('${s.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('servicios','${s.id}',loadServicios,renderConfig)">×</button></td>
   </tr>`;
   }).join('');
   const tAlz=document.getElementById('t-alianzas');
@@ -2752,9 +2800,9 @@ function renderConfig(){
           ?(S.nivelesVip.find(nv=>nv.id===a.nivel_minimo_id)?.nombre||'Todos')
           :'<span style="color:#e0a030">⚠️ Sin nivel asignado — no visible para clientes, revisala</span>');
       return `<tr>
-      <td>${avatar}</td><td>${a.nombre}</td><td>${a.beneficio}</td><td>${nivelCelda}</td>
-      <td>${a.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="editarAlianza('${a.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('alianzas','${a.id}',loadAlianzas,renderConfig)">×</button></td>
+      <td class="td-avatar">${avatar}</td><td data-label="Nombre">${a.nombre}</td><td data-label="Beneficio">${a.beneficio}</td><td data-label="Nivel mínimo">${nivelCelda}</td>
+      <td data-label="Activa">${a.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
+      <td data-label=""><button class="btn btn-ghost btn-sm" onclick="editarAlianza('${a.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('alianzas','${a.id}',loadAlianzas,renderConfig)">×</button></td>
     </tr>`;
     }).join('')||'<tr><td colspan="6" class="empty">Sin alianzas todavía</td></tr>';
   }
@@ -3186,7 +3234,7 @@ function renderReporteResumen(){
   document.getElementById('rep-tabla-citas').innerHTML=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
     const iv=Math.round((v.valor||0)*((S.barberia?.iva_pct||19)/100));
-    return`<tr><td>${v.fecha}</td><td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td>${v.servicio||'—'}</td><td>${v.barbero_nombre||'—'}</td><td>${fmt(v.valor)}</td><td class="gold">${fmt(iv)}</td><td>${fmt((v.valor||0)+iv)}</td><td>${v.metodo_pago||'—'}</td></tr>`;
+    return`<tr><td data-label="Fecha">${v.fecha}</td><td data-label="Cliente">${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td data-label="Servicio">${v.servicio||'—'}</td><td data-label="Profesional">${v.barbero_nombre||'—'}</td><td data-label="Valor neto">${fmt(v.valor)}</td><td data-label="IVA" class="gold">${fmt(iv)}</td><td data-label="Total">${fmt((v.valor||0)+iv)}</td><td data-label="Pago">${v.metodo_pago||'—'}</td></tr>`;
   }).join('')||'<tr><td colspan="8" class="empty">Sin citas</td></tr>';
 }
 
@@ -3268,15 +3316,15 @@ function renderReporteCliente(){
     const est=getEstado(c.id);
     const eb=est==='Activo'?'b-green':est==='En riesgo'?'b-orange':'b-red';
     return`<tr>
-      <td><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong></td>
-      <td style="color:var(--text3);font-size:11px">${c.whatsapp||'—'}</td>
-      <td style="font-weight:600">${citas.length}</td>
-      <td style="color:var(--text3);font-size:11px">${uv||'—'}</td>
-      <td>${fmt(total)}</td>
-      <td>${fmt(ticket)}</td>
-      <td class="vip-only">${badgeNivel(nv)}</td>
-      <td><span class="badge ${eb}">${est}</span></td>
-      <td><button class="btn btn-ghost btn-sm" onclick="verDetalleCliente('${c.id}')">Ver detalle</button></td>
+      <td data-label="Cliente"><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong></td>
+      <td data-label="WhatsApp" style="color:var(--text3);font-size:11px">${c.whatsapp||'—'}</td>
+      <td data-label="Total citas" style="font-weight:600">${citas.length}</td>
+      <td data-label="Última cita" style="color:var(--text3);font-size:11px">${uv||'—'}</td>
+      <td data-label="Valor histórico">${fmt(total)}</td>
+      <td data-label="Ticket prom.">${fmt(ticket)}</td>
+      <td data-label="Nivel VIP" class="vip-only">${badgeNivel(nv)}</td>
+      <td data-label="Estado"><span class="badge ${eb}">${est}</span></td>
+      <td data-label=""><button class="btn btn-ghost btn-sm" onclick="verDetalleCliente('${c.id}')">Ver detalle</button></td>
     </tr>`;
   }).join('')||'<tr><td colspan="9" class="empty">Sin clientes</td></tr>';
 }
@@ -3292,7 +3340,7 @@ function verDetalleCliente(id){
     <div class="mc"><div class="mc-label">Valor histórico</div><div class="mc-val">${fmt(total)}</div></div>
     <div class="mc"><div class="mc-label">Ticket promedio</div><div class="mc-val">${fmt(ticket)}</div></div>`;
   document.getElementById('rep-cl-hist').innerHTML=citas.map(v=>`
-    <tr><td>${v.fecha}</td><td>${v.servicio||'—'}</td><td>${v.barbero_nombre||'—'}</td><td>${fmt(v.valor)}</td><td>${v.metodo_pago||'—'}</td></tr>
+    <tr><td data-label="Fecha">${v.fecha}</td><td data-label="Servicio">${v.servicio||'—'}</td><td data-label="Profesional">${v.barbero_nombre||'—'}</td><td data-label="Valor">${fmt(v.valor)}</td><td data-label="Pago">${v.metodo_pago||'—'}</td></tr>
   `).join('')||'<tr><td colspan="5" class="empty">Sin citas</td></tr>';
   document.getElementById('rep-detalle-cl').style.display='';
   document.getElementById('rep-detalle-cl').scrollIntoView({behavior:'smooth'});
@@ -3313,7 +3361,7 @@ function renderReporteServicios(){
   document.getElementById('rep-tabla-srv').innerHTML=sorted.map(([s,d])=>{
     const ticket=d.cnt?Math.round(d.val/d.cnt):0;
     const topP=Object.entries(d.profs).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';
-    return`<tr><td><strong style="color:var(--text)">${s}</strong></td><td>${d.cnt}</td><td><span class="badge b-blue">${(d.cnt/total*100).toFixed(1)}%</span></td><td>${fmt(d.val)}</td><td>${fmt(ticket)}</td><td>${topP}</td></tr>`;
+    return`<tr><td data-label="Servicio"><strong style="color:var(--text)">${s}</strong></td><td data-label="Citas">${d.cnt}</td><td data-label="% del total"><span class="badge b-blue">${(d.cnt/total*100).toFixed(1)}%</span></td><td data-label="Ventas brutas">${fmt(d.val)}</td><td data-label="Ticket promedio">${fmt(ticket)}</td><td data-label="Profesional top">${topP}</td></tr>`;
   }).join('')||'<tr><td colspan="6" class="empty">Sin datos</td></tr>';
 
   const maxCnt=Math.max(...sorted.map(x=>x[1].cnt),1);
