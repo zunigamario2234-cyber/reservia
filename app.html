@@ -108,6 +108,29 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .modal-title{font-size:14px;font-weight:600;color:#fff}
 .xbtn{background:none;border:none;color:var(--text3);cursor:pointer;font-size:22px;line-height:1;padding:2px}
 .xbtn:hover{color:var(--text)}
+/* Wizard de pasos dentro de un modal — mismo patrón estructural que
+   club.html/reservar.html (.steps/.step-tab/.step-content/data-num),
+   restyleado con las variables de tema de app.html en vez de sus hex
+   hardcodeados. Primer uso de este patrón dentro de un .overlay. */
+.imp-steps{display:flex;gap:0;margin-bottom:18px;border-bottom:0.5px solid var(--border)}
+.imp-step-tab{flex:1;padding:8px 4px;text-align:center;font-size:11px;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px}
+.imp-step-tab::before{content:attr(data-num);display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bg4);color:var(--text2);font-size:10px;font-weight:600;flex-shrink:0}
+.imp-step-tab.active{color:var(--p1);border-bottom-color:var(--p1)}
+.imp-step-tab.active::before{background:var(--p1);color:#fff}
+.imp-step-tab.done{color:#00e096}
+.imp-step-tab.done::before{background:#00e096;color:#0a0a0a;content:'✓'}
+.imp-step-content{display:none}.imp-step-content.active{display:block}
+.imp-drop{border:1.5px dashed var(--border2);border-radius:10px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.15s}
+.imp-drop:hover{border-color:var(--p1)}
+.imp-map-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border)}
+.imp-map-row:last-child{border-bottom:none}
+.imp-map-col{flex:1;font-size:12px;color:var(--text)}
+.imp-map-sample{font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imp-map-arrow{color:var(--text3);font-size:12px}
+.imp-summary{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.imp-summary .mc{flex:1;min-width:120px}
+.imp-warn-list{max-height:140px;overflow-y:auto;font-size:11px;color:var(--text2)}
+.imp-warn-list div{padding:4px 0;border-bottom:0.5px solid var(--border)}
 /* Misc */
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;display:flex;align-items:flex-start;gap:8px}
 .al-warn{background:#1a1000;border:0.5px solid #f0a500;color:#f0a500}
@@ -419,6 +442,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <option value="">Todos</option><option>Activo</option><option>En riesgo</option><option>Inactivo</option>
     </select>
     <button class="btn btn-primary" onclick="openM('m-cliente')">+ Nuevo cliente</button>
+    <button class="btn btn-ghost" onclick="openM('m-importar-clientes')">📥 Importar clientes</button>
   </div>
   <div class="card">
     <div class="tbl-wrap tbl-cards">
@@ -840,11 +864,81 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="cl-nombre" type="text" placeholder="Juan"></div><div class="fg"><label>Apellido</label><input id="cl-apellido" type="text" placeholder="Pérez"></div></div>
     <div class="fr"><div class="fg"><label>WhatsApp *</label><input id="cl-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div><div class="fg"><label>Correo</label><input id="cl-email" type="email" placeholder="juan@correo.com"></div></div>
     <div class="fr"><div class="fg"><label>Cumpleaños</label><input id="cl-cumple" type="date"></div><div class="fg"><label>Profesional preferido</label><select id="cl-profesional"><option value="">Sin preferencia</option></select></div></div>
-    <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="cl-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Reserva Web</option><option>Directo</option><option>Otro</option><option value="Setmore">Setmore (antiguo)</option></select></div><div class="fg"></div></div>
+    <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="cl-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Reserva Web</option><option>Directo</option><option>Importado</option><option>Otro</option><option value="Setmore">Setmore (antiguo)</option></select></div><div class="fg"></div></div>
     <div class="fg"><label>Notas</label><textarea id="cl-notas" rows="2" placeholder="Observaciones..."></textarea></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCliente()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-cliente')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Importar clientes -->
+<div class="overlay" id="m-importar-clientes">
+  <div class="modal" style="max-width:820px">
+    <div class="modal-hdr"><span class="modal-title">Importar clientes</span><button class="xbtn" onclick="closeM('m-importar-clientes')">×</button></div>
+
+    <div class="imp-steps">
+      <div class="imp-step-tab active" id="imp-st-1" data-num="1">Archivo</div>
+      <div class="imp-step-tab" id="imp-st-2" data-num="2">Mapear columnas</div>
+      <div class="imp-step-tab" id="imp-st-3" data-num="3">Revisar y confirmar</div>
+      <div class="imp-step-tab" id="imp-st-4" data-num="4">Resultado</div>
+    </div>
+
+    <!-- Paso 1: archivo -->
+    <div class="imp-step-content active" id="imp-sc-1">
+      <label class="imp-drop" for="imp-file">
+        <div style="font-size:28px;margin-bottom:8px">📄</div>
+        <div style="font-size:13px;color:var(--text)">Hacé clic para elegir un archivo</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px">.csv, .xlsx o .xls — exportado de Agenda Pro, Setmore, o cualquier planilla con tus clientes</div>
+      </label>
+      <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" style="display:none" onchange="impLeerArchivo(this)">
+      <div id="imp-file-info" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
+      <div id="imp-file-error" class="alert al-err" style="display:none;margin-top:10px"></div>
+    </div>
+
+    <!-- Paso 2: mapeo de columnas -->
+    <div class="imp-step-content" id="imp-sc-2">
+      <p style="font-size:12px;color:var(--text3);margin-bottom:10px">Decinos qué columna de tu archivo corresponde a cada dato. Detectamos algunas automáticamente — revisalas y corregí las que hagan falta.</p>
+      <div id="imp-mapeo"></div>
+      <div class="alert al-warn" id="imp-mapeo-alerta" style="display:none;margin-top:10px">Nombre y WhatsApp son obligatorios — asigná una columna a cada uno para continuar.</div>
+      <div class="modal-footer" style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" id="imp-btn-paso2" onclick="impIrPaso(3)">Continuar →</button>
+        <button class="btn btn-ghost" onclick="impIrPaso(1)">← Volver</button>
+      </div>
+    </div>
+
+    <!-- Paso 3: vista previa + duplicados -->
+    <div class="imp-step-content" id="imp-sc-3">
+      <div class="imp-summary">
+        <div class="mc"><div class="mc-label">Nuevos</div><div class="mc-val" id="imp-cnt-nuevos" style="color:#00e096">0</div></div>
+        <div class="mc"><div class="mc-label">Ya existen</div><div class="mc-val" id="imp-cnt-dup" style="color:#d4a853">0</div></div>
+        <div class="mc"><div class="mc-label">Con error</div><div class="mc-val" id="imp-cnt-err" style="color:#ff5555">0</div></div>
+      </div>
+      <div id="imp-bulk-dup" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:10px">
+        Para los que ya existen:
+        <select id="imp-bulk-accion" onchange="impAplicarAccionMasiva(this.value)" style="max-width:260px">
+          <option value="">Elegir para cada uno abajo...</option>
+          <option value="saltar">Saltar todos</option>
+          <option value="actualizar">Actualizar todos con datos del archivo</option>
+        </select>
+      </div>
+      <div class="tbl-wrap" style="max-height:320px;overflow-y:auto">
+        <table><thead><tr><th>Fila</th><th>Nombre</th><th>WhatsApp</th><th>Email</th><th>Estado</th><th>Acción</th></tr></thead>
+        <tbody id="imp-preview"></tbody></table>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" id="imp-btn-confirmar" onclick="impEjecutarImportacion()">Importar</button>
+        <button class="btn btn-ghost" onclick="impIrPaso(2)">← Volver</button>
+      </div>
+    </div>
+
+    <!-- Paso 4: resultado -->
+    <div class="imp-step-content" id="imp-sc-4">
+      <div id="imp-resultado"></div>
+      <div class="modal-footer" style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" onclick="closeM('m-importar-clientes')">Listo</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1431,6 +1525,16 @@ function initModal(id){
     document.getElementById('cl-cumple').value='';
     sel('cl-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
+  if(id==='m-importar-clientes'){
+    IMP={headers:[],rows:[],mapping:{},processed:[]};
+    document.getElementById('imp-file').value='';
+    document.getElementById('imp-file-info').textContent='';
+    document.getElementById('imp-file-error').style.display='none';
+    document.getElementById('imp-mapeo').innerHTML='';
+    document.getElementById('imp-preview').innerHTML='';
+    document.getElementById('imp-resultado').innerHTML='';
+    impIrPaso(1);
+  }
   if(id==='m-costo') document.getElementById('co-fecha').value=hoy;
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
@@ -1489,6 +1593,266 @@ async function guardarCliente(){
   }
   if(err){notify(err.message,'err');return;}
   await loadClientes();renderClientes();renderDashboard();
+}
+
+// ─── IMPORTAR CLIENTES (CSV/Excel) ───
+// xlsx.js ya está cargado (ver <script> arriba, hoy solo se usaba para
+// exportar) — XLSX.read() lee .csv/.xlsx/.xls con la misma API, así que no
+// hace falta ninguna librería nueva para CSV.
+let IMP={headers:[],rows:[],mapping:{},processed:[]};
+
+const IMP_LABELS={nombre:'Nombre *',apellido:'Apellido',whatsapp:'WhatsApp *',email:'Correo',cumpleanos:'Cumpleaños',canal:'Canal de llegada',notas:'Notas',barbero_preferido:'Profesional preferido'};
+const IMP_ALIAS={
+  nombre:['nombre','nombres','name','full name','nombre completo','cliente','client name','first name'],
+  apellido:['apellido','apellidos','last name','surname'],
+  whatsapp:['whatsapp','telefono','teléfono','phone','phone number','celular','movil','móvil','mobile','numero','número','contacto','cel'],
+  email:['email','correo','correo electronico','correo electrónico','e-mail','mail'],
+  cumpleanos:['cumpleanos','cumpleaños','fecha de nacimiento','birthday','birth date','fecha nacimiento','dob'],
+  canal:['canal','origen','source','fuente'],
+  notas:['notas','notes','observaciones','comments','comentarios'],
+  barbero_preferido:['profesional','barbero','stylist','staff','preferred staff','empleado preferido']
+};
+
+function impNormalizarHeader(h){ const combinantes=new RegExp('['+String.fromCharCode(0x0300)+'-'+String.fromCharCode(0x036f)+']','g'); return (h||'').toString().trim().toLowerCase().normalize('NFD').replace(combinantes,''); }
+function impNormWsp(w){ return (w||'').toString().replace(/\D/g,''); }
+
+function impAutoDetectar(headers){
+  const usados=new Set(), mapping={};
+  Object.keys(IMP_ALIAS).forEach(campo=>{
+    const alias=IMP_ALIAS[campo].map(impNormalizarHeader);
+    const match=headers.find(h=>!usados.has(h)&&alias.includes(impNormalizarHeader(h)));
+    if(match){ mapping[campo]=match; usados.add(match); }
+  });
+  return mapping;
+}
+
+// dd/mm/yyyy o dd-mm-yyyy (formato típico de exportaciones latam) además del
+// yyyy-mm-dd que ya entrega XLSX con dateNF para celdas de fecha reales.
+function impParseFecha(v){
+  if(v==null||v==='')return null;
+  if(v instanceof Date){
+    // Celda de fecha real de un .xlsx: SheetJS la entrega en UTC-medianoche.
+    // Usar getUTC* (no getFullYear/getDate locales) evita que la fecha se
+    // corra un día atrás según la zona horaria del navegador.
+    const y=v.getUTCFullYear(), m=String(v.getUTCMonth()+1).padStart(2,'0'), d=String(v.getUTCDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  const s=v.toString().trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  return null;
+}
+
+async function impLeerArchivo(input){
+  const file=input.files[0];
+  const errEl=document.getElementById('imp-file-error');
+  errEl.style.display='none';
+  if(!file)return;
+  try{
+    const buf=await file.arrayBuffer();
+    // raw:true en las dos llamadas es crítico: sin esto, SheetJS "adivina" tipos
+    // en celdas de CSV (un WhatsApp como "0956987654" se vuelve el número
+    // 956987654, perdiendo el 0 inicial) y reformatea fechas a m/d/yy con un
+    // corrimiento de un día según la zona horaria del navegador. Con raw:true
+    // las celdas de texto llegan intactas, y las fechas reales de un .xlsx
+    // llegan como Date de verdad (ver impParseFecha, que las lee en UTC).
+    // codepage:65001 (UTF-8) es igual de crítico para .csv: sin esto, SheetJS
+    // decodifica el ArrayBuffer de un CSV con tildes/ñ como si fuera Latin-1,
+    // dejando "José" como "JosÃ©" — y eso rompe además el auto-mapeo de
+    // columnas (un header "Teléfono" mal decodificado ya no matchea ningún
+    // alias). No afecta la lectura de .xlsx binario (usa su propia
+    // codificación interna, este flag es un no-op ahí).
+    const wb=XLSX.read(buf,{type:'array',raw:true,cellDates:true,codepage:65001});
+    const sheet=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:true});
+    if(!rows.length)throw new Error('El archivo no tiene filas de datos.');
+    IMP.headers=Object.keys(rows[0]);
+    IMP.rows=rows;
+    IMP.mapping=impAutoDetectar(IMP.headers);
+    document.getElementById('imp-file-info').textContent=`${file.name} — ${rows.length} filas detectadas`;
+    impRenderMapeo();
+    impIrPaso(2);
+  }catch(e){
+    errEl.textContent='No pudimos leer el archivo: '+e.message;
+    errEl.style.display='';
+  }
+}
+
+function impRenderMapeo(){
+  const cont=document.getElementById('imp-mapeo');
+  cont.innerHTML=Object.keys(IMP_LABELS).map(campo=>{
+    const opts=['<option value="">No usar</option>'].concat(
+      IMP.headers.map(h=>`<option value="${h}" ${IMP.mapping[campo]===h?'selected':''}>${h}</option>`)
+    ).join('');
+    const crudo=IMP.mapping[campo]?IMP.rows[0]?.[IMP.mapping[campo]]:'';
+    const muestra=campo==='cumpleanos'?(impParseFecha(crudo)||''):(crudo??'');
+    return `<div class="imp-map-row">
+      <div class="imp-map-col" style="flex:0 0 160px">${IMP_LABELS[campo]}</div>
+      <div class="imp-map-arrow">←</div>
+      <div style="flex:1">
+        <select onchange="impCambiarMapeo('${campo}',this.value)">${opts}</select>
+        ${muestra?`<div class="imp-map-sample">Ej: ${muestra}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  impValidarMapeo();
+}
+
+function impCambiarMapeo(campo,header){
+  IMP.mapping[campo]=header||null;
+  impRenderMapeo();
+}
+
+function impValidarMapeo(){
+  const ok=!!IMP.mapping.nombre&&!!IMP.mapping.whatsapp;
+  document.getElementById('imp-btn-paso2').disabled=!ok;
+  document.getElementById('imp-mapeo-alerta').style.display=ok?'none':'';
+}
+
+function impConstruirPreview(){
+  const barberosPorNombre=new Map(S.barberos.map(b=>[b.nombre.trim().toLowerCase(),b.nombre]));
+  const clientesPorWsp=new Map();
+  S.clientes.forEach(c=>{ const k=impNormWsp(c.whatsapp); if(k)clientesPorWsp.set(k,c); });
+
+  IMP.processed=IMP.rows.map((row,i)=>{
+    const get=campo=>IMP.mapping[campo]?(row[IMP.mapping[campo]]??'').toString().trim():'';
+    // cumpleanos NO pasa por get() (que fuerza .toString()) porque una celda
+    // de fecha real de .xlsx llega como objeto Date — hay que pasarlo crudo
+    // a impParseFecha para que lo lea con getUTC*, no como texto ya roto.
+    const getRaw=campo=>IMP.mapping[campo]?row[IMP.mapping[campo]]:'';
+    const nombre=get('nombre'), whatsapp=get('whatsapp');
+    const data={
+      nombre, apellido:get('apellido'), whatsapp, email:get('email'),
+      cumpleanos:impParseFecha(getRaw('cumpleanos')),
+      canal:get('canal')||'Importado',
+      notas:get('notas'),
+      barbero_preferido:null
+    };
+    const error=(!nombre||!whatsapp)?'Falta nombre o WhatsApp':null;
+
+    let avisoBarbero=null;
+    const bTexto=get('barbero_preferido');
+    if(bTexto){
+      const match=barberosPorNombre.get(bTexto.trim().toLowerCase());
+      if(match)data.barbero_preferido=match;
+      else avisoBarbero=`Fila ${i+2}: profesional "${bTexto}" no coincide con ningún profesional actual — se importó sin asignar`;
+    }
+
+    // Dedup del import: por dígitos únicamente (a diferencia del criterio de
+    // string exacto que usa el resto de la app, ver guardarCliente()/
+    // procesarReserva()) — un archivo migrado de otra plataforma casi seguro
+    // trae formatos de número distintos a los ya guardados, y con match
+    // exacto la detección de duplicados no serviría de nada acá. No cambia
+    // ni reescribe cómo se compara whatsapp en el resto de Reservia.
+    let dupCliente=null;
+    if(!error){
+      const k=impNormWsp(whatsapp);
+      dupCliente=k?(clientesPorWsp.get(k)||null):null;
+    }
+
+    return {fila:i+2,data,error,avisoBarbero,dupCliente,accion:error?'error':(dupCliente?'saltar':'crear')};
+  });
+
+  impRenderPreview();
+}
+
+function impRenderPreview(){
+  const nuevos=IMP.processed.filter(r=>!r.error&&!r.dupCliente).length;
+  const dups=IMP.processed.filter(r=>!r.error&&r.dupCliente).length;
+  const errores=IMP.processed.filter(r=>r.error).length;
+  document.getElementById('imp-cnt-nuevos').textContent=nuevos;
+  document.getElementById('imp-cnt-dup').textContent=dups;
+  document.getElementById('imp-cnt-err').textContent=errores;
+  document.getElementById('imp-bulk-dup').style.display=dups>0?'flex':'none';
+
+  document.getElementById('imp-preview').innerHTML=IMP.processed.map((r,idx)=>{
+    const estado=r.error?'<span class="badge b-red">Error</span>'
+      :r.dupCliente?'<span class="badge b-orange">Ya existe</span>'
+      :'<span class="badge b-green">Nuevo</span>';
+    let accionHtml='—';
+    if(!r.error&&r.dupCliente){
+      accionHtml=`<select onchange="impSetAccionFila(${idx},this.value)" style="max-width:160px">
+        <option value="saltar" ${r.accion==='saltar'?'selected':''}>Saltar</option>
+        <option value="actualizar" ${r.accion==='actualizar'?'selected':''}>Actualizar</option>
+      </select>`;
+    } else if(r.error){
+      accionHtml=`<span style="color:#ff5555;font-size:11px">${r.error}</span>`;
+    }
+    return `<tr>
+      <td data-label="Fila">${r.fila}</td>
+      <td data-label="Nombre">${r.data.nombre||'—'} ${r.data.apellido||''}</td>
+      <td data-label="WhatsApp">${r.data.whatsapp||'—'}</td>
+      <td data-label="Email">${r.data.email||'—'}</td>
+      <td data-label="Estado">${estado}</td>
+      <td data-label="Acción">${accionHtml}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty">Sin filas para mostrar</td></tr>';
+
+  document.getElementById('imp-btn-confirmar').disabled=(nuevos+dups)===0;
+}
+
+function impSetAccionFila(idx,val){ IMP.processed[idx].accion=val; }
+function impAplicarAccionMasiva(val){
+  if(!val)return;
+  IMP.processed.forEach(r=>{ if(!r.error&&r.dupCliente)r.accion=val; });
+  impRenderPreview();
+}
+
+function impIrPaso(n){
+  if(n===3)impConstruirPreview();
+  document.querySelectorAll('#m-importar-clientes .imp-step-content').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('#m-importar-clientes .imp-step-tab').forEach((t,i)=>{
+    t.classList.remove('active');
+    if(i<n-1)t.classList.add('done'); else t.classList.remove('done');
+  });
+  document.getElementById('imp-sc-'+n).classList.add('active');
+  document.getElementById('imp-st-'+n).classList.add('active');
+}
+
+async function impEjecutarImportacion(){
+  const btn=document.getElementById('imp-btn-confirmar');
+  btn.disabled=true; btn.textContent='Importando...';
+
+  const aCrear=IMP.processed.filter(r=>!r.error&&!r.dupCliente);
+  const aActualizar=IMP.processed.filter(r=>!r.error&&r.dupCliente&&r.accion==='actualizar');
+  const saltados=IMP.processed.filter(r=>r.error||(r.dupCliente&&r.accion==='saltar')).length;
+  const erroresFilas=IMP.processed.filter(r=>r.error).map(r=>`Fila ${r.fila}: ${r.error}`);
+  const avisos=IMP.processed.filter(r=>r.avisoBarbero).map(r=>r.avisoBarbero);
+
+  let creados=0, actualizados=0;
+
+  for(let i=0;i<aCrear.length;i+=500){
+    const chunk=aCrear.slice(i,i+500).map(r=>({...r.data,barberia_id:S.barberia.id}));
+    const {error}=await sb.from('clientes').insert(chunk);
+    if(error)erroresFilas.push('Error al crear un bloque de clientes: '+error.message);
+    else creados+=chunk.length;
+  }
+
+  for(const r of aActualizar){
+    const payload={...r.data,barberia_id:S.barberia.id};
+    const {error}=await sb.from('clientes').update(payload).eq('id',r.dupCliente.id);
+    if(error)erroresFilas.push(`Fila ${r.fila}: error al actualizar — `+error.message);
+    else actualizados++;
+  }
+
+  await loadClientes();renderClientes();renderDashboard();
+  impMostrarResultado({creados,actualizados,saltados,erroresFilas,avisos});
+  btn.disabled=false; btn.textContent='Importar';
+  impIrPaso(4);
+}
+
+function impMostrarResultado({creados,actualizados,saltados,erroresFilas,avisos}){
+  document.getElementById('imp-resultado').innerHTML=`
+    <div class="imp-summary">
+      <div class="mc"><div class="mc-label">Creados</div><div class="mc-val" style="color:#00e096">${creados}</div></div>
+      <div class="mc"><div class="mc-label">Actualizados</div><div class="mc-val" style="color:#5b8def">${actualizados}</div></div>
+      <div class="mc"><div class="mc-label">Saltados</div><div class="mc-val" style="color:var(--text3)">${saltados}</div></div>
+      <div class="mc"><div class="mc-label">Errores</div><div class="mc-val" style="color:#ff5555">${erroresFilas.length}</div></div>
+    </div>
+    ${erroresFilas.length?`<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase">Errores</div><div class="imp-warn-list">${erroresFilas.map(e=>`<div>⚠️ ${e}</div>`).join('')}</div></div>`:''}
+    ${avisos.length?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase">Avisos</div><div class="imp-warn-list">${avisos.map(a=>`<div>ℹ️ ${a}</div>`).join('')}</div></div>`:''}
+  `;
 }
 
 async function guardarCita(){
