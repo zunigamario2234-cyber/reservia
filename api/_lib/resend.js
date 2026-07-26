@@ -9,7 +9,7 @@ const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
 // reserva/visita puntual que el navegador les pasó por id, sea de quien sea.
 // Es tráfico servidor-a-servidor de confianza; esta key nunca llega al navegador.
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
+const RESEND_FROM = process.env.RESEND_FROM || 'Reservia <no-responder@mireservia.cl>';
 
 async function supabaseGet(path) {
   if (!SUPABASE_SERVICE_KEY) {
