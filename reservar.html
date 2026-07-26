@@ -596,8 +596,6 @@ async function confirmarReserva(){
     if(error)throw error;
     const data={id:reservaId};
     ULTIMO_NOMBRE=(nombre+' '+apellido).trim();
-    // Enviar correos via edge function (si está configurada)
-    await enviarCorreos({nombre,apellido,email,wsp,reserva:data});
     // Email de confirmación automático (Vercel + Resend). No bloquea la UI ni
     // muestra error al cliente si falla — el servidor decide con qué datos reales.
     fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:data.id})}).catch(()=>{});
@@ -630,24 +628,6 @@ async function confirmarReserva(){
     // volver con "Hacer otra reserva" el usuario llegaba al paso Confirmar con
     // un botón muerto — sin poder reservar de nuevo ni recibir ninguna señal.
     btn.disabled=false; btn.innerHTML='✓ Confirmar reserva';
-  }
-}
-
-async function enviarCorreos({nombre,apellido,email,wsp,reserva}){
-  // Llama a la Edge Function de Supabase que envía los correos
-  try{
-    await sb.functions.invoke('enviar-correos-reserva',{
-      body:{
-        tipo:'nueva_reserva',
-        barberia:B.barberia,
-        cliente:{nombre,apellido,email,wsp},
-        reserva,
-        servicio:SEL.servicio,
-        profesional:SEL.profesional
-      }
-    });
-  }catch(e){
-    console.log('Correos no enviados (Edge Function no configurada):', e.message);
   }
 }
 
