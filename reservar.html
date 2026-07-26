@@ -529,6 +529,11 @@ function selHora(h){
 function irPaso(n){
   // Validar paso 4
   if(n===5){
+    // Red de seguridad: el resumen arma la fecha con new Date(SEL.fecha+'T12:00:00'),
+    // que con SEL.fecha en null da Invalid Date y pinta "undefined NaN de undefined".
+    // Los botones deshabilitados ya deberían impedir llegar acá sin elegir, pero
+    // esto lo cierra por si algún camino nuevo se saltea esa validación.
+    if(!SEL.servicio||!SEL.fecha||!SEL.hora){alert('Falta elegir servicio, fecha u hora. Vuelve a los primeros pasos.');return;}
     const nombre=document.getElementById('cl-nombre').value.trim();
     const wsp=document.getElementById('cl-wsp').value.trim();
     const email=document.getElementById('cl-email').value.trim();
@@ -618,7 +623,13 @@ async function confirmarReserva(){
   }catch(e){
     const al=document.getElementById('alert-confirm');
     al.textContent='Error al confirmar: '+e.message; al.style.display='';
-    btn.disabled=false; btn.textContent='✓ Confirmar reserva';
+  }finally{
+    // Repone el botón SIEMPRE, salga bien o mal. Antes solo se reponía en el
+    // catch: tras una reserva exitosa quedaba en "Confirmando..." y
+    // deshabilitado para siempre, y como nuevaReserva() tampoco lo tocaba, al
+    // volver con "Hacer otra reserva" el usuario llegaba al paso Confirmar con
+    // un botón muerto — sin poder reservar de nuevo ni recibir ninguna señal.
+    btn.disabled=false; btn.innerHTML='✓ Confirmar reserva';
   }
 }
 
@@ -668,6 +679,13 @@ function nuevaReserva(){
   document.getElementById('st-1').classList.add('active');
   document.querySelectorAll('.servicio-card,.profesional-card').forEach(c=>c.classList.remove('selected'));
   ['cl-nombre','cl-apellido','cl-wsp','cl-email','cl-notas'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // Los "Continuar" vuelven a quedar deshabilitados hasta que se elija de nuevo
+  // servicio / profesional / hora. Sin esto quedaban habilitados de la reserva
+  // anterior y se podían saltar los pasos 1-3 con SEL ya en null, llegando al
+  // resumen con "undefined NaN de undefined" en la fecha (new Date("nullT12:00:00")
+  // es Invalid Date). Mismo reset que rNuevaReserva() en club.html.
+  ['btn-s1','btn-s2','btn-s3'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+  document.getElementById('card-horarios').style.display='none';
   window.scrollTo(0,0);
 }
 
