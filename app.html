@@ -998,9 +998,10 @@ input[readonly]{background:#111;color:#666;cursor:default}
       </div>
       <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
       <div class="fr"><div class="fg"><label>Correo (opcional — le llega la confirmación)</label><input id="r-email" type="email" placeholder="juan@correo.com" autocomplete="off"></div><div class="fg"></div></div>
-      <!-- Ficha del cliente elegido en el autocompletar. Solo informativo: hoy
-           nada lo escribe de vuelta en clientes, pero deja identificado de quién
-           se prellenó el correo. -->
+      <!-- Ficha del cliente elegido en el autocompletar. Identifica de quién se
+           prellenó el correo y a quién se le puede rellenar el suyo si estaba
+           vacío — ver completarEmailFicha(). Queda vacío si el dueño tipeó el
+           nombre y el WhatsApp a mano, y ahí no se toca ninguna ficha. -->
       <input type="hidden" id="r-cliente-id">
     </div>
     <div id="rm-nuevo" style="display:none">
@@ -1933,13 +1934,55 @@ async function guardarCita(){
 // silencio del lado de Resend y el dueño cree que la confirmación salió.
 function emailUsable(e){ return !e || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
+// Cruce reserva → ficha: si el dueño escribió un correo en la reserva y la
+// ficha del cliente estaba sin correo, se rellena. NUNCA se sobrescribe uno ya
+// cargado — el de la ficha normalmente lo escribió el propio cliente en el link
+// público, y uno dictado por teléfono y mal tipeado lo borraría en silencio.
+// Rellenar un campo vacío es aditivo, no se pierde nada; pisarlo sí.
+//
+// Devuelve el texto que se le anexa al aviso de "Reserva guardada": notify usa
+// un solo elemento, así que un segundo llamado taparía al primero.
+//
+// La decisión vive aparte y es pura a propósito: "nunca sobrescribir" es la
+// regla que duele si se rompe, y así se puede probar sin tocar la base.
+// 'escribir' = la ficha no tenía correo · 'distinto' = tenía otro, no se toca
+// 'nada' = no hay nada que hacer o el cliente ya no es el mismo.
+function decidirEmailFicha(fichaWsp,fichaEmail,wspReserva,emailNuevo){
+  if(!emailNuevo)return 'nada';
+  // Si el dueño corrigió el WhatsApp a mano después de elegir la ficha en el
+  // autocompletar, la reserva ya puede ser de otra persona. Match exacto: el
+  // mismo criterio que procesarReserva y buscar_o_crear_cliente_club, para no
+  // sumar un tercer criterio de "quién es este cliente" a la app.
+  if(fichaWsp!==wspReserva)return 'nada';
+  const actual=(fichaEmail||'').trim();
+  if(!actual)return 'escribir';
+  return actual===emailNuevo?'nada':'distinto';
+}
+
+async function completarEmailFicha(clienteId,wsp,email){
+  // Lectura fresca contra Supabase, no S.clientes (caché de cuando cargó la
+  // página): si la ficha recibió un correo después, el caché lo daría por vacío
+  // y terminaríamos pisándolo, que es justo lo que se quiere evitar.
+  const {data:cl,error}=await sb.from('clientes').select('id,whatsapp,email')
+    .eq('barberia_id',S.barberia.id).eq('id',clienteId).maybeSingle();
+  if(error||!cl)return '';
+  const accion=decidirEmailFicha(cl.whatsapp,cl.email,wsp,email);
+  if(accion==='nada')return '';
+  if(accion==='distinto')return ' · la ficha tiene otro correo';
+  const {error:errUp}=await sb.from('clientes').update({email})
+    .eq('id',cl.id).eq('barberia_id',S.barberia.id);
+  if(errUp)return '';
+  await loadClientes();
+  return ' · correo guardado en la ficha';
+}
+
 async function guardarReserva(){
   const id=document.getElementById('r-id').value;
   const f=document.getElementById('r-fecha').value;
   const h=document.getElementById('r-hora').value;
   if(!f||!h){notify('Fecha y hora son obligatorios','warn');return;}
 
-  let n, w, em;
+  let n, w, em, cid;
   if(!id && MODO_CLIENTE_RESERVA==='nuevo'){
     n=document.getElementById('rn-nombre').value.trim();
     const wNuevo=document.getElementById('rn-wsp').value.trim();
@@ -1971,6 +2014,9 @@ async function guardarReserva(){
     n=document.getElementById('r-nombre').value.trim();
     w=document.getElementById('r-wsp').value.trim();
     em=document.getElementById('r-email').value.trim();
+    // Ficha elegida en el autocompletar. Vacío si el dueño tipeó nombre y
+    // WhatsApp a mano: sin ficha identificada no hay nada que rellenar.
+    cid=document.getElementById('r-cliente-id').value;
     if(!n||!w){notify('Nombre y WhatsApp son obligatorios','warn');return;}
     if(!emailUsable(em)){notify('El correo del cliente no parece válido','warn');return;}
   }
@@ -1994,7 +2040,10 @@ async function guardarReserva(){
     error=res.error;reservaId=res.data?.id;
   }
   if(error){notify(error.message,'err');return;}
-  await loadReservas();closeM('m-reserva');notify(id?'Reserva actualizada ✓':'Reserva guardada ✓');
+  // Solo en el alta y solo con ficha identificada. En la pestaña de cliente
+  // nuevo no corresponde: esa ficha se acaba de crear con el correo adentro.
+  const avisoFicha=(!id&&cid&&em)?await completarEmailFicha(cid,w,em):'';
+  await loadReservas();closeM('m-reserva');notify((id?'Reserva actualizada ✓':'Reserva guardada ✓')+avisoFicha);
   if(!id){
     // Aviso por correo al profesional. SOLO en el alta: en una edición volvería
     // a avisar por una cita que ya conoce, y cualquier corrección de notas
