@@ -16,7 +16,7 @@
 // USO:
 //   <script src="ubicacion-modal.js"></script>
 //   montarAccesoUbicacion({
-//     negocio:    {nombre, direccion, telefono, whatsapp},
+//     negocio:    {direccion, telefono, whatsapp},   // nombre no se usa
 //     horario:    {0:{...}, 1:{...}},   // indexado por dia_semana, 0=domingo
 //     contenedor: document.getElementById('header-meta')
 //   });
@@ -92,18 +92,38 @@ function textoHorarioDia(cfg){
   return {texto:tramo(abre,cierra), apagado:false};
 }
 
-// Búsqueda por nombre + dirección, no solo dirección: si el negocio está
-// registrado en Google Maps, así cae en su ficha real en vez de un punto a
-// mitad de cuadra. Esquema universal — en el celular abre la app con
-// navegación. Sin dirección devuelve null: con la query vacía Maps muestra
-// cualquier cosa o la ubicación del visitante.
+// Búsqueda por DIRECCIÓN SOLA. Antes se buscaba nombre + dirección, para caer
+// en la ficha del negocio cuando estuviera registrado en Google Maps, pero eso
+// falla en la app móvil, que es desde donde reserva la mayoría.
+//
+// Medido en la app con seis variantes de "Sintonia Salon" / "tulipanes 1823
+// talagante": las tres que llevaban el nombre devolvieron "No hay resultados"
+// y las tres que no lo llevaban encontraron la calle. Da igual el endpoint
+// (/maps/dir/ falla igual con el nombre) y da igual que la dirección esté bien
+// o mal escrita (con "Los Tulipanes 1823, Talagante, Chile" también falla si
+// va el nombre). La web sí descarta el nombre sola y muestra "Coincidencia
+// parcial"; la app no tiene ese fallback y no hay parámetro documentado que se
+// lo active.
+//
+// El costo asumido: ya no se cae en la ficha del negocio cuando existe. Hoy
+// casi ningún negocio está registrado en Maps, y un punto correcto en la
+// cuadra sirve más que un "No hay resultados".
+//
+// El país se agrega cuando la dirección no lo trae, para que Maps no resuelva
+// la calle en otro país. Se mira solo el final y no si aparece en cualquier
+// lado: una dirección como "Av. Chile 123" nombra la calle, no el país, y sí
+// necesita que se lo agreguen.
+//
+// Sin dirección devuelve null: con la query vacía Maps muestra cualquier cosa
+// o la ubicación del visitante.
 //
 // app.html arma esta misma URL en verEnMapa(), para que el dueño verifique su
-// dirección. Si cambia el formato acá, hay que cambiarlo allá.
+// dirección. Si cambia el formato acá, hay que cambiarlo allá:
+// test-comollegar.html compara las dos copias y falla si se separan.
 function urlComoLlegar(negocio){
   const dir = (negocio.direccion||'').trim();
   if(!dir) return null;
-  const query = ((negocio.nombre||'')+' '+dir).trim();
+  const query = /(^|[\s,])chile\.?$/i.test(dir) ? dir : dir+', Chile';
   return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(query);
 }
 

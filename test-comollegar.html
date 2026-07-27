@@ -1,0 +1,231 @@
+<meta charset="utf-8">
+<title>Test — Cómo llegar</title>
+<!--
+  Red de seguridad para la URL de "Cómo llegar", que está DUPLICADA A
+  PROPÓSITO en dos lugares:
+    - urlComoLlegar() en ubicacion-modal.js, que usan reservar.html y club.html
+    - verEnMapa() en app.html, el botón de verificación de Configuración
+  Nada en el código obliga a que las dos copias coincidan. Este test lo
+  obliga. Ya nos pasó con slotsParaDia/rSlotsParaDia: dos copias que se
+  separan sin que nadie se entere.
+
+  Lo que se prueba y por qué importa:
+    - Que el nombre del negocio NO entre en la query. Es el bug que motivó
+      todo: la app móvil de Maps devuelve "No hay resultados" cuando va, y
+      desde el celular reserva la mayoría de los clientes. La web sí lo
+      descarta sola, así que en el escritorio el bug es invisible.
+    - Que el país se agregue solo cuando falta, y que "Av. Chile 123" se
+      entienda como calle y no como país.
+    - Que las dos copias devuelvan exactamente la misma URL.
+
+  Prueba el ARCHIVO REAL, no una copia: carga ubicacion-modal.js con un
+  <script src> y monta el componente completo para leer el href que queda en
+  el DOM, que es lo que termina tocando el cliente. De app.html extrae
+  verEnMapa() del fuente.
+
+  CÓMO CORRERLO
+    A mano:   ábrelo en Chrome. Si el navegador no lo deja leer app.html
+              solo (pasa con file://), aparece un selector para que le pases
+              app.html a mano.
+    Headless: chrome --headless=new --allow-file-access-from-files
+                     --virtual-time-budget=8000 --dump-dom
+                     "file:///.../test-comollegar.html"
+              y busca ">>> TODO OK" en la salida.
+
+  Tiene que quedar en la misma carpeta que ubicacion-modal.js y app.html:
+  las rutas son relativas, igual que en producción.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}.tit{color:#7c6af7}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — botón "Cómo llegar"</h1>
+<p>Compara la URL que arma <b>ubicacion-modal.js</b> (reservar.html y club.html)
+con la que arma <b>verEnMapa()</b> de app.html.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer <b>app.html</b> por mi cuenta.
+  Pásamelo y sigo:</p>
+  <input type="file" id="archivo" accept=".html">
+</div>
+
+<!-- Contenedor donde se monta el acceso del modal, igual que el #header-meta
+     de reservar.html y club.html. -->
+<div id="header-meta" style="display:none"></div>
+<pre id="resultado">corriendo…</pre>
+
+<script src="ubicacion-modal.js"></script>
+<script>
+'use strict';
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+function pintar(){
+  var txt = lineas.join('\n');
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = txt + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+// Saca el fuente de una función por nombre balanceando llaves. Hace falta
+// porque verEnMapa() vive dentro del <script> inline de app.html y no hay
+// forma de importarla. Ninguna de las dos funciones tiene llaves dentro de
+// strings ni de expresiones regulares, así que contar alcanza.
+function extraerFuncion(src, nombre){
+  var i = src.indexOf('function ' + nombre + '(');
+  if(i < 0) throw new Error('no se encontró function ' + nombre + '() en app.html');
+  var n = 0;
+  for(var j = src.indexOf('{', i); j < src.length; j++){
+    if(src[j] === '{') n++;
+    else if(src[j] === '}'){ n--; if(n === 0) return src.slice(i, j + 1); }
+  }
+  throw new Error('llaves sin cerrar en ' + nombre + '()');
+}
+
+// Los <script> con src son de terceros (Supabase) y no se compilan acá.
+function scriptsInline(html){
+  var res = [], re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi, m;
+  while((m = re.exec(html)) !== null){
+    if(!/\bsrc\s*=/i.test(m[1])) res.push(m[2]);
+  }
+  return res;
+}
+
+// El href que termina en el DOM, montando el componente entero. Se prueba así
+// y no llamando a urlComoLlegar() porque esa función es privada del IIFE, y
+// además esto cubre el camino completo: si el botón dejara de renderizarse,
+// el test también lo ve.
+function hrefDelModal(direccion){
+  var cont = document.getElementById('header-meta');
+  cont.innerHTML = '';
+  montarAccesoUbicacion({
+    negocio: {nombre: 'Sintonia Salon', direccion: direccion},
+    horario: {},
+    contenedor: cont
+  });
+  var a = document.getElementById('ubic-comollegar');
+  return a ? a.getAttribute('href') : null;
+}
+
+function correr(fuenteApp){
+  var S = 'https://www.google.com/maps/search/?api=1&query=';
+
+  titulo('1. Los archivos cargan y compilan');
+  check('ubicacion-modal.js expone montarAccesoUbicacion',
+        typeof montarAccesoUbicacion, 'function');
+
+  var inline = scriptsInline(fuenteApp);
+  check('app.html tiene <script> inline', inline.length > 0, true);
+  var sintaxisApp = true;
+  inline.forEach(function(s, i){
+    try { new Function(s); }
+    catch(err){ sintaxisApp = false; lineas.push('      │   bloque #' + (i+1) + ': ' + err.message); }
+  });
+  check('los <script> inline de app.html parsean', sintaxisApp, true);
+
+  var verEnMapa;
+  try { verEnMapa = new Function('return ' + extraerFuncion(fuenteApp, 'verEnMapa'))(); }
+  catch(err){ check('verEnMapa() de app.html se puede extraer y compilar: ' + err.message, false, true); pintar(); return; }
+  check('verEnMapa() de app.html compila', typeof verEnMapa, 'function');
+
+  if(typeof montarAccesoUbicacion !== 'function'){ pintar(); return; }
+
+  // Los esperados van escritos a mano y no calculados con la misma fórmula que
+  // usa el código: si el test replicara la implementación, un error en la
+  // fórmula pasaría por los dos lados y el test no vería nada.
+  titulo('2. La URL que ve el cliente (ubicacion-modal.js)');
+  check('dirección sin país: se lo agrega',
+        hrefDelModal('tulipanes 1823 talagante'),
+        S + 'tulipanes%201823%20talagante%2C%20Chile');
+  check('dirección que ya trae el país: no lo duplica',
+        hrefDelModal('Los Tulipanes 1823, Talagante, Chile'),
+        S + 'Los%20Tulipanes%201823%2C%20Talagante%2C%20Chile');
+  check('país en minúscula: tampoco lo duplica',
+        hrefDelModal('av siempre viva 123, chile'),
+        S + 'av%20siempre%20viva%20123%2C%20chile');
+  check('"Chile" es la calle, no el país: se lo agrega',
+        hrefDelModal('Av. Chile 123, Santiago'),
+        S + 'Av.%20Chile%20123%2C%20Santiago%2C%20Chile');
+  check('recorta espacios de los bordes',
+        hrefDelModal('   calle 1   '),
+        S + 'calle%201%2C%20Chile');
+
+  // La razón de ser del cambio. Si alguien vuelve a meter el nombre en la
+  // query, la app móvil de Maps deja de encontrar el negocio.
+  check('el nombre del negocio NO entra en la URL',
+        hrefDelModal('tulipanes 1823 talagante').toLowerCase().indexOf('sintonia'), -1);
+
+  titulo('3. Paridad con el botón de verificación (app.html)');
+  // Se parchea el DOM recién acá: montarAccesoUbicacion() necesita el
+  // getElementById de verdad para renderizar, y ya terminó de usarlo.
+  var dirActual = '', abierta = null;
+  var getReal = document.getElementById.bind(document);
+  var openReal = window.open;
+  document.getElementById = function(id){
+    return id === 'cfg-dir' ? {value: dirActual} : getReal(id);
+  };
+  window.open = function(u){ abierta = u; };
+  window.notify = function(){ abierta = '__AVISO_SIN_DIRECCION__'; };
+
+  function urlDeAppHtml(direccion){
+    dirActual = direccion; abierta = null; verEnMapa(); return abierta;
+  }
+
+  ['tulipanes 1823 talagante',
+   'Los Tulipanes 1823, Talagante, Chile',
+   'av siempre viva 123, chile',
+   'Av. Chile 123, Santiago',
+   '   calle 1   '].forEach(function(d){
+    check('misma URL en los dos lados para "' + d + '"',
+          urlDeAppHtml(d), hrefDelModal(d));
+  });
+
+  check('sin dirección avisa al dueño y no abre Maps',
+        urlDeAppHtml(''), '__AVISO_SIN_DIRECCION__');
+  check('dirección de solo espacios: tampoco abre Maps',
+        urlDeAppHtml('    '), '__AVISO_SIN_DIRECCION__');
+
+  document.getElementById = getReal;
+  window.open = openReal;
+
+  pintar();
+}
+
+// Modo automático. Falla con file:// salvo que Chrome corra con
+// --allow-file-access-from-files, y ahí cae al selector de archivo.
+fetch('app.html')
+  .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+  .then(correr)
+  .catch(function(){
+    document.getElementById('manual').style.display = 'block';
+    document.getElementById('resultado').textContent =
+      'Esperando app.html… (el navegador no me deja leerlo solo)';
+    document.getElementById('archivo').addEventListener('change', function(e){
+      var f = e.target.files[0];
+      if(!f) return;
+      var fr = new FileReader();
+      fr.onload = function(){ correr(String(fr.result)); };
+      fr.readAsText(f);
+    });
+  });
+</script>

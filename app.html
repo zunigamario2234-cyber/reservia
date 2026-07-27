@@ -2621,24 +2621,30 @@ function renderNivelesVipConfig(){
 }
 
 // Abre exactamente la misma búsqueda que arma urlComoLlegar() en
-// reservar.html para el botón "Cómo llegar" — nombre + dirección, esquema
-// universal. Sirve para que el dueño detecte que su dirección mal escrita
-// lleva a otra cuadra, antes de que la descubra un cliente perdido.
+// ubicacion-modal.js para el botón "Cómo llegar" — dirección sola, sin el
+// nombre del negocio, con el país agregado si falta. Sirve para que el dueño
+// detecte que su dirección mal escrita lleva a otra cuadra, antes de que la
+// descubra un cliente perdido.
+//
+// El nombre del negocio no entra en la query: la app móvil de Maps devuelve
+// "No hay resultados" cuando va, incluso con la dirección bien escrita. El
+// porqué está documentado en ubicacion-modal.js, al lado de urlComoLlegar().
 //
 // Lee los inputs y no S.barberia a propósito: la gracia es probar ANTES de
 // guardar. Si tomara lo guardado, corregir el campo y volver a apretar
 // devolvería el resultado viejo. La contra es que muestra lo que verán los
 // clientes en cuanto guardes, no lo que ven en este momento.
 //
-// Si se cambia el formato de la URL, hay que cambiarlo en los dos lados.
+// Si se cambia el formato de la URL, hay que cambiarlo en los dos lados:
+// test-comollegar.html compara las dos copias y falla si se separan.
 function verEnMapa(){
-  const nombre=document.getElementById('cfg-nombre').value.trim();
   const dir=document.getElementById('cfg-dir').value.trim();
   // Sin dirección la query sale vacía y Maps muestra cualquier cosa o la
   // ubicación de quien mira. Mismo criterio que en reservar.html, donde
   // directamente no se renderiza el botón.
   if(!dir){ notify('Escribe primero la dirección del negocio','warn'); return; }
-  window.open('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent((nombre+' '+dir).trim()),'_blank','noopener');
+  const query = /(^|[\s,])chile\.?$/i.test(dir) ? dir : dir+', Chile';
+  window.open('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(query),'_blank','noopener');
 }
 
 async function guardarConfig(){
