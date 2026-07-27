@@ -1,0 +1,37 @@
+# Qué NO se sube a Vercel.
+#
+# El proyecto no tiene build step: todo lo que queda en la raíz del repo se
+# publica tal cual en el dominio. Sin este archivo, cualquiera puede pedir
+# mireservia.cl/migration_rls.sql y leerlo.
+#
+# Nada de lo excluido acá se usa en runtime: se verificó que las únicas
+# menciones a estos archivos en el código son comentarios. Si algún día una
+# página necesita servir uno, hay que sacarlo de la lista.
+#
+# Esto NO los saca del repo, solo del deploy. Siguen versionados.
+
+# ── SQL ──────────────────────────────────────────────────────────────────
+# Las migraciones y los scripts de housekeeping no llevan credenciales, pero
+# muestran el esquema de la base, los nombres de las tablas, las políticas RLS
+# y los criterios de borrado de cuentas. Eso es un mapa del backend para
+# cualquiera que lo pida, y no tiene por qué estar en un dominio comercial.
+# El patrón cubre migration_*, housekeeping_* y lo que venga después, incluido
+# el dump del esquema que está pendiente.
+*.sql
+
+# ── Tests ────────────────────────────────────────────────────────────────
+# Se corren abriendo el archivo en Chrome desde el disco, nunca desde el
+# dominio. Publicados solo serían ruido, y de paso le muestran a cualquiera
+# el detalle de los bugs que se arreglaron.
+test-*.html
+
+# ── Documentación ────────────────────────────────────────────────────────
+# Hoy no hay ninguno; queda puesto para que un README o notas de trabajo no
+# terminen publicados sin que nadie se dé cuenta.
+*.md
+
+# ── Herramientas locales ─────────────────────────────────────────────────
+# Ya está en .gitignore, así que con deploys desde Git no llega igual. Se
+# repite acá por si alguna vez se despliega con la CLI desde esta carpeta,
+# que sube el directorio de trabajo y no lo que está commiteado.
+.claude/
