@@ -2900,6 +2900,7 @@ function renderClientes(){
       <td data-label="" style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="verCliente('${c.id}')">Ver</button>
         <button class="btn btn-ghost btn-sm" onclick="editarCliente('${c.id}')">Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="eliminarClientes(['${c.id}'])" title="Eliminar cliente">×</button>
       </td></tr>`;
   }).join('');
 }
@@ -2950,6 +2951,146 @@ function verCliente(id){
   </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
+
+// ═══ BORRADO DE CLIENTES ═══
+// Criterio: lo que representa plata o historial BLOQUEA el borrado; lo que es
+// artefacto derivado del cliente se limpia solo; lo que está acoplado por texto
+// (reservas) solo avisa. Ver el detalle en cada función.
+
+function escHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+// Últimos 9 dígitos de un WhatsApp = el móvil chileno sin el prefijo 56.
+// SOLO para comparar en el preflight, nunca para guardar. En la base conviven
+// '+56 9 8754 2136', '+56987542136', '56987542136' y '987542136' porque los dos
+// inputs (app.html y reservar.html) son texto libre sin máscara. Con match
+// exacto el preflight le diría "sin reservas" a un cliente que sí las tiene, y
+// se perdería la advertencia de que puede reaparecer. Acá la asimetría del
+// riesgo permite ser permisivo: pasarse de match solo agrega un aviso de más,
+// quedarse corto pierde el aviso. El dedup real de clientes (procesarReserva,
+// buscar_o_crear_cliente_club) sigue con match exacto a propósito — cambiarlo
+// puede fusionar fichas de personas distintas y merece su propio análisis.
+function normWsp9(w){ return (w||'').toString().replace(/\D/g,'').slice(-9); }
+
+// Devuelve, por cada id, si se puede borrar y con qué advertencias.
+// Consulta FRESCO contra Supabase, no S.visitas/S.reservas: son caché en
+// memoria que puede tener minutos, y esto decide un borrado — mismo criterio
+// que procesarReserva(). Si CUALQUIER consulta falla, tira: un error leído
+// como "sin historial" borraría un cliente con citas, así que falla cerrado.
+async function preflightBorrarClientes(ids){
+  const bid=S.barberia.id;
+  const qs=await Promise.all([
+    sb.from('visitas').select('cliente_id').eq('barberia_id',bid).in('cliente_id',ids),
+    sb.from('vip_historial').select('cliente_id').eq('barberia_id',bid).in('cliente_id',ids),
+    sb.from('alianza_codigos').select('id,cliente_id').eq('barberia_id',bid).in('cliente_id',ids),
+    sb.from('reservas').select('whatsapp_cliente').eq('barberia_id',bid)
+  ]);
+  const fallo=qs.find(r=>r.error);
+  if(fallo)throw new Error('No se pudo verificar el historial: '+fallo.error.message);
+  const [vis,vip,cods,res]=qs.map(r=>r.data||[]);
+
+  // Canjes: alianza_canjes referencia alianza_codigos, no clientes. Un código
+  // ya canjeado es historial de negocio real, así que bloquea igual que una cita.
+  let canjes=[];
+  if(cods.length){
+    const r=await sb.from('alianza_canjes').select('codigo_id').eq('barberia_id',bid).in('codigo_id',cods.map(c=>c.id));
+    if(r.error)throw new Error('No se pudo verificar los canjes de alianzas: '+r.error.message);
+    canjes=r.data||[];
+  }
+  const clientePorCodigo={}; cods.forEach(c=>{clientePorCodigo[c.id]=c.cliente_id;});
+  const contar=(arr,k)=>arr.reduce((m,x)=>{const v=x[k];if(v)m[v]=(m[v]||0)+1;return m;},{});
+  const nVis=contar(vis,'cliente_id'), nVip=contar(vip,'cliente_id');
+  const nCanjes=contar(canjes.map(k=>({cid:clientePorCodigo[k.codigo_id]})),'cid');
+  const nRes={}; res.forEach(r=>{const k=normWsp9(r.whatsapp_cliente);if(k)nRes[k]=(nRes[k]||0)+1;});
+
+  return ids.map(id=>{
+    const c=S.clientes.find(x=>x.id===id);
+    const motivos=[];
+    if(nVis[id])motivos.push(nVis[id]+(nVis[id]===1?' cita registrada':' citas registradas'));
+    if(nCanjes[id])motivos.push(nCanjes[id]+(nCanjes[id]===1?' canje de alianza':' canjes de alianza'));
+    return {
+      id,
+      nombre:c?((c.nombre+' '+(c.apellido||'')).trim()||'(sin nombre)'):'(cliente no encontrado)',
+      bloqueado:motivos.length>0, motivos,
+      vip:nVip[id]||0,
+      reservas:c?(nRes[normWsp9(c.whatsapp)]||0):0
+    };
+  });
+}
+
+// Borra hijos primero, igual que housekeeping_delete_cuentas_prueba.sql.
+// vip_historial NO se borra acá: su FK está en ON DELETE CASCADE y se va sola.
+// alianza_codigos sí, porque está en NO ACTION y bloquearía al cliente.
+// Devuelve cuántas filas se borraron DE VERDAD: cuando RLS no deja pasar una
+// fila, Postgres borra cero SIN error, así que la ausencia de error no alcanza
+// como prueba de éxito — hay que contar lo que el delete devuelve.
+async function borrarClientes(ids){
+  const bid=S.barberia.id;
+  const {error:eCod}=await sb.from('alianza_codigos').delete().eq('barberia_id',bid).in('cliente_id',ids);
+  if(eCod)throw new Error('No se pudieron borrar los códigos de alianza: '+eCod.message);
+  const {data,error}=await sb.from('clientes').delete().eq('barberia_id',bid).in('id',ids).select('id');
+  if(error)throw new Error(error.message);
+  return (data||[]).length;
+}
+
+function modalBorrarClientes(info){
+  return new Promise(resolve=>{
+    const borrables=info.filter(x=>!x.bloqueado);
+    const bloqueados=info.filter(x=>x.bloqueado);
+    const conReservas=borrables.filter(x=>x.reservas>0);
+    const totalVip=borrables.reduce((s,x)=>s+x.vip,0);
+    const lista=(arr,fn)=>'<ul style="margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--text2);line-height:1.7">'+arr.map(fn).join('')+'</ul>';
+    const bloque=(color,titulo,cuerpo)=>`<div style="border-left:2px solid ${color};padding:8px 0 8px 12px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--text)">${titulo}</div>${cuerpo}</div>`;
+    let html='';
+    if(borrables.length)html+=bloque('#e05050',
+      borrables.length===1?'Se va a eliminar 1 cliente':'Se van a eliminar '+borrables.length+' clientes',
+      lista(borrables,x=>`<li>${escHtml(x.nombre)}</li>`)+
+      (totalVip?`<div style="font-size:11px;color:var(--text3);margin-top:8px">También se borran ${totalVip} registro${totalVip===1?'':'s'} de Club VIP asociado${totalVip===1?'':'s'}.</div>`:''));
+    if(conReservas.length)html+=bloque('#d4a853',
+      'Ojo: '+(conReservas.length===1?'1 tiene reservas':conReservas.length+' tienen reservas'),
+      lista(conReservas,x=>`<li>${escHtml(x.nombre)} — ${x.reservas} reserva${x.reservas===1?'':'s'}</li>`)+
+      '<div style="font-size:11px;color:var(--text3);margin-top:8px">Las reservas no se borran. Al procesarlas, la ficha del cliente se vuelve a crear sola.</div>');
+    if(bloqueados.length)html+=bloque('#555',
+      bloqueados.length===1?'1 no se puede eliminar':bloqueados.length+' no se pueden eliminar',
+      lista(bloqueados,x=>`<li>${escHtml(x.nombre)} — ${x.motivos.join(', ')}</li>`)+
+      '<div style="font-size:11px;color:var(--text3);margin-top:8px">Tienen historial con monto asociado. Borrarlos cambiaría ingresos y comisiones ya cerrados.</div>');
+    const overlay=document.createElement('div');
+    overlay.className='overlay open';
+    overlay.innerHTML=`<div class="modal" style="max-width:520px">
+      <div class="modal-hdr"><span class="modal-title">Eliminar clientes</span><button class="xbtn" data-cancel>×</button></div>
+      <div style="max-height:50vh;overflow-y:auto;margin-bottom:14px">${html}</div>
+      <div class="modal-footer">
+        ${borrables.length?'<button class="btn btn-danger" data-ok>Eliminar '+borrables.length+'</button>':''}
+        <button class="btn btn-ghost" data-cancel>${borrables.length?'Cancelar':'Cerrar'}</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    const cerrar=v=>{overlay.remove();resolve(v);};
+    overlay.querySelectorAll('[data-cancel]').forEach(b=>b.addEventListener('click',()=>cerrar(false)));
+    const ok=overlay.querySelector('[data-ok]');
+    if(ok)ok.addEventListener('click',()=>cerrar(true));
+    overlay.addEventListener('click',e=>{if(e.target===overlay)cerrar(false);});
+  });
+}
+
+async function eliminarClientes(ids){
+  if(!ids.length)return false;
+  let info;
+  try{ info=await preflightBorrarClientes(ids); }
+  catch(e){ notify(e.message,'err'); return false; }
+  const borrables=info.filter(x=>!x.bloqueado);
+  const confirmado=await modalBorrarClientes(info);
+  if(!confirmado||!borrables.length)return false;
+  try{
+    const n=await borrarClientes(borrables.map(x=>x.id));
+    await loadClientes(); await loadVIP(); renderClientes(); renderDashboard();
+    if(n!==borrables.length){
+      notify('Se eliminaron '+n+' de '+borrables.length+'. Revisá la lista.','warn');
+      return false;
+    }
+    notify(n===1?'Cliente eliminado ✓':n+' clientes eliminados ✓');
+    return true;
+  }catch(e){ notify(e.message,'err'); return false; }
 }
 
 function renderVisitas(){
