@@ -87,6 +87,29 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
 .btn-ghost:hover{color:#e8e6e0}
 .btn-wa{display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;margin-top:12px}
 .btn-wa:hover{background:#003318}
+/* Ubicación y horario */
+.ubic-link{background:none;border:none;color:#7c6af7;font-size:11px;font-family:inherit;padding:0;cursor:pointer}
+.ubic-link:hover{text-decoration:underline}
+.ubic-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:100;align-items:center;justify-content:center;padding:16px}
+.ubic-overlay.open{display:flex}
+.ubic-modal{background:#0f1018;border:0.5px solid #222;border-radius:12px;padding:20px;width:100%;max-width:400px;max-height:85vh;overflow-y:auto}
+.ubic-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.ubic-titulo{font-size:13px;font-weight:600;color:#e8e6e0}
+.ubic-x{background:none;border:none;color:#555;font-size:20px;line-height:1;padding:0 4px;cursor:pointer}
+.ubic-x:hover{color:#e8e6e0}
+.ubic-seccion{margin-bottom:18px}
+.ubic-seccion:last-child{margin-bottom:0}
+.ubic-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px}
+.ubic-dato{font-size:13px;color:#e8e6e0;line-height:1.7}
+.ubic-dato a{color:#7c6af7;text-decoration:none}
+.ubic-dato a:hover{text-decoration:underline}
+.btn-mapa{display:block;text-decoration:none;text-align:center;margin-top:12px}
+.ubic-fila{display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:6px 0;border-bottom:0.5px solid #1a1a1a}
+.ubic-fila:last-child{border-bottom:none}
+.ubic-dia{color:#888}
+.ubic-dia.hoy{color:#e8e6e0;font-weight:600}
+.ubic-horas{color:#e8e6e0;white-space:nowrap}
+.ubic-horas.apagado{color:#555}
 .resumen{background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;padding:16px;margin-bottom:16px}
 .resumen-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:0.5px solid #2a2a2a;font-size:13px}
 .resumen-row:last-child{border-bottom:none}
@@ -220,6 +243,30 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
   </div>
 </div>
 
+<!-- Ubicación y horario. El acceso que lo abre se monta desde JS
+     (montarAccesoUbicacion) solo si hay algo real que mostrar. -->
+<div class="ubic-overlay" id="ubic-overlay" onclick="cerrarUbicacion()">
+  <div class="ubic-modal" onclick="event.stopPropagation()">
+    <div class="ubic-hdr">
+      <span class="ubic-titulo">Ubicación y horario</span>
+      <button class="ubic-x" onclick="cerrarUbicacion()" aria-label="Cerrar">×</button>
+    </div>
+    <div class="ubic-seccion" id="ubic-sec-dir" style="display:none">
+      <div class="ubic-label">Dirección</div>
+      <div class="ubic-dato" id="ubic-dir"></div>
+      <a class="btn btn-primary btn-mapa" id="ubic-comollegar" target="_blank" rel="noopener">Cómo llegar</a>
+    </div>
+    <div class="ubic-seccion" id="ubic-sec-contacto" style="display:none">
+      <div class="ubic-label">Contacto</div>
+      <div class="ubic-dato" id="ubic-contacto"></div>
+    </div>
+    <div class="ubic-seccion" id="ubic-sec-horario" style="display:none">
+      <div class="ubic-label">Horario</div>
+      <div id="ubic-horario"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ⚠️ REEMPLAZA ESTOS VALORES
 const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
@@ -346,6 +393,98 @@ function renderHeaderNegocio(barb){
   }
 }
 
+// ─── Ubicación y horario ───
+
+const UBIC_DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+// dia_semana usa 0=domingo, pero acá la semana se muestra partiendo el lunes.
+const UBIC_ORDEN = [1,2,3,4,5,6,0];
+
+// Qué decir de un día. Se mantiene alineado con lo que slotsParaDia() hace de
+// verdad, no con lo que uno supondría:
+//   - sin fila para ese día, el calendario cae a HORARIOS_BASE y SÍ ofrece
+//     turnos, así que poner "Cerrado" sería mentirle al cliente → "Consultar".
+//   - con cerrado=true, o con horas vacías, slotsParaDia devuelve [] → cerrado
+//     de verdad, aunque el motivo sea distinto.
+function textoHorarioDia(cfg){
+  if(!cfg) return {texto:'Consultar', apagado:true};
+  if(cfg.cerrado) return {texto:'Cerrado', apagado:true};
+  const abre=(cfg.hora_apertura||'').slice(0,5), cierra=(cfg.hora_cierre||'').slice(0,5);
+  if(!abre||!cierra) return {texto:'Cerrado', apagado:true};
+  return {texto:abre+' a '+cierra, apagado:false};
+}
+
+// Búsqueda por nombre + dirección, no solo dirección: si el negocio está
+// registrado en Google Maps, así cae en su ficha real en vez de un punto a
+// mitad de cuadra. Esquema universal — en el celular abre la app con
+// navegación. Sin dirección no hay nada que buscar y devuelve null: con la
+// query vacía Maps muestra cualquier cosa o la ubicación del visitante.
+function urlComoLlegar(){
+  const dir = (B.barberia.direccion||'').trim();
+  if(!dir) return null;
+  const query = ((B.barberia.nombre||'')+' '+dir).trim();
+  return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(query);
+}
+
+function renderModalUbicacion(){
+  const barb = B.barberia;
+
+  const dir = (barb.direccion||'').trim();
+  if(dir){
+    document.getElementById('ubic-dir').textContent = dir;
+    document.getElementById('ubic-sec-dir').style.display = '';
+    const url = urlComoLlegar();
+    const btn = document.getElementById('ubic-comollegar');
+    if(url) btn.href = url; else btn.style.display = 'none';
+  }
+
+  // Se arma por DOM en vez de innerHTML: teléfono y WhatsApp son texto libre
+  // cargado por el dueño y acá no hay helper de escape.
+  const cont = document.getElementById('ubic-contacto');
+  cont.innerHTML = '';
+  const agregarContacto = (href, texto, externo) => {
+    if(cont.childNodes.length) cont.appendChild(document.createElement('br'));
+    const a = document.createElement('a');
+    a.href = href; a.textContent = texto;
+    if(externo){ a.target = '_blank'; a.rel = 'noopener'; }
+    cont.appendChild(a);
+  };
+  if(barb.telefono) agregarContacto('tel:'+barb.telefono.replace(/[^\d+]/g,''), '📞 '+barb.telefono, false);
+  if(barb.whatsapp) agregarContacto('https://wa.me/'+barb.whatsapp.replace(/\D/g,''), '📱 '+barb.whatsapp, true);
+  if(cont.childNodes.length) document.getElementById('ubic-sec-contacto').style.display = '';
+
+  // Solo si el dueño configuró al menos un día. Con la tabla vacía se oculta
+  // la sección entera en vez de mostrar el horario por defecto: presentar como
+  // oficial algo que nunca confirmó es peor que no mostrar nada.
+  if(Object.keys(B.horario).length){
+    const hoy = new Date().getDay();
+    document.getElementById('ubic-horario').innerHTML = UBIC_ORDEN.map(d=>{
+      const {texto,apagado} = textoHorarioDia(B.horario[d]);
+      return `<div class="ubic-fila">
+        <span class="ubic-dia${d===hoy?' hoy':''}">${UBIC_DIAS[d]}${d===hoy?' · hoy':''}</span>
+        <span class="ubic-horas${apagado?' apagado':''}">${texto}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('ubic-sec-horario').style.display = '';
+  }
+}
+
+// Se monta después del Promise.all de init(), no dentro de
+// renderHeaderNegocio(): ahí B.horario todavía no está cargado.
+function montarAccesoUbicacion(){
+  const hayDir = !!(B.barberia.direccion||'').trim();
+  if(!hayDir && !Object.keys(B.horario).length) return;
+  renderModalUbicacion();
+  const btn = document.createElement('button');
+  btn.className = 'ubic-link';
+  btn.textContent = '📍 Ubicación y horario';
+  btn.onclick = abrirUbicacion;
+  document.getElementById('header-meta').appendChild(btn);
+}
+
+function abrirUbicacion(){ document.getElementById('ubic-overlay').classList.add('open'); }
+function cerrarUbicacion(){ document.getElementById('ubic-overlay').classList.remove('open'); }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarUbicacion(); });
+
 async function init(){
   if(!BARBERIA_ID){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:#555">URL inválida. Falta el ID de la negocio.</div>'; return; }
   const {data:barb} = await sb.from('barberias').select('*').eq('id',BARBERIA_ID).single();
@@ -365,6 +504,7 @@ async function init(){
   B.horario = {}; (hn||[]).forEach(h=>{ B.horario[h.dia_semana]=h; });
   B.bloqueos = blq||[];
   B.barberoServicios = bs||[];
+  montarAccesoUbicacion();
   renderServicios(); renderProfesionals(); renderCalendario();
   const profParam = params.get('profesional');
   const profPreseleccionado = profParam && B.profesionals.find(b=>b.id===profParam);
