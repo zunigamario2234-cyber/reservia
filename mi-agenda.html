@@ -430,6 +430,13 @@ async function guardarNuevaReserva(){
     al.textContent='Error: '+error.message; al.style.display='';
     return;
   }
+  // Correo de registro de la cita. Acá el profesional agenda para sí mismo
+  // (mi_agenda_crear_reserva resuelve barbero_nombre server-side y no permite
+  // agendar a nombre de otro), así que este correo no le avisa nada nuevo: le
+  // deja comprobante de la cita por fuera del panel. El servidor lo detecta
+  // leyendo reservas.fuente='Mi Agenda' y le pone un asunto distinto para que
+  // se pueda filtrar aparte del aviso que sí es novedad.
+  fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId})}).catch(()=>{});
   // Resuelve (busca o crea) la ficha de cliente al instante, mismo patrón
   // no bloqueante que reservar.html — si falla, la reserva ya se creó
   // igual, solo no queda la ficha lista hasta que se procese/pague.

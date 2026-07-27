@@ -1960,15 +1960,25 @@ async function guardarReserva(){
     estado:document.getElementById('r-estado').value||'Pendiente',
     notas:document.getElementById('r-notas').value
   };
-  let error;
+  let error,reservaId=null;
   if(id){
     ({error}=await sb.from('reservas').update(payload).eq('id',id));
   } else {
-    ({error}=await sb.from('reservas').insert({barberia_id:S.barberia.id,...payload,fuente:'Manual'}));
+    // .select().single() para recuperar el id: /api/enviar-confirmacion lo
+    // necesita para leer la reserva server-side. Funciona porque el dueño está
+    // autenticado y reservas_select_own le permite ver el RETURNING (a
+    // diferencia del insert anónimo de reservar.html, que por eso va por RPC).
+    const res=await sb.from('reservas').insert({barberia_id:S.barberia.id,...payload,fuente:'Manual'}).select().single();
+    error=res.error;reservaId=res.data?.id;
   }
   if(error){notify(error.message,'err');return;}
   await loadReservas();closeM('m-reserva');notify(id?'Reserva actualizada ✓':'Reserva guardada ✓');
   if(!id){
+    // Aviso por correo al profesional. SOLO en el alta: en una edición volvería
+    // a avisar por una cita que ya conoce, y cualquier corrección de notas
+    // dispararía un correo. No bloquea la UI ni muestra error si falla — el
+    // servidor decide a quién le corresponde y con qué datos reales.
+    if(reservaId)fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId})}).catch(()=>{});
     const msg=buildMsg('Confirmación reserva',{nombre:n,fecha:f,hora:h,servicio:document.getElementById('r-servicio').value||'',profesional:document.getElementById('r-profesional').value||''});
     if(msg)abrirWA(w,msg);
   }
