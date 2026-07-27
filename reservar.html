@@ -108,7 +108,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
 .ubic-fila:last-child{border-bottom:none}
 .ubic-dia{color:#888}
 .ubic-dia.hoy{color:#e8e6e0;font-weight:600}
-.ubic-horas{color:#e8e6e0;white-space:nowrap}
+.ubic-horas{color:#e8e6e0;text-align:right}
 .ubic-horas.apagado{color:#555}
 .resumen{background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;padding:16px;margin-bottom:16px}
 .resumen-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:0.5px solid #2a2a2a;font-size:13px}
@@ -293,14 +293,19 @@ function minToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+Strin
 // negocio no configuró ese día (tabla vacía o falta esa fila puntual), se
 // usa HORARIOS_BASE como antes — para no dejar sin horarios a negocios que
 // todavía no configuraron su horario.
+// La colación es opcional: si las dos columnas vienen nulas, el negocio
+// atiende corrido y no se excluye nada. El slot se descarta cuando EMPIEZA
+// dentro del rango, el mismo criterio que usa bloqueoCubreSlot() más abajo.
 function slotsParaDia(diaSemana){
   const cfg = B.horario[diaSemana];
   if(!cfg) return HORARIOS_BASE.slice();
   if(cfg.cerrado) return [];
   const ini=timeToMin(cfg.hora_apertura), fin=timeToMin(cfg.hora_cierre);
   if(ini==null||fin==null) return [];
+  const colIni=timeToMin(cfg.hora_colacion_inicio), colFin=timeToMin(cfg.hora_colacion_fin);
+  const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
   const out=[];
-  for(let m=ini; m<fin; m+=30) out.push(minToTime(m));
+  for(let m=ini; m<fin; m+=30) if(!enColacion(m)) out.push(minToTime(m));
   return out;
 }
 
@@ -405,12 +410,22 @@ const UBIC_ORDEN = [1,2,3,4,5,6,0];
 //     turnos, así que poner "Cerrado" sería mentirle al cliente → "Consultar".
 //   - con cerrado=true, o con horas vacías, slotsParaDia devuelve [] → cerrado
 //     de verdad, aunque el motivo sea distinto.
+// Con colación se muestran los dos tramos. Decir "09:00 a 19:00" a secas
+// cuando el calendario no ofrece turnos al mediodía haría que el modal
+// contradiga a la grilla que el cliente tiene al lado.
 function textoHorarioDia(cfg){
   if(!cfg) return {texto:'Consultar', apagado:true};
   if(cfg.cerrado) return {texto:'Cerrado', apagado:true};
   const abre=(cfg.hora_apertura||'').slice(0,5), cierra=(cfg.hora_cierre||'').slice(0,5);
   if(!abre||!cierra) return {texto:'Cerrado', apagado:true};
-  return {texto:abre+' a '+cierra, apagado:false};
+  // OJO: los espacios de tramo() son U+00A0 (no-break space) literales, no
+  // espacios normales — se ven iguales pero no lo son, no los reemplaces.
+  // Hacen que en pantalla angosta el renglón pueda cortarse entre los dos
+  // tramos, pero nunca dentro de uno ("09:00 a" arriba y "13:00" abajo).
+  const colIni=(cfg.hora_colacion_inicio||'').slice(0,5), colFin=(cfg.hora_colacion_fin||'').slice(0,5);
+  const tramo=(a,b)=>a+' a '+b;
+  if(colIni&&colFin) return {texto:tramo(abre,colIni)+' · '+tramo(colFin,cierra), apagado:false};
+  return {texto:tramo(abre,cierra), apagado:false};
 }
 
 // Búsqueda por nombre + dirección, no solo dirección: si el negocio está

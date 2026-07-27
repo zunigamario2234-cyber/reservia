@@ -1358,7 +1358,11 @@ async function loadNivelesVip(){ const {data}=await sb.from('niveles_vip').selec
 async function loadHorarioNegocio(){
   const {data}=await sb.from('horario_negocio').select('*').eq('barberia_id',S.barberia.id);
   const rows=data||[];
-  S.horario = DIAS_SEMANA.map((_,i)=>rows.find(r=>r.dia_semana===i) || {dia_semana:i,hora_apertura:'09:00',hora_cierre:'19:00',cerrado:i===0});
+  // El día sin fila se muestra con un horario por defecto que NO está en la
+  // base: existe solo para que el formulario no salga vacío. Ojo, el primer
+  // "Guardar horario" lo persiste tal cual, aunque no se haya tocado nada.
+  // La colación arranca nula, que es lo mismo que decir "atiende corrido".
+  S.horario = DIAS_SEMANA.map((_,i)=>rows.find(r=>r.dia_semana===i) || {dia_semana:i,hora_apertura:'09:00',hora_cierre:'19:00',cerrado:i===0,hora_colacion_inicio:null,hora_colacion_fin:null});
 }
 async function loadBloqueos(){ const {data}=await sb.from('bloqueos_profesional').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.bloqueos=data||[]; }
 async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').eq('barberia_id',S.barberia.id).order('evento'); S.plantillas=data||[]; }
@@ -2639,32 +2643,83 @@ function renderHorarioNegocio(){
   const cont=document.getElementById('horario-dias');
   if(!cont)return;
   cont.innerHTML=S.horario.map((h,i)=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #1a1a1a;flex-wrap:wrap">
-      <div style="width:90px;font-size:12px;color:var(--text)">${DIAS_SEMANA[i]}</div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3)">
-        <input type="checkbox" id="hn-cerrado-${i}" ${h.cerrado?'checked':''} onchange="toggleHorarioCerrado(${i})"> Cerrado
-      </label>
-      <input type="time" id="hn-apertura-${i}" value="${(h.hora_apertura||'').slice(0,5)}" ${h.cerrado?'disabled':''} style="width:110px">
-      <span style="color:var(--text3);font-size:12px">a</span>
-      <input type="time" id="hn-cierre-${i}" value="${(h.hora_cierre||'').slice(0,5)}" ${h.cerrado?'disabled':''} style="width:110px">
+    <div style="padding:10px 0;border-bottom:0.5px solid #1a1a1a">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="width:90px;font-size:12px;color:var(--text)">${DIAS_SEMANA[i]}</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3)">
+          <input type="checkbox" id="hn-cerrado-${i}" ${h.cerrado?'checked':''} onchange="toggleHorarioCerrado(${i})"> Cerrado
+        </label>
+        <input type="time" id="hn-apertura-${i}" value="${(h.hora_apertura||'').slice(0,5)}" ${h.cerrado?'disabled':''} style="width:110px">
+        <span style="color:var(--text3);font-size:12px">a</span>
+        <input type="time" id="hn-cierre-${i}" value="${(h.hora_cierre||'').slice(0,5)}" ${h.cerrado?'disabled':''} style="width:110px">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
+        <div style="width:90px;font-size:11px;color:var(--text3)">Colación</div>
+        <input type="time" id="hn-colini-${i}" value="${(h.hora_colacion_inicio||'').slice(0,5)}" ${h.cerrado?'disabled':''} oninput="actualizarHintColacion(${i})" style="width:110px">
+        <span style="color:var(--text3);font-size:12px">a</span>
+        <input type="time" id="hn-colfin-${i}" value="${(h.hora_colacion_fin||'').slice(0,5)}" ${h.cerrado?'disabled':''} oninput="actualizarHintColacion(${i})" style="width:110px">
+        <span id="hn-colhint-${i}" style="font-size:11px"></span>
+      </div>
     </div>`).join('');
+  // innerHTML no dispara oninput, así que el estado inicial de los hints se
+  // pinta a mano — si no, el día sin colación arrancaría sin decir nada.
+  DIAS_SEMANA.forEach((_,i)=>actualizarHintColacion(i));
+}
+
+// La colación es opcional por día: un negocio puede cortar al almuerzo de
+// lunes a viernes y atender corrido los sábados. Dejar los dos campos vacíos
+// es una respuesta válida ("atiende corrido"), no un campo a medio llenar,
+// y el hint existe para que se lea así y no como "falta configurar".
+// De paso avisa del día incompleto mientras se edita, antes de que el
+// guardado lo rechace con el texto crudo del constraint.
+function actualizarHintColacion(i){
+  const ini=document.getElementById('hn-colini-'+i).value;
+  const fin=document.getElementById('hn-colfin-'+i).value;
+  const hint=document.getElementById('hn-colhint-'+i);
+  if(!hint)return;
+  if(!ini&&!fin){ hint.textContent='sin colación, atiende corrido'; hint.style.color='var(--text3)'; return; }
+  if(!ini||!fin){ hint.textContent='falta la otra hora'; hint.style.color='#d4a853'; return; }
+  if(ini>=fin){ hint.textContent='el inicio va antes del fin'; hint.style.color='#d4a853'; return; }
+  hint.textContent='';
 }
 
 function toggleHorarioCerrado(i){
   const chk=document.getElementById('hn-cerrado-'+i).checked;
   document.getElementById('hn-apertura-'+i).disabled=chk;
   document.getElementById('hn-cierre-'+i).disabled=chk;
+  document.getElementById('hn-colini-'+i).disabled=chk;
+  document.getElementById('hn-colfin-'+i).disabled=chk;
 }
 
 async function guardarHorarioNegocio(){
   const btn=document.getElementById('btn-guardar-horario');
+  // Los siete días viajan en un solo upsert, así que una colación a medio
+  // llenar en UN día haría fallar los siete con el mensaje crudo de
+  // horario_colacion_coherente. Se valida antes y se nombra el día.
+  for(let i=0;i<DIAS_SEMANA.length;i++){
+    if(document.getElementById('hn-cerrado-'+i).checked) continue;
+    const ini=document.getElementById('hn-colini-'+i).value;
+    const fin=document.getElementById('hn-colfin-'+i).value;
+    if(!ini&&!fin) continue;
+    if(!ini||!fin){ notify(DIAS_SEMANA[i]+': la colación necesita hora de inicio y de fin, o ninguna de las dos','warn'); return; }
+    if(ini>=fin){ notify(DIAS_SEMANA[i]+': la colación tiene que empezar antes de terminar','warn'); return; }
+  }
   btn.disabled=true;btn.textContent='Guardando...';
-  const payload=DIAS_SEMANA.map((_,i)=>({
-    barberia_id:S.barberia.id,dia_semana:i,
-    cerrado:document.getElementById('hn-cerrado-'+i).checked,
-    hora_apertura:document.getElementById('hn-apertura-'+i).value||null,
-    hora_cierre:document.getElementById('hn-cierre-'+i).value||null
-  }));
+  const payload=DIAS_SEMANA.map((_,i)=>{
+    const cerrado=document.getElementById('hn-cerrado-'+i).checked;
+    return {
+      barberia_id:S.barberia.id,dia_semana:i,
+      cerrado,
+      hora_apertura:document.getElementById('hn-apertura-'+i).value||null,
+      hora_cierre:document.getElementById('hn-cierre-'+i).value||null,
+      // Un día cerrado no tiene colación. Se fuerza a null en vez de leer los
+      // inputs deshabilitados, que conservan lo que hubiera quedado escrito:
+      // esos valores pasarían la validación de arriba (que saltea los días
+      // cerrados) y podrían llegar a medias al constraint.
+      hora_colacion_inicio:cerrado?null:(document.getElementById('hn-colini-'+i).value||null),
+      hora_colacion_fin:cerrado?null:(document.getElementById('hn-colfin-'+i).value||null)
+    };
+  });
   const {error}=await sb.from('horario_negocio').upsert(payload,{onConflict:'barberia_id,dia_semana'});
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar horario';return;}
   await loadHorarioNegocio();renderHorarioNegocio();notify('Horario guardado ✓');

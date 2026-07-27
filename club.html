@@ -261,14 +261,18 @@ const R_HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00'
 function rTimeToMin(t){ if(!t)return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
 function rMinToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
 
+// Gemela de slotsParaDia() en reservar.html — ver ahí el detalle del criterio
+// de exclusión de la colación. Si se toca una, hay que tocar la otra.
 function rSlotsParaDia(diaSemana){
   const cfg = RB.horario[diaSemana];
   if(!cfg) return R_HORARIOS_BASE.slice();
   if(cfg.cerrado) return [];
   const ini=rTimeToMin(cfg.hora_apertura), fin=rTimeToMin(cfg.hora_cierre);
   if(ini==null||fin==null) return [];
+  const colIni=rTimeToMin(cfg.hora_colacion_inicio), colFin=rTimeToMin(cfg.hora_colacion_fin);
+  const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
   const out=[];
-  for(let m=ini; m<fin; m+=30) out.push(rMinToTime(m));
+  for(let m=ini; m<fin; m+=30) if(!enColacion(m)) out.push(rMinToTime(m));
   return out;
 }
 
