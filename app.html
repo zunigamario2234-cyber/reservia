@@ -74,6 +74,10 @@ nav{flex:1;padding:8px 0;overflow-y:auto}
 .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .card-title{font-size:13px;font-weight:600;color:var(--text)}
 /* Table */
+.sel-bar{display:flex;align-items:center;gap:10px;padding:0 0 12px;margin-bottom:12px;border-bottom:0.5px solid var(--border)}
+.sel-todo{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;white-space:nowrap}
+.sel-info{font-size:11px;color:var(--text3);flex:1}
+.sel-bar input[type=checkbox],.td-check input[type=checkbox]{width:15px;height:15px;accent-color:#7c6af7;cursor:pointer;flex-shrink:0}
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:7px 10px;color:var(--text3);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;border-bottom:0.5px solid var(--border);white-space:nowrap}
@@ -281,6 +285,13 @@ input[readonly]{background:#111;color:#666;cursor:default}
   .filtros-bar{flex-direction:column;align-items:stretch}
   .filtros-bar input,.filtros-bar select,.filtros-bar button{width:100%;max-width:none!important}
 
+  /* La barra de selección se apila, pero el checkbox NO se estira a ancho
+     completo (heredaría el width:100% de arriba y quedaría deforme). */
+  .sel-bar{flex-wrap:wrap}
+  .sel-bar .sel-info{width:100%;order:3}
+  .sel-bar button{flex:1}
+  .sel-bar input[type=checkbox]{width:15px;max-width:none}
+
   .overlay .modal .fr{grid-template-columns:1fr}
   .modal-footer{flex-direction:column}
   .modal-footer button{width:100%;margin-left:0!important}
@@ -445,8 +456,16 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <button class="btn btn-ghost" onclick="openM('m-importar-clientes')">📥 Importar clientes</button>
   </div>
   <div class="card">
+    <!-- "Seleccionar todo" vive acá y no en el thead porque en móvil .tbl-cards
+         oculta la cabecera entera (display:none), y ahí quedaría invisible. -->
+    <div class="sel-bar">
+      <label class="sel-todo"><input type="checkbox" id="cl-sel-todo" onchange="clSelTodo(this.checked)"> Seleccionar todo lo visible</label>
+      <span id="cl-sel-info" class="sel-info">Ninguno seleccionado</span>
+      <button class="btn btn-ghost btn-sm" id="cl-sel-limpiar" onclick="clLimpiarSel()" style="display:none">Limpiar</button>
+      <button class="btn btn-danger btn-sm" id="cl-sel-eliminar" onclick="clEliminarSeleccionados()" disabled>Eliminar</button>
+    </div>
     <div class="tbl-wrap tbl-cards">
-      <table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Citas</th><th>Última cita</th><th class="vip-only">Nivel VIP</th><th>Estado</th><th></th></tr></thead>
+      <table><thead><tr><th style="width:34px"></th><th>Cliente</th><th>WhatsApp</th><th>Citas</th><th>Última cita</th><th class="vip-only">Nivel VIP</th><th>Estado</th><th></th></tr></thead>
       <tbody id="t-clientes"></tbody></table>
     </div>
     <div id="e-clientes" class="empty">Sin clientes registrados aún.</div>
@@ -2880,19 +2899,29 @@ function renderDashboard(){
   renderChartNuevos(range);
 }
 
-function renderClientes(){
+// Extraído de renderClientes() para que "seleccionar todo lo visible" opere
+// exactamente sobre la misma lista que se está pintando, sin duplicar el filtro.
+function clientesFiltrados(){
   const q=(document.getElementById('q-cliente').value||'').toLowerCase();
   const ef=document.getElementById('f-estado-cl').value;
-  const list=S.clientes.filter(c=>{
+  return S.clientes.filter(c=>{
     const m=!q||(c.nombre+' '+(c.apellido||'')+' '+(c.whatsapp||'')+' '+(c.email||'')).toLowerCase().includes(q);
     const e=getEstado(c.id); return m&&(!ef||e===ef);
   });
+}
+
+function renderClientes(){
+  const list=clientesFiltrados();
+  // La selección vive fuera del DOM (ver CL_SEL): acá se descarta lo que ya
+  // no existe, para no arrastrar ids de clientes recién borrados.
+  CL_SEL.forEach(id=>{if(!S.clientes.some(c=>c.id===id))CL_SEL.delete(id);});
   const tb=document.getElementById('t-clientes');
   document.getElementById('e-clientes').style.display=list.length?'none':'';
   tb.innerHTML=list.map(c=>{
     const vis=getCitas(c.id); const uv=getUltCita(c.id); const nv=getNivel(vis); const est=getEstado(c.id);
     const eb=est==='Activo'?'b-green':est==='En riesgo'?'b-orange':'b-red';
     return`<tr>
+      <td data-label="Seleccionar" class="td-check"><input type="checkbox" class="cl-chk" ${CL_SEL.has(c.id)?'checked':''} onchange="clToggle('${c.id}',this.checked)"></td>
       <td data-label="Cliente"><strong style="color:var(--text)">${c.nombre} ${c.apellido||''}</strong><br><span style="font-size:10px;color:var(--text3)">${c.canal||''}</span></td>
       <td data-label="WhatsApp"><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')">${c.whatsapp}</a></td>
       <td data-label="Citas">${vis}</td><td data-label="Última cita" style="color:var(--text3);font-size:11px">${uv||'—'}</td>
@@ -2903,6 +2932,52 @@ function renderClientes(){
         <button class="btn btn-danger btn-sm" onclick="eliminarClientes(['${c.id}'])" title="Eliminar cliente">×</button>
       </td></tr>`;
   }).join('');
+  clSyncBarra();
+}
+
+// ═══ SELECCIÓN MÚLTIPLE DE CLIENTES ═══
+// La selección se guarda acá y NO en el DOM, porque renderClientes() reconstruye
+// el innerHTML entero en cada búsqueda, filtro o recarga: los checkboxes marcados
+// se perderían en cada tecla escrita en el buscador.
+let CL_SEL=new Set();
+
+function clToggle(id,marcado){
+  if(marcado)CL_SEL.add(id); else CL_SEL.delete(id);
+  clSyncBarra();  // sin re-render: no hace falta y perdería el scroll
+}
+
+function clSelTodo(marcar){
+  const ids=clientesFiltrados().map(c=>c.id);
+  ids.forEach(id=>marcar?CL_SEL.add(id):CL_SEL.delete(id));
+  renderClientes();
+}
+
+function clLimpiarSel(){ CL_SEL.clear(); renderClientes(); }
+
+function clSyncBarra(){
+  const visibles=clientesFiltrados().map(c=>c.id);
+  const selVisibles=visibles.filter(id=>CL_SEL.has(id));
+  const n=CL_SEL.size;
+  // La selección sobrevive a los filtros a propósito (permite juntar clientes
+  // de varias búsquedas), pero entonces puede haber seleccionados que no estás
+  // viendo. Se dice explícitamente en vez de dejarlo implícito; además el modal
+  // de confirmación lista todos los nombres uno por uno antes de borrar nada.
+  const ocultos=n-selVisibles.length;
+  const info=document.getElementById('cl-sel-info');
+  info.textContent=n?((n===1?'1 seleccionado':n+' seleccionados')+(ocultos?' ('+ocultos+' fuera del filtro)':'')):'Ninguno seleccionado';
+  const btn=document.getElementById('cl-sel-eliminar');
+  btn.disabled=!n; btn.textContent=n?'Eliminar '+n:'Eliminar';
+  document.getElementById('cl-sel-limpiar').style.display=n?'':'none';
+  const todo=document.getElementById('cl-sel-todo');
+  todo.checked=visibles.length>0&&selVisibles.length===visibles.length;
+  todo.indeterminate=selVisibles.length>0&&selVisibles.length<visibles.length;
+}
+
+async function clEliminarSeleccionados(){
+  const ids=[...CL_SEL];
+  if(!ids.length)return;
+  await eliminarClientes(ids);
+  renderClientes();  // repinta y descarta de CL_SEL lo que ya no existe
 }
 
 function verCliente(id){
@@ -2977,26 +3052,34 @@ function normWsp9(w){ return (w||'').toString().replace(/\D/g,'').slice(-9); }
 // memoria que puede tener minutos, y esto decide un borrado — mismo criterio
 // que procesarReserva(). Si CUALQUIER consulta falla, tira: un error leído
 // como "sin historial" borraría un cliente con citas, así que falla cerrado.
+// PostgREST manda los filtros .in(...) en la query string, así que una selección
+// grande se pasa del largo máximo de URL y falla con un error opaco del servidor
+// en vez de un mensaje útil. 50 UUIDs son ~1.900 caracteres, bien lejos del techo
+// típico de 8 KB. Aplica igual al select del preflight y al delete.
+const LOTE_IDS=50;
+function enLotes(arr){ const l=[]; for(let i=0;i<arr.length;i+=LOTE_IDS)l.push(arr.slice(i,i+LOTE_IDS)); return l; }
+
 async function preflightBorrarClientes(ids){
   const bid=S.barberia.id;
-  const qs=await Promise.all([
-    sb.from('visitas').select('cliente_id').eq('barberia_id',bid).in('cliente_id',ids),
-    sb.from('vip_historial').select('cliente_id').eq('barberia_id',bid).in('cliente_id',ids),
-    sb.from('alianza_codigos').select('id,cliente_id').eq('barberia_id',bid).in('cliente_id',ids),
-    sb.from('reservas').select('whatsapp_cliente').eq('barberia_id',bid)
-  ]);
-  const fallo=qs.find(r=>r.error);
-  if(fallo)throw new Error('No se pudo verificar el historial: '+fallo.error.message);
-  const [vis,vip,cods,res]=qs.map(r=>r.data||[]);
+  const porLotes=async(tabla,cols,col,vals,queEs)=>{
+    const filas=[];
+    for(const lote of enLotes(vals)){
+      const r=await sb.from(tabla).select(cols).eq('barberia_id',bid).in(col,lote);
+      if(r.error)throw new Error('No se pudo verificar '+queEs+': '+r.error.message);
+      filas.push(...(r.data||[]));
+    }
+    return filas;
+  };
+  const vis=await porLotes('visitas','cliente_id','cliente_id',ids,'las citas');
+  const vip=await porLotes('vip_historial','cliente_id','cliente_id',ids,'el historial de Club VIP');
+  const cods=await porLotes('alianza_codigos','id,cliente_id','cliente_id',ids,'los códigos de alianza');
+  const rRes=await sb.from('reservas').select('whatsapp_cliente').eq('barberia_id',bid);
+  if(rRes.error)throw new Error('No se pudo verificar las reservas: '+rRes.error.message);
+  const res=rRes.data||[];
 
   // Canjes: alianza_canjes referencia alianza_codigos, no clientes. Un código
   // ya canjeado es historial de negocio real, así que bloquea igual que una cita.
-  let canjes=[];
-  if(cods.length){
-    const r=await sb.from('alianza_canjes').select('codigo_id').eq('barberia_id',bid).in('codigo_id',cods.map(c=>c.id));
-    if(r.error)throw new Error('No se pudo verificar los canjes de alianzas: '+r.error.message);
-    canjes=r.data||[];
-  }
+  const canjes=cods.length?await porLotes('alianza_canjes','codigo_id','codigo_id',cods.map(c=>c.id),'los canjes de alianzas'):[];
   const clientePorCodigo={}; cods.forEach(c=>{clientePorCodigo[c.id]=c.cliente_id;});
   const contar=(arr,k)=>arr.reduce((m,x)=>{const v=x[k];if(v)m[v]=(m[v]||0)+1;return m;},{});
   const nVis=contar(vis,'cliente_id'), nVip=contar(vip,'cliente_id');
@@ -3026,11 +3109,20 @@ async function preflightBorrarClientes(ids){
 // como prueba de éxito — hay que contar lo que el delete devuelve.
 async function borrarClientes(ids){
   const bid=S.barberia.id;
-  const {error:eCod}=await sb.from('alianza_codigos').delete().eq('barberia_id',bid).in('cliente_id',ids);
-  if(eCod)throw new Error('No se pudieron borrar los códigos de alianza: '+eCod.message);
-  const {data,error}=await sb.from('clientes').delete().eq('barberia_id',bid).in('id',ids).select('id');
-  if(error)throw new Error(error.message);
-  return (data||[]).length;
+  for(const lote of enLotes(ids)){
+    const {error}=await sb.from('alianza_codigos').delete().eq('barberia_id',bid).in('cliente_id',lote);
+    if(error)throw new Error('No se pudieron borrar los códigos de alianza: '+error.message);
+  }
+  // Si un lote falla, los anteriores YA se borraron. El conteo parcial viaja
+  // con el error para poder decir exactamente cuántos se fueron antes del corte,
+  // en vez de dejar al usuario sin saber qué quedó a medias.
+  let borrados=0;
+  for(const lote of enLotes(ids)){
+    const {data,error}=await sb.from('clientes').delete().eq('barberia_id',bid).in('id',lote).select('id');
+    if(error)throw Object.assign(new Error(error.message),{borrados});
+    borrados+=(data||[]).length;
+  }
+  return borrados;
 }
 
 function modalBorrarClientes(info){
@@ -3090,7 +3182,13 @@ async function eliminarClientes(ids){
     }
     notify(n===1?'Cliente eliminado ✓':n+' clientes eliminados ✓');
     return true;
-  }catch(e){ notify(e.message,'err'); return false; }
+  }catch(e){
+    // Recarga igual: si el corte fue a mitad de los lotes, parte ya se borró y
+    // la lista en pantalla estaría mintiendo.
+    await loadClientes(); await loadVIP(); renderClientes(); renderDashboard();
+    notify(e.borrados?('Se eliminaron '+e.borrados+' y falló el resto: '+e.message):e.message,'err');
+    return false;
+  }
 }
 
 function renderVisitas(){
