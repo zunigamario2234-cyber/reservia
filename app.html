@@ -997,6 +997,11 @@ input[readonly]{background:#111;color:#666;cursor:default}
         <div id="r-sugerencias" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:0.5px solid #d4a853;border-radius:8px;z-index:100;max-height:180px;overflow-y:auto;margin-top:2px"></div>
       </div>
       <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
+      <div class="fr"><div class="fg"><label>Correo (opcional — le llega la confirmación)</label><input id="r-email" type="email" placeholder="juan@correo.com" autocomplete="off"></div><div class="fg"></div></div>
+      <!-- Ficha del cliente elegido en el autocompletar. Solo informativo: hoy
+           nada lo escribe de vuelta en clientes, pero deja identificado de quién
+           se prellenó el correo. -->
+      <input type="hidden" id="r-cliente-id">
     </div>
     <div id="rm-nuevo" style="display:none">
       <div class="fr"><div class="fg"><label>Nombre *</label><input id="rn-nombre" type="text" placeholder="Juan"></div><div class="fg"><label>Apellido</label><input id="rn-apellido" type="text" placeholder="Pérez"></div></div>
@@ -1521,6 +1526,9 @@ function initModal(id){
     document.getElementById('r-hora').value='';
     document.getElementById('r-nombre').value='';
     document.getElementById('r-wsp').value='';
+    document.getElementById('r-email').value='';
+    document.getElementById('r-cliente-id').value='';
+    document.getElementById('r-buscar').value='';
     document.getElementById('r-notas').value='';
     document.getElementById('r-estado').value='Pendiente';
     sel('r-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
@@ -1920,23 +1928,32 @@ async function guardarCita(){
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
 }
 
+// El correo del cliente es opcional en el modal de reserva, pero si viene
+// escrito tiene que ser usable: uno mal tipeado no avisa nada, solo falla en
+// silencio del lado de Resend y el dueño cree que la confirmación salió.
+function emailUsable(e){ return !e || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+
 async function guardarReserva(){
   const id=document.getElementById('r-id').value;
   const f=document.getElementById('r-fecha').value;
   const h=document.getElementById('r-hora').value;
   if(!f||!h){notify('Fecha y hora son obligatorios','warn');return;}
 
-  let n, w;
+  let n, w, em;
   if(!id && MODO_CLIENTE_RESERVA==='nuevo'){
     n=document.getElementById('rn-nombre').value.trim();
     const wNuevo=document.getElementById('rn-wsp').value.trim();
     if(!n||!wNuevo){notify('Nombre y WhatsApp del cliente son obligatorios','warn');return;}
     if(S.clientes.find(c=>c.whatsapp===wNuevo)){notify('Ya existe un cliente con ese WhatsApp','warn');return;}
+    // Se valida ANTES del insert: si el correo se revisara recién al armar la
+    // reserva, un typo dejaría la ficha creada y la reserva sin guardar.
+    const emNuevo=document.getElementById('rn-email').value.trim();
+    if(!emailUsable(emNuevo)){notify('El correo del cliente no parece válido','warn');return;}
     const clientePayload={
       barberia_id:S.barberia.id,nombre:n,
       apellido:document.getElementById('rn-apellido').value.trim(),
       whatsapp:wNuevo,
-      email:document.getElementById('rn-email').value.trim(),
+      email:emNuevo,
       cumpleanos:document.getElementById('rn-cumple').value||null,
       barbero_preferido:document.getElementById('rn-profesional').value||null,
       canal:document.getElementById('rn-canal').value,
@@ -1947,14 +1964,19 @@ async function guardarReserva(){
     await loadClientes();
     n=(nuevoCliente.nombre+' '+(nuevoCliente.apellido||'')).trim();
     w=nuevoCliente.whatsapp;
+    // El correo que se cargó en la ficha nueva viaja también a la reserva: sin
+    // esto, un cliente recién creado con correo igual se queda sin confirmación.
+    em=nuevoCliente.email||'';
   } else {
     n=document.getElementById('r-nombre').value.trim();
     w=document.getElementById('r-wsp').value.trim();
+    em=document.getElementById('r-email').value.trim();
     if(!n||!w){notify('Nombre y WhatsApp son obligatorios','warn');return;}
+    if(!emailUsable(em)){notify('El correo del cliente no parece válido','warn');return;}
   }
 
   const payload={
-    nombre_cliente:n,whatsapp_cliente:w,fecha:f,hora:h,
+    nombre_cliente:n,whatsapp_cliente:w,email_cliente:em||null,fecha:f,hora:h,
     servicio:document.getElementById('r-servicio').value||null,
     barbero_nombre:document.getElementById('r-profesional').value||null,
     estado:document.getElementById('r-estado').value||'Pendiente',
@@ -3753,6 +3775,7 @@ function abrirEditarReserva(id){
   document.getElementById('r-hora').value=r.hora||'';
   document.getElementById('r-nombre').value=r.nombre_cliente||'';
   document.getElementById('r-wsp').value=r.whatsapp_cliente||'';
+  document.getElementById('r-email').value=r.email_cliente||'';
   document.getElementById('r-notas').value=r.notas||'';
   document.getElementById('r-estado').value=r.estado||'Pendiente';
   const selS=document.getElementById('r-servicio'); if(r.servicio)selS.value=r.servicio;
@@ -4402,6 +4425,11 @@ function selClienteReserva(id){
   if(!c)return;
   document.getElementById('r-nombre').value=c.nombre+' '+(c.apellido||'');
   document.getElementById('r-wsp').value=c.whatsapp||'';
+  // Prellenar el correo desde la ficha para que el dueño no tenga que
+  // preguntarlo por teléfono. Si la ficha no tiene, se limpia en vez de dejar
+  // el del cliente anterior: prellenar mal manda la confirmación a otra persona.
+  document.getElementById('r-email').value=c.email||'';
+  document.getElementById('r-cliente-id').value=c.id;
   document.getElementById('r-buscar').value=c.nombre+' '+(c.apellido||'');
   document.getElementById('r-sugerencias').style.display='none';
   if(c.barbero_preferido){
