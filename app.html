@@ -675,7 +675,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card">
       <div class="card-hdr"><span class="card-title">Datos del negocio</span></div>
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
-      <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
+      <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"><button type="button" onclick="verEnMapa()" style="background:none;border:none;color:var(--p1);font-size:11px;font-family:inherit;padding:5px 0 0;cursor:pointer">📍 Ver cómo lo encuentran tus clientes</button></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
       <div class="fr"><div class="fg"><label>Teléfono</label><input id="cfg-telefono" type="text" placeholder="+56 2 XXXX XXXX"></div><div class="fg"><label>Email de contacto</label><input id="cfg-email" type="email" placeholder="contacto@tunegocio.cl"></div></div>
       <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div></div>
       <div class="fg"><label>Descripción del local (se muestra en el link de reservas)</label><textarea id="cfg-descripcion" rows="2" placeholder="Ej: Barbería especializada en cortes clásicos y modernos, en el corazón de Providencia."></textarea></div>
@@ -2618,6 +2618,27 @@ function renderNivelesVipConfig(){
       <button class="btn btn-danger btn-sm" onclick="eliminarNivelVip('${nv.id}')" title="Eliminar">×</button>
     </td>
   </tr>`).join('')||'<tr><td colspan="5" class="empty">Sin niveles configurados</td></tr>';
+}
+
+// Abre exactamente la misma búsqueda que arma urlComoLlegar() en
+// reservar.html para el botón "Cómo llegar" — nombre + dirección, esquema
+// universal. Sirve para que el dueño detecte que su dirección mal escrita
+// lleva a otra cuadra, antes de que la descubra un cliente perdido.
+//
+// Lee los inputs y no S.barberia a propósito: la gracia es probar ANTES de
+// guardar. Si tomara lo guardado, corregir el campo y volver a apretar
+// devolvería el resultado viejo. La contra es que muestra lo que verán los
+// clientes en cuanto guardes, no lo que ven en este momento.
+//
+// Si se cambia el formato de la URL, hay que cambiarlo en los dos lados.
+function verEnMapa(){
+  const nombre=document.getElementById('cfg-nombre').value.trim();
+  const dir=document.getElementById('cfg-dir').value.trim();
+  // Sin dirección la query sale vacía y Maps muestra cualquier cosa o la
+  // ubicación de quien mira. Mismo criterio que en reservar.html, donde
+  // directamente no se renderiza el botón.
+  if(!dir){ notify('Escribe primero la dirección del negocio','warn'); return; }
+  window.open('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent((nombre+' '+dir).trim()),'_blank','noopener');
 }
 
 async function guardarConfig(){
