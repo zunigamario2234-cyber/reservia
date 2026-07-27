@@ -22,6 +22,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
 .header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
 .header-descripcion{font-size:12px;color:#888;line-height:1.5;margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto}
+/* Contenedor del acceso "Ubicación y horario". El resto del CSS del modal lo
+   inyecta ubicacion-modal.js. */
+.header-meta{margin-top:8px}
 .header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
 .container{max-width:480px;margin:0 auto;padding:0 16px 40px}
 .card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
@@ -150,6 +153,7 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
     <h1 id="h-nombre">Mi Club VIP</h1>
   </div>
   <p class="header-descripcion" id="h-descripcion" style="display:none"></p>
+  <div class="header-meta" id="header-meta"></div>
 </div>
 <div class="container">
   <div class="tabs-top" id="tabs-top" style="display:none">
@@ -238,6 +242,9 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
   </div>
 </div>
 
+<!-- Compartido con reservar.html: construye el modal de ubicación y horario y
+     agrega su markup al body. -->
+<script src="ubicacion-modal.js"></script>
 <script>
 const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
@@ -312,6 +319,14 @@ async function initReservar(){
   RB.servicios = sv||[]; RB.profesionales = ba||[];
   RB.horario = {}; (hn||[]).forEach(h=>{ RB.horario[h.dia_semana]=h; });
   RB.bloqueos = blq||[];
+  // El acceso a ubicación se monta acá y no al final de init(): RB.horario se
+  // llena recién en esta función, que init() dispara sin await. Montarlo allá
+  // encontraría el horario vacío y escondería la sección siempre.
+  // Con guarda, por lo mismo que en reservar.html: si ubicacion-modal.js no
+  // cargara, el ReferenceError dejaría el calendario sin renderizar.
+  if(typeof montarAccesoUbicacion==='function'){
+    montarAccesoUbicacion({negocio:BARBERIA, horario:RB.horario, contenedor:document.getElementById('header-meta')});
+  }
   rRenderServicios(); rRenderProfesionales(); rRenderCalendario();
 }
 
@@ -546,7 +561,10 @@ function configurarManifestDinamico(barb){
 async function init(){
   if(!BARBERIA_ID || !CLIENTE_ID){ mostrarError('Este link no es válido. Falta información en la URL.'); return; }
 
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion').eq('id',BARBERIA_ID).single();
+  // direccion y telefono los pide el modal de ubicación. Se suman a la lista
+  // en vez de pasar a select('*') a propósito: este select acotado es lo que
+  // hay que imitar, no al revés.
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
   document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
