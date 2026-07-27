@@ -100,7 +100,7 @@ function construirContenidoCliente({ nombreCliente, fecha, hora, servicio, profe
 // para que le quede registro por fuera del panel.
 function construirContenidoProfesional({ nombreProfesional, nombreCliente, whatsappCliente, fecha, hora, servicio, esRegistroPropio }) {
   const intro = esRegistroPropio
-    ? 'Queda registro de la cita que acabás de agendar:'
+    ? 'Queda registro de la cita que acabas de agendar:'
     : 'Te agendaron una cita nueva:';
   return `
     <p style="margin:0 0 12px;font-size:16px;color:#111">Hola ${esc(nombreProfesional)} 👋</p>
@@ -112,7 +112,7 @@ function construirContenidoProfesional({ nombreProfesional, nombreCliente, whats
         👤 ${esc(nombreCliente || 'Cliente')}${whatsappCliente ? '<br>📱 ' + esc(whatsappCliente) : ''}
       </td></tr>
     </table>
-    <p style="margin:0;font-size:12px;color:#999">Podés ver el detalle completo en Mi Agenda.</p>`;
+    <p style="margin:0;font-size:12px;color:#999">Puedes ver el detalle completo en Mi Agenda.</p>`;
 }
 
 // Respaldo al dueño: solo se usa cuando el lado del negocio no se enteró por
