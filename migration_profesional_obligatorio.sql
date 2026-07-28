@@ -21,15 +21,31 @@
 -- desde auth_barbero_id(). Ya era imposible crear una reserva sin asignar por
 -- ahí.
 --
--- POR QUÉ NO SE VALIDA `activo`
+-- POR QUÉ ESTA MIGRACIÓN NO VALIDA `activo`
 -- Sería lo natural —un profesional dado de baja no debería recibir reservas—
--- pero hoy reservar.html y club.html cargan barberos SIN filtrar por activo,
--- así que la grilla pública ofrece gente inactiva. Validarlo acá rechazaría
--- reservas que el propio sitio ofrece. Queda pendiente arreglarlo en el
--- frontend primero; hasta entonces esta función acepta inactivos igual que
--- antes. (Vale la pena saber que una reserva con un profesional inactivo
--- tampoco genera aviso: el resolver de correos los filtra. Es el mismo
--- síntoma que esta migración viene a eliminar, por otra vía.)
+-- pero cuando esto se aplicó, reservar.html y club.html cargaban barberos SIN
+-- filtrar por activo, así que la grilla pública ofrecía gente inactiva.
+-- Validarlo acá habría rechazado reservas que el propio sitio estaba
+-- ofreciendo. Por eso esta función acepta inactivos igual que antes. (Vale la
+-- pena saber que una reserva con un profesional inactivo tampoco genera aviso:
+-- el resolver de correos los filtra. Es el mismo síntoma que esta migración
+-- viene a eliminar, por otra vía.)
+--
+-- ACTUALIZACIÓN (2026-07-28): ese pendiente YA ESTÁ CERRADO. El commit e191046
+-- agregó `.eq('activo',true)` a la carga de barberos en las dos páginas, así
+-- que la grilla pública dejó de ofrecer gente dada de baja y con eso
+-- desapareció la razón para no validarlo en la base.
+--
+-- Validar `activo` acá AHORA SÍ CORRESPONDE, y conviene hacerlo: el frontend
+-- ya no ofrece nada que la RPC fuera a rechazar, así que no rompe ningún flujo
+-- vivo, y la anon key es pública por diseño —igual que con `p_barbero_nombre`,
+-- la obligación en el navegador no garantiza nada, porque cualquiera puede
+-- llamar la RPC directo con el id de alguien inactivo. Va en una migración
+-- nueva, no en este archivo, que ya está aplicado.
+--
+-- El párrafo de arriba queda escrito y no borrado porque explica una decisión
+-- deliberada de su momento. Sin esta nota se lee como el estado actual, y el
+-- riesgo es descartar la validación por una razón que dejó de ser cierta.
 --
 -- EFECTO EXTRA: NORMALIZA EL NOMBRE GUARDADO
 -- En vez de guardar el texto que mandó el navegador, guarda el nombre tal cual
