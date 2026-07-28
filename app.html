@@ -1013,7 +1013,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="fg"><label>Notas del cliente</label><textarea id="rn-notas" rows="2" placeholder="Observaciones..."></textarea></div>
     </div>
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="r-fecha" type="date"></div><div class="fg"><label>Hora *</label><input id="r-hora" type="time"></div></div>
-    <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Cualquiera</option></select></div></div>
+    <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Seleccionar...</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
     <input type="hidden" id="r-procesado" value="0">
@@ -2033,10 +2033,17 @@ async function guardarReserva(){
     if(!emailUsable(em)){notify('El correo del cliente no parece válido','warn');return;}
   }
 
+  // El profesional es obligatorio también acá, no solo en el flujo público:
+  // una reserva sin asignar no le avisa a nadie y hay que acordarse de
+  // asignarla antes de la cita. Cerrar solo la puerta pública dejaría el mismo
+  // estado ambiguo entrando por esta.
+  const prof=document.getElementById('r-profesional').value;
+  if(!prof){notify('Elige el profesional que va a atender','warn');return;}
+
   const payload={
     nombre_cliente:n,whatsapp_cliente:w,email_cliente:em||null,fecha:f,hora:h,
     servicio:document.getElementById('r-servicio').value||null,
-    barbero_nombre:document.getElementById('r-profesional').value||null,
+    barbero_nombre:prof,
     estado:document.getElementById('r-estado').value||'Pendiente',
     notas:document.getElementById('r-notas').value
   };
