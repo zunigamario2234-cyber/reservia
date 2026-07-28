@@ -10,7 +10,7 @@
 --   repo construye. Sirven para entender POR QUÉ algo es como es, no para
 --   levantar la base. Ver README.md.
 --
--- Generado el 2026-07-27 desde el schema `public` de producción.
+-- Generado el 2026-07-28 desde el schema `public` de producción.
 --
 -- Es una FOTO, no un archivo vivo: en cuanto cambies la base este archivo
 -- queda viejo. Después de aplicar una migración, regeneralo (instrucciones
@@ -1206,6 +1206,12 @@ CREATE OR REPLACE VIEW public.reservas_disponibilidad AS  SELECT id,
 -- =============================================================================
 -- 6. ROW LEVEL SECURITY
 -- Activarlo ANTES de crear las políticas.
+--
+-- Las 19 tablas van con ENABLE y NINGUNA con FORCE, y eso último es a
+-- propósito: sin FORCE, el dueño de la tabla (postgres) no evalúa RLS, que
+-- es lo que permite que las RPC `security definer` —crear_reserva_publica y
+-- las otras dos puertas públicas de reserva— escriban en `reservas` sin que
+-- las políticas las bloqueen. Agregar FORCE a una tabla rompe ese bypass.
 -- =============================================================================
 
 -- alianza_canjes
@@ -1394,8 +1400,8 @@ CREATE POLICY plantillas_mensajes_own ON public.plantillas_mensajes AS PERMISSIV
 -- reservas.reservas_delete_own
 CREATE POLICY reservas_delete_own ON public.reservas AS PERMISSIVE FOR DELETE TO public USING (((barberia_id = auth_barberia_id()) AND (auth_rol() = 'dueno'::text)));
 
--- reservas.reservas_insert_public
-CREATE POLICY reservas_insert_public ON public.reservas AS PERMISSIVE FOR INSERT TO public WITH CHECK (true);
+-- reservas.reservas_insert_own
+CREATE POLICY reservas_insert_own ON public.reservas AS PERMISSIVE FOR INSERT TO public WITH CHECK (((barberia_id = auth_barberia_id()) AND (auth_rol() = 'dueno'::text)));
 
 -- reservas.reservas_select_own
 CREATE POLICY reservas_select_own ON public.reservas AS PERMISSIVE FOR SELECT TO public USING (((barberia_id = auth_barberia_id()) AND (auth_rol() = 'dueno'::text)));
@@ -1508,6 +1514,16 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.vi
 -- Si algún día hay extensiones nuevas, la sección 0 se saca de:
 --   select extname, extversion from pg_extension order by extname;
 --
+-- La sección de RLS mira DOS flags, no uno: `relrowsecurity` (ENABLE) y
+-- `relforcerowsecurity` (FORCE). La primera versión de esta consulta solo
+-- miraba el primero, y el hueco apareció al verificar
+-- migration_reservas_insert_own.sql: FORCE hace que RLS se evalúe también
+-- para el DUEÑO de la tabla, y por lo tanto que las funciones
+-- `security definer` dejen de bypasear las políticas. Como todas las RPC
+-- públicas dependen de ese bypass, una tabla con FORCE activo rompería el
+-- flujo de reservas entero, y el dump anterior no lo habría mostrado.
+-- Hoy son 0 tablas, así que la salida no cambia — cambia que ahora se vería.
+--
 -- -----------------------------------------------------------------------------
 /*
 with cols as (
@@ -1581,9 +1597,14 @@ select * from (
   where n.nspname = 'public' and not t.tgisinternal
 
   union all select 9, 'RLS', c.relname::text,
-    'ALTER TABLE public.' || quote_ident(c.relname) || ' ENABLE ROW LEVEL SECURITY;'
+    concat_ws(E'\n',
+      case when c.relrowsecurity
+           then 'ALTER TABLE public.' || quote_ident(c.relname) || ' ENABLE ROW LEVEL SECURITY;' end,
+      case when c.relforcerowsecurity
+           then 'ALTER TABLE public.' || quote_ident(c.relname) || ' FORCE ROW LEVEL SECURITY;' end)
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
+  where n.nspname = 'public' and c.relkind = 'r'
+    and (c.relrowsecurity or c.relforcerowsecurity)
 
   union all select 10, 'POLITICAS', tablename::text || '.' || policyname::text,
     'CREATE POLICY ' || quote_ident(policyname::text) ||
