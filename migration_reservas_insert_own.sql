@@ -6,8 +6,18 @@
 -- ninguna condición. La anon key está embebida en todas las páginas públicas
 -- —por diseño, la protección es RLS y no la clave—, así que cualquiera que la
 -- copiara del fuente podía insertar filas arbitrarias en `reservas` para
--- CUALQUIER `barberia_id`, salteándose todas las validaciones que hace
--- `crear_reserva_publica` (disponibilidad del slot, horario, bloqueos).
+-- CUALQUIER `barberia_id`, saltándose el único camino previsto para una
+-- reserva pública, que es la RPC `crear_reserva_publica`.
+--
+-- CORRECCIÓN (2026-07-28): la versión original de este comentario decía que
+-- así se salteaban "todas las validaciones que hace crear_reserva_publica
+-- (disponibilidad del slot, horario, bloqueos)". Eso es FALSO y conviene que
+-- quede escrito, porque induce a confiar en una defensa que no existe: la RPC
+-- es un `insert` pelado, no valida absolutamente nada, y `reservas` no tiene
+-- más constraints que la PK y la FK de barbería — ni siquiera unicidad de
+-- slot. Las validaciones de disponibilidad, horario y bloqueos viven SOLO en
+-- el navegador. Lo que esta política arregla es el scoping por negocio, que
+-- es real; el resto era una suposición no verificada.
 --
 -- POR QUÉ NO ROMPE EL FLUJO PÚBLICO
 -- Ninguna reserva de cliente pasa por esta política. Las tres puertas de
