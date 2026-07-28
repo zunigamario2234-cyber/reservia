@@ -374,7 +374,7 @@ async function init(){
   document.title = 'Reservar — ' + barb.nombre;
   const [{data:sv},{data:ba},{data:hn},{data:blq},{data:bs}] = await Promise.all([
     sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('precio'),
-    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).order('nombre'),
+    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('nombre'),
     sb.from('horario_negocio').select('*').eq('barberia_id',BARBERIA_ID),
     sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true),
     sb.from('barbero_servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
@@ -448,7 +448,8 @@ function selServicio(id){
 // "Continuar" no se habilitaría nunca, así que se explica en vez de dejar al
 // cliente trabado sin saber por qué. Ese caso no es solo "negocio sin
 // configurar": pasa cada vez que un servicio nuevo no tiene ningún
-// profesional asociado en barbero_servicios.
+// profesional asociado en barbero_servicios, y también si todos los que
+// califican están inactivos — init() ya no los trae.
 function renderProfesionals(){
   const items = SEL.servicio
     ? B.profesionals.filter(b=>B.barberoServicios.some(bs=>bs.barbero_id===b.id&&bs.servicio_id===SEL.servicio.id))

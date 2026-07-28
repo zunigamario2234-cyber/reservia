@@ -322,7 +322,7 @@ function cambiarTabTop(tab){
 async function initReservar(){
   const [{data:sv},{data:ba},{data:hn},{data:blq}] = await Promise.all([
     sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('precio'),
-    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).order('nombre'),
+    sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('nombre'),
     sb.from('horario_negocio').select('*').eq('barberia_id',BARBERIA_ID),
     sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
   ]);
@@ -364,7 +364,8 @@ function rSelServicio(id){
 // "Continuar" apagado para siempre.
 //
 // Acá la lista NO se filtra por servicio (a diferencia de reservar.html), así
-// que el caso vacío solo ocurre si el negocio no tiene profesionales.
+// que el caso vacío solo ocurre si el negocio no tiene ningún profesional
+// activo — initReservar() ya no trae los inactivos.
 function rRenderProfesionales(){
   const items = RB.profesionales;
   const cont = document.getElementById('r-lista-profesionales');
