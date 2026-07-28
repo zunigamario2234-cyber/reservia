@@ -357,18 +357,35 @@ function rSelServicio(id){
   document.getElementById('r-btn-s1').disabled = false;
 }
 
+// YA NO EXISTE "Cualquier profesional", igual que en reservar.html: una
+// reserva sin persona asignada no le avisa a nadie y hay que acordarse de
+// asignarla antes de la cita. Con uno solo se autoselecciona; con ninguno se
+// explica, en vez de dejar al cliente con la grilla vacía y el botón
+// "Continuar" apagado para siempre.
+//
+// Acá la lista NO se filtra por servicio (a diferencia de reservar.html), así
+// que el caso vacío solo ocurre si el negocio no tiene profesionales.
 function rRenderProfesionales(){
-  const todos = {id:'cualquiera',nombre:'Cualquier profesional',emoji:'✂'};
-  const items = [todos,...RB.profesionales];
-  document.getElementById('r-lista-profesionales').innerHTML = items.map(b=>`
+  const items = RB.profesionales;
+  const cont = document.getElementById('r-lista-profesionales');
+  if(!items.length){
+    cont.innerHTML = '<div class="no-horarios" style="grid-column:1/-1">No hay profesionales disponibles por ahora.</div>';
+    return;
+  }
+  cont.innerHTML = items.map(b=>`
     <div class="profesional-card" onclick="rSelProfesional('${b.id}')" id="r-ba-${b.id}">
       <div class="profesional-avatar">${b.emoji||'✂'}</div>
       <div class="profesional-nombre">${b.nombre}</div>
     </div>`).join('');
+  if(items.length===1) rSelProfesional(items[0].id);
 }
 
 function rSelProfesional(id){
-  RSEL.profesional = id==='cualquiera' ? null : RB.profesionales.find(b=>b.id===id);
+  const prof = RB.profesionales.find(b=>b.id===id);
+  // Sin profesional válido no se habilita "Continuar", que es la única forma
+  // de llegar al paso siguiente.
+  if(!prof) return;
+  RSEL.profesional = prof;
   document.querySelectorAll('#r-lista-profesionales .profesional-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('r-ba-'+id).classList.add('selected');
   document.getElementById('r-btn-s2').disabled = false;
@@ -461,7 +478,7 @@ function rRenderResumen(){
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   document.getElementById('r-resumen-reserva').innerHTML=`
     <div class="resumen-row"><span class="resumen-label">Servicio</span><span class="resumen-val">${RSEL.servicio?.nombre}</span></div>
-    <div class="resumen-row"><span class="resumen-label">Profesional</span><span class="resumen-val">${RSEL.profesional?.nombre||'Cualquiera disponible'}</span></div>
+    <div class="resumen-row"><span class="resumen-label">Profesional</span><span class="resumen-val">${RSEL.profesional?.nombre||''}</span></div>
     <div class="resumen-row"><span class="resumen-label">Fecha</span><span class="resumen-val">${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}</span></div>
     <div class="resumen-row"><span class="resumen-label">Hora</span><span class="resumen-val">${RSEL.hora} hrs</span></div>
     <div class="resumen-row"><span class="resumen-label">Valor</span><span class="resumen-val" style="color:#7c6af7">$${RSEL.servicio?.precio.toLocaleString('es-CL')}</span></div>
@@ -472,6 +489,15 @@ async function rConfirmarReserva(){
   const btn=document.getElementById('r-btn-confirmar');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Confirmando...';
   const notas=document.getElementById('r-notas').value.trim();
+  // Red de seguridad: los botones deshabilitados ya impiden llegar acá sin
+  // elegir, pero desde que el profesional es obligatorio conviene cerrarlo por
+  // si algún camino nuevo se saltea esa validación.
+  if(!RSEL.servicio||!RSEL.profesional||!RSEL.fecha||!RSEL.hora){
+    const al=document.getElementById('r-alert-confirm');
+    al.textContent='Falta elegir servicio, profesional, fecha u hora.'; al.style.display='';
+    btn.disabled=false; btn.textContent='✓ Confirmar reserva';
+    return;
+  }
   try{
     // Mismo patrón que crear_reserva_publica (security definer, exige
     // barberia_id Y cliente_id) pero sin pedirle datos de contacto al
@@ -483,7 +509,7 @@ async function rConfirmarReserva(){
       p_fecha:RSEL.fecha,
       p_hora:RSEL.hora,
       p_servicio:RSEL.servicio?.nombre,
-      p_barbero_nombre:RSEL.profesional?.nombre||null,
+      p_barbero_nombre:RSEL.profesional.nombre,
       p_notas:notas||null
     });
     if(error)throw error;
@@ -492,7 +518,7 @@ async function rConfirmarReserva(){
     fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId})}).catch(()=>{});
     document.querySelectorAll('#tab-reservar .step-content').forEach(s=>s.classList.remove('active'));
     document.getElementById('r-sc-exito').classList.add('active');
-    document.getElementById('r-success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${RSEL.fecha} a las ${RSEL.hora} hrs<br>✂️ ${RSEL.servicio?.nombre} con ${RSEL.profesional?.nombre||'profesional por asignar'}<br><br>¡Te esperamos en ${BARBERIA.nombre}!`;
+    document.getElementById('r-success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${RSEL.fecha} a las ${RSEL.hora} hrs<br>✂️ ${RSEL.servicio?.nombre} con ${RSEL.profesional.nombre}<br><br>¡Te esperamos en ${BARBERIA.nombre}!`;
     document.getElementById('r-btn-wa-confirmar').style.display=BARBERIA.whatsapp?'':'none';
   }catch(e){
     const al=document.getElementById('r-alert-confirm');

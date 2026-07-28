@@ -436,26 +436,42 @@ function selServicio(id){
 }
 
 // Filtra por barbero_servicios: solo profesionales con ese servicio activo
-// califican para el paso 2. "Cualquier profesional" siempre está disponible
-// (no depende de la relación) y nunca muestra foto — es una opción genérica,
-// no una persona. Si ningún profesional real califica para el servicio
-// elegido (mal configurado), la grilla queda con "Cualquiera" solamente —
-// no rompe la pantalla, solo se ve una opción en vez de varias.
+// califican para el paso 2.
+//
+// YA NO EXISTE "Cualquier profesional". Una reserva sin persona asignada no
+// le avisa a nadie —el resolver de correos la descarta de entrada— y alguien
+// tiene que acordarse de asignarla antes de la cita. Se elimina el estado
+// ambiguo en vez de construir avisos para gestionarlo.
+//
+// Con UN solo profesional que califique se autoselecciona: una lista de uno
+// es un clic sin información. Con NINGUNO la grilla quedaría vacía y el botón
+// "Continuar" no se habilitaría nunca, así que se explica en vez de dejar al
+// cliente trabado sin saber por qué. Ese caso no es solo "negocio sin
+// configurar": pasa cada vez que un servicio nuevo no tiene ningún
+// profesional asociado en barbero_servicios.
 function renderProfesionals(){
-  const todos = {id:'cualquiera',nombre:'Cualquier profesional'};
-  const calificados = SEL.servicio
+  const items = SEL.servicio
     ? B.profesionals.filter(b=>B.barberoServicios.some(bs=>bs.barbero_id===b.id&&bs.servicio_id===SEL.servicio.id))
     : B.profesionals;
-  const items = [todos,...calificados];
-  document.getElementById('lista-profesionals').innerHTML = items.map(b=>`
+  const cont = document.getElementById('lista-profesionals');
+  if(!items.length){
+    cont.innerHTML = '<div class="no-horarios" style="grid-column:1/-1">Este servicio no tiene profesionales disponibles por ahora. Prueba con otro servicio.</div>';
+    return;
+  }
+  cont.innerHTML = items.map(b=>`
     <div class="profesional-card" onclick="selProfesional('${b.id}')" id="ba-${b.id}">
-      <div class="profesional-avatar">${b.id!=='cualquiera'&&b.foto_url?`<img src="${b.foto_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`:'✂'}</div>
+      <div class="profesional-avatar">${b.foto_url?`<img src="${b.foto_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`:'✂'}</div>
       <div class="profesional-nombre">${b.nombre}</div>
     </div>`).join('');
+  if(items.length===1) selProfesional(items[0].id);
 }
 
 function selProfesional(id){
-  SEL.profesional = id==='cualquiera' ? null : B.profesionals.find(b=>b.id===id);
+  const prof = B.profesionals.find(b=>b.id===id);
+  // Sin profesional válido no se habilita "Continuar": es la única forma de
+  // llegar al paso 3, así que el flujo no puede avanzar sin persona elegida.
+  if(!prof) return;
+  SEL.profesional = prof;
   document.querySelectorAll('.profesional-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('ba-'+id).classList.add('selected');
   document.getElementById('btn-s2').disabled = false;
@@ -463,7 +479,7 @@ function selProfesional(id){
 }
 
 // Foto grande + bio del profesional elegido, antes de continuar — se omite
-// entero para "Cualquier profesional" o si el profesional no tiene bio ni foto.
+// entero si el profesional no tiene bio, foto ni especialidad.
 function renderPerfilProfesional(prof){
   const cont = document.getElementById('perfil-profesional');
   if(!prof || (!prof.foto_url && !prof.bio && !prof.especialidad)){ cont.style.display = 'none'; return; }
@@ -531,9 +547,11 @@ function renderHorarios(){
       if(SEL.profesional && r.barbero_nombre!==SEL.profesional.nombre) return false;
       return r.hora && r.hora.startsWith(h);
     });
-    // Mismo criterio que reservasOcupadas: sin profesional elegido ("cualquiera
-    // disponible"), un bloqueo de cualquier profesional oculta el horario —
-    // limitación ya existente para citas ocupadas, no nueva de esta feature.
+    // Al paso 3 no se llega sin profesional elegido, así que en la práctica
+    // siempre se toma la primera rama. La segunda queda como red por si algún
+    // camino nuevo llega acá antes de tiempo: ante la duda oculta de más, que
+    // es el error barato. Antes era el caso normal, cuando existía "Cualquier
+    // profesional".
     const bloqueado = SEL.profesional
       ? B.bloqueos.some(b=>b.profesional_id===SEL.profesional.id && bloqueoCubreSlot(b,h,SEL.fecha,diaSemana))
       : B.bloqueos.some(b=>bloqueoCubreSlot(b,h,SEL.fecha,diaSemana));
@@ -557,7 +575,7 @@ function irPaso(n){
     // que con SEL.fecha en null da Invalid Date y pinta "undefined NaN de undefined".
     // Los botones deshabilitados ya deberían impedir llegar acá sin elegir, pero
     // esto lo cierra por si algún camino nuevo se saltea esa validación.
-    if(!SEL.servicio||!SEL.fecha||!SEL.hora){alert('Falta elegir servicio, fecha u hora. Vuelve a los primeros pasos.');return;}
+    if(!SEL.servicio||!SEL.profesional||!SEL.fecha||!SEL.hora){alert('Falta elegir servicio, profesional, fecha u hora. Vuelve a los primeros pasos.');return;}
     const nombre=document.getElementById('cl-nombre').value.trim();
     const wsp=document.getElementById('cl-wsp').value.trim();
     const email=document.getElementById('cl-email').value.trim();
@@ -583,7 +601,7 @@ function renderResumen(){
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   document.getElementById('resumen-reserva').innerHTML=`
     <div class="resumen-row"><span class="resumen-label">Servicio</span><span class="resumen-val">${SEL.servicio?.nombre}</span></div>
-    <div class="resumen-row"><span class="resumen-label">Profesional</span><span class="resumen-val">${SEL.profesional?.nombre||'Cualquiera disponible'}</span></div>
+    <div class="resumen-row"><span class="resumen-label">Profesional</span><span class="resumen-val">${SEL.profesional?.nombre||''}</span></div>
     <div class="resumen-row"><span class="resumen-label">Fecha</span><span class="resumen-val">${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}</span></div>
     <div class="resumen-row"><span class="resumen-label">Hora</span><span class="resumen-val">${SEL.hora} hrs</span></div>
     <div class="resumen-row"><span class="resumen-label">Valor</span><span class="resumen-val" style="color:#7c6af7">$${SEL.servicio?.precio.toLocaleString('es-CL')}</span></div>
@@ -614,7 +632,7 @@ async function confirmarReserva(){
       p_email_cliente:email,
       p_cumpleanos_cliente:cumpleanos,
       p_servicio:SEL.servicio?.nombre,
-      p_barbero_nombre:SEL.profesional?.nombre||'Por asignar',
+      p_barbero_nombre:SEL.profesional.nombre,
       p_notas:notas
     });
     if(error)throw error;
@@ -640,7 +658,7 @@ async function confirmarReserva(){
     // Mostrar éxito
     document.querySelectorAll('.step-content').forEach(s=>s.classList.remove('active'));
     document.getElementById('sc-exito').classList.add('active');
-    document.getElementById('success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${SEL.fecha} a las ${SEL.hora} hrs<br>✂️ ${SEL.servicio?.nombre} con ${SEL.profesional?.nombre||'profesional por asignar'}<br><br>¡Te esperamos en ${B.barberia.nombre}!`;
+    document.getElementById('success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${SEL.fecha} a las ${SEL.hora} hrs<br>✂️ ${SEL.servicio?.nombre} con ${SEL.profesional.nombre}<br><br>¡Te esperamos en ${B.barberia.nombre}!`;
     document.getElementById('btn-wa-confirmar').style.display=B.barberia.whatsapp?'':'none';
   }catch(e){
     const al=document.getElementById('alert-confirm');
