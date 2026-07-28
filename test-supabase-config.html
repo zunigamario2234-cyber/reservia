@@ -1,0 +1,226 @@
+<meta charset="utf-8">
+<title>Test — supabase-config.js</title>
+<!--
+  Red de seguridad para el archivo compartido de credenciales.
+
+  Antes, la URL y la anon key estaban copiadas a mano en los 7 HTML. Ahora
+  viven solo en supabase-config.js, y cada página lo carga con un <script src>.
+  Nada en el código obliga a que una página nueva siga ese patrón: se puede
+  pegar el bloque viejo y funcionaría igual, volviendo a la copia sincronizada
+  a mano. Este test lo obliga.
+
+  Lo que se prueba y por qué importa:
+
+    - Que ninguna página tenga credenciales inline. Es la regresión más
+      probable: copiar una página existente de antes del cambio, o pegar el
+      snippet viejo en una nueva.
+
+    - Que cada página cargue supabase-config.js ANTES del <script> inline que
+      usa las credenciales. Si queda después, la página se rompe entera, y se
+      rompe de la peor forma: viva pero inservible (ver el punto siguiente).
+
+    - Que cada página tenga la guarda. Si el archivo no carga, el <script>
+      inline muere en la primera línea que use las credenciales, pero las
+      declaraciones de función ya se hoistearon, así que la página queda EN
+      PANTALLA, congelada en "Cargando...", con los botones respondiendo y
+      fallando en silencio. No es página en blanco ni error visible: nadie
+      reporta nada. La guarda convierte eso en un mensaje.
+
+    - Que index.html sea la única SIN guarda que corta. Es la excepción a
+      propósito: la landing es contenido estático y solo usa Supabase para
+      mandar al panel a un dueño con sesión. Cortarla entera por eso sería
+      peor que perder el atajo, así que ahí degrada en silencio. Si alguien
+      "arregla" esa inconsistencia sin saber, este test se lo dice.
+
+    - Que api/_lib/resend.js tome la URL de env var. Corre en Node y no puede
+      consumir el config del navegador, así que es el único lugar donde la URL
+      sigue escrita — pero detrás de process.env, para que cada entorno de
+      Vercel apunte a su propia base.
+
+  Prueba los ARCHIVOS REALES: los baja con fetch y los revisa como texto. No
+  ejecuta las páginas, así que no toca la base de datos ni manda correos.
+
+  LO QUE NO CUBRE: la lista de páginas está escrita acá abajo. Si agregas un
+  HTML nuevo que hable con Supabase, este test no se entera hasta que lo sumes
+  a PAGINAS.
+
+  CÓMO CORRERLO
+    A mano:   ábrelo en Chrome. Si el navegador no lo deja leer los archivos
+              solo (pasa con file://), aparece un selector para pasárselos.
+    Headless: chrome --headless=new --allow-file-access-from-files
+                     --virtual-time-budget=8000 --dump-dom
+                     "file:///.../test-supabase-config.html"
+              y busca ">>> TODO OK" en la salida.
+
+  Tiene que quedar en la misma carpeta que los HTML: las rutas son relativas,
+  igual que en producción.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}.tit{color:#7c6af7}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — supabase-config.js</h1>
+<p>Verifica que las 7 páginas tomen las credenciales del archivo compartido, en
+el orden correcto y con la guarda puesta.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.js" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+// Las 7 páginas que hablan con Supabase. index.html va aparte porque su guarda
+// es distinta a propósito.
+var PAGINAS = ['index.html','ingresar.html','app.html','mi-agenda.html',
+               'aliado.html','reservar.html','club.html'];
+var CONFIG = 'supabase-config.js';
+var BACKEND = 'api/_lib/resend.js';
+var ARCHIVOS = PAGINAS.concat([CONFIG, BACKEND]);
+
+// La landing degrada en vez de cortar: ver el comentario de arriba.
+var SIN_CORTE = 'index.html';
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+function pintar(){
+  var txt = lineas.join('\n');
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = txt + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+// Los comentarios explican qué NO debe estar en el archivo, así que nombran
+// justamente lo que se busca. Sin sacarlos, "service_role" da falso positivo
+// contra la propia documentación.
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+// Posición del <script src="supabase-config.js">. -1 si no está.
+function posConfig(html){
+  var m = /<script[^>]*\bsrc\s*=\s*["']supabase-config\.js["'][^>]*>/i.exec(html);
+  return m ? m.index : -1;
+}
+
+// Posición del primer <script> INLINE que menciona SUPABASE_URL, que es el que
+// necesita que las constantes ya existan. Los <script src> no cuentan: el
+// propio config es uno de ellos y mencionarlo no lo convierte en consumidor.
+function posPrimerUso(html){
+  var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi, m;
+  while((m = re.exec(html)) !== null){
+    if(!/\bsrc\s*=/i.test(m[1]) && m[2].indexOf('SUPABASE_URL') !== -1) return m.index;
+  }
+  return -1;
+}
+
+function correr(src){
+  var cfg = src[CONFIG];
+
+  titulo('supabase-config.js');
+  check('define SUPABASE_URL', /(^|\n)\s*const\s+SUPABASE_URL\s*=\s*['"]https:\/\/[^'"]+['"]/.test(cfg), true);
+  check('define SUPABASE_KEY', /(^|\n)\s*const\s+SUPABASE_KEY\s*=\s*['"][^'"]+['"]/.test(cfg), true);
+  // La service_role key bypasea RLS. Si alguna vez cae acá, queda publicada en
+  // el dominio y cualquiera puede leer y escribir toda la base.
+  check('NO trae la service_role key', /service_role/.test(sinComentarios(cfg)), false);
+  // Dos claves en el archivo significan que alguien pegó una de más.
+  check('trae exactamente una clave', (sinComentarios(cfg).match(/eyJhbGciOi/g) || []).length, 1);
+
+  PAGINAS.forEach(function(p){
+    var html = src[p];
+    titulo(p);
+
+    // La regresión más probable: volver a pegar las credenciales en la página.
+    check('sin la URL de Supabase inline', /https:\/\/[a-z0-9]+\.supabase\.co/i.test(html), false);
+    check('sin la anon key inline', /eyJhbGciOi/.test(html), false);
+
+    var pc = posConfig(html), pu = posPrimerUso(html);
+    check('carga supabase-config.js', pc !== -1, true);
+    check('lo carga antes del primer uso', pc !== -1 && pu !== -1 && pc < pu, true);
+
+    // typeof no lanza sobre una variable nunca declarada, que es justo el caso
+    // que hay que detectar. Cualquier otra forma (comparar contra undefined
+    // directo) tiraría ReferenceError y la guarda no serviría de nada.
+    check('la guarda usa typeof', /typeof\s+SUPABASE_URL\s*===\s*['"]undefined['"]/.test(html), true);
+    check('deja rastro en console.error', /console\.error\([^)]*supabase-config/.test(html), true);
+
+    // El string va entre comillas simples y contiene comillas dobles adentro
+    // (el atributo style), así que la clase negada tiene que excluir solo la
+    // comilla simple. Con [^'"] no cruzaba el style y no matcheaba nunca.
+    var pintaMensaje = /document\.body\.innerHTML\s*=\s*'[^']*No pudimos cargar la página/.test(html);
+
+    if(p === SIN_CORTE){
+      check('la landing NO se reemplaza (degrada en silencio)', pintaMensaje, false);
+    } else {
+      check('muestra el mensaje al cliente', pintaMensaje, true);
+      // Sin el throw, el script sigue y muere igual, pero con un error
+      // críptico en vez del mensaje puesto a propósito.
+      check('corta la ejecución con throw', /throw new Error\([^)]*supabase-config/.test(html), true);
+    }
+  });
+
+  titulo(BACKEND);
+  var be = src[BACKEND];
+  check('toma la URL de env var', /process\.env\.SUPABASE_URL/.test(be), true);
+  // Este archivo corre en el servidor: acá la service_role key es correcta.
+  check('sigue usando la service_role key', /SUPABASE_SERVICE_ROLE_KEY/.test(be), true);
+
+  pintar();
+}
+
+// Modo automático. Falla con file:// salvo que Chrome corra con
+// --allow-file-access-from-files, y ahí cae al selector de archivo.
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  correr(src);
+}).catch(function(){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (el navegador no me deja leerlos solo)';
+  document.getElementById('archivo').addEventListener('change', function(e){
+    var files = Array.prototype.slice.call(e.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        // El selector no conserva la ruta, así que resend.js entra por nombre.
+        var clave = f.name === 'resend.js' ? BACKEND : f.name;
+        src[clave] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== clave; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
