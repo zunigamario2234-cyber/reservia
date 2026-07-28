@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — reservar.html y club.html</title>
+
+<!--
+  Test de las DOS páginas públicas de reserva: reservar.html y club.html.
+
+  POR QUÉ EXISTE
+  app.html ya tenía chequeo de sintaxis versionado (dentro de
+  test-comollegar.html, que compila sus <script> inline), pero estas dos no
+  tenían ninguno. Son justamente donde un error rompe reservas de clientes
+  reales: si un <script> inline no parsea, la página queda viva e inservible
+  —el HTML se pinta entero y cada clic muere en silencio— y ningún otro test
+  del repo se entera. test-supabase-config.html sí lee estos archivos, pero
+  solo mira el cableado de credenciales.
+
+  QUÉ COMPRUEBA
+  Prueba los ARCHIVOS REALES: los baja con fetch y los revisa como texto, más
+  new Function() para compilar sin ejecutar. No abre Supabase ni crea nada.
+
+  Tiene que quedar en la misma carpeta que los HTML: las rutas son relativas,
+  igual que en producción.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md — con Chrome abierto hay una trampa que devuelve salida vacía
+  y parece que pasó.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — reservar.html y club.html</h1>
+<p>Compila los <code>&lt;script&gt;</code> inline de las dos páginas públicas de
+reserva y verifica los invariantes que, si se rompen, se llevan puestas
+reservas de clientes.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['reservar.html','club.html'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+// Los comentarios de estos archivos explican qué YA NO debe estar (por ejemplo
+// "Cualquier profesional"), así que nombran justamente lo que se busca. Sin
+// sacarlos, el check daría falso positivo contra la propia documentación. Es el
+// mismo problema que ya apareció con "service_role" en test-supabase-config.js.
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+// <script> inline, sin los que traen src.
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+
+// Devuelve el objeto de argumentos de cada .rpc('nombre',{...}), cerrando las
+// llaves de verdad en vez de cortar por una ventana fija de caracteres: los
+// argumentos ocupan varias líneas y una ventana se comería la llamada
+// siguiente, que también trae p_barberia_id, y taparía el fallo.
+function argsDeRpc(js){
+  var re = /\.rpc\('([a-z_]+)'\s*,\s*\{/g, m, out = [];
+  while((m = re.exec(js)) !== null){
+    var i = re.lastIndex - 1, prof = 0, fin = -1;
+    for(var k = i; k < js.length; k++){
+      if(js[k] === '{') prof++;
+      else if(js[k] === '}'){ prof--; if(prof === 0){ fin = k; break; } }
+    }
+    out.push({ nombre: m[1], args: fin === -1 ? '' : js.slice(i, fin + 1) });
+  }
+  return out;
+}
+
+// Lecturas de tabla. sb.storage.from() no cuenta: no es una tabla.
+function lecturasDeTabla(js){
+  var re = /(?:^|[^.\w])(?:sb|supabase)\.from\('([a-z_]+)'\)([^\n]*)/gm, m, out = [];
+  while((m = re.exec(js)) !== null){ out.push({ tabla: m[1], resto: m[2] }); }
+  return out;
+}
+
+function correr(src){
+  ARCHIVOS.forEach(function(f){
+    titulo(f);
+    var html = src[f];
+    var js = sinComentarios(inlineScripts(html).join('\n'));
+
+    // 1. Que parsee. Es el hueco que este archivo vino a tapar.
+    var scripts = inlineScripts(html);
+    check('tiene <script> inline', scripts.length > 0, true);
+    var err = '';
+    scripts.forEach(function(s){
+      try { new Function(s); } catch(e){ if(!err) err = e.message; }
+    });
+    check('los <script> inline compilan' + (err ? ' — ' + err : ''), err === '', true);
+
+    // 2. La grilla pública no ofrece gente dada de baja (commit e191046). Una
+    //    reserva con alguien inactivo no le avisa a nadie: el resolver de
+    //    correos lo descarta, igual que descartaba 'Por asignar'.
+    var barberos = lecturasDeTabla(js).filter(function(l){ return l.tabla === 'barberos'; });
+    check('lee la tabla barberos una sola vez', barberos.length, 1);
+    check('filtra los profesionales inactivos',
+          barberos.length === 1 && /\.eq\('activo',\s*true\)/.test(barberos[0].resto), true);
+
+    // 3. Aislamiento entre negocios: toda lectura va scopeada. barberias es la
+    //    excepción legítima, se busca por su propio id.
+    var sinScope = lecturasDeTabla(js).filter(function(l){
+      return !/\.eq\('barberia_id'/.test(l.resto) && !/\.eq\('id',\s*BARBERIA_ID\)/.test(l.resto);
+    }).map(function(l){ return l.tabla; });
+    check('toda lectura de tabla va scopeada por negocio' +
+          (sinScope.length ? ' — sueltas: ' + sinScope.join(', ') : ''), sinScope.length, 0);
+
+    // 4. Lo mismo del lado de las RPC: son security definer y bypasean RLS, así
+    //    que el scoping viaja en los argumentos o no existe.
+    var rpcs = argsDeRpc(js);
+    check('hay llamadas a RPC', rpcs.length > 0, true);
+    var rpcSinScope = rpcs.filter(function(r){ return !/p_barberia_id/.test(r.args); })
+                          .map(function(r){ return r.nombre; });
+    check('toda RPC recibe p_barberia_id' +
+          (rpcSinScope.length ? ' — sueltas: ' + rpcSinScope.join(', ') : ''), rpcSinScope.length, 0);
+
+    // 5. El profesional es obligatorio en las tres puertas (168e7c8, 8deb317 y
+    //    la migración de b4ee158). Acá se comprueba que el navegador no volvió a
+    //    abrir la puerta: ni opción "Cualquiera", ni fallback a 'Por asignar'.
+    check('no ofrece "Cualquier profesional"', /Cualquier/i.test(js), false);
+    check('no manda "Por asignar" a la RPC', /Por asignar/i.test(js), false);
+    var reserva = rpcs.filter(function(r){ return /^crear_reserva_publica/.test(r.nombre); });
+    check('llama a la RPC de crear reserva', reserva.length, 1);
+    check('manda el profesional elegido, sin fallback',
+          reserva.length === 1 &&
+          /p_barbero_nombre\s*:\s*\w+\.profesional\.nombre\s*[,}]/.test(reserva[0].args), true);
+
+    // 6. Si al filtrar no queda nadie, el cliente tiene que ver por qué, no una
+    //    grilla vacía con "Continuar" apagado para siempre.
+    check('explica la lista vacía en vez de dejarla muda',
+          /profesionales disponibles por ahora/.test(html), true);
+  });
+
+  pintar();
+}
+
+// Modo automático. Falla con file:// salvo que Chrome corra con
+// --allow-file-access-from-files, y ahí cae al selector de archivo.
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  correr(src);
+}).catch(function(){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (el navegador no me deja leerlos solo)';
+  document.getElementById('archivo').addEventListener('change', function(e){
+    var files = Array.prototype.slice.call(e.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
