@@ -2,7 +2,19 @@
 // Archivos/carpetas que empiezan con "_" dentro de /api no se publican como
 // endpoints en Vercel — solo se pueden importar desde otras funciones.
 
-const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
+// La URL sale de env var para que cada entorno de Vercel apunte a su propia
+// base. El fallback existe solo para que este cambio no dependa de configurar
+// el dashboard antes del deploy: hoy no hay más entorno que producción.
+//
+// CUANDO EXISTA STAGING, HAY QUE SACAR EL FALLBACK. Deja de ser una comodidad
+// y pasa a ser una trampa: un preview sin la env var definida escribiría en la
+// base de la barbería real sin avisar. Es el mismo motivo por el que las
+// páginas no llevan credenciales de producción como respaldo. Mientras tanto,
+// avisa en los logs para que el día que pase quede rastro.
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://dqoqykngmtxtvbokxbzp.supabase.co';
+if (!process.env.SUPABASE_URL) {
+  console.warn('SUPABASE_URL no está definida en el entorno; usando la de producción por defecto.');
+}
 // Las funciones serverless usan la service_role key, nunca la anon key: con
 // RLS activado, la anon key solo ve los datos del negocio dueño de cada fila
 // (o nada, si nadie inició sesión), pero estas funciones necesitan leer la
