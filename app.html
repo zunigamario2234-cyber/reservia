@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reservia</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
@@ -1269,9 +1270,16 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <div class="notif" id="notif"></div>
 
 <script>
-// ⚠️ REEMPLAZA ESTOS CON TUS VALORES DE SUPABASE
-const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+// Las credenciales las define supabase-config.js, cargado en el <head>. Si no
+// llegó, este bloque moriría en la línea de abajo y la página quedaría viva
+// pero inservible: entera en pantalla, con los botones fallando sin decir
+// nada. Se corta acá y se avisa.
+if (typeof SUPABASE_URL === 'undefined') {
+  console.error('supabase-config.js no cargó: SUPABASE_URL y SUPABASE_KEY no están definidas. Revisa que el archivo se esté sirviendo (200) junto a esta página.');
+  document.body.innerHTML = '<div style="font-family:system-ui,-apple-system,sans-serif;color:#e8e6e0;background:#08090d;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;text-align:center;line-height:1.6">No pudimos cargar la página. Intenta de nuevo en unos minutos.</div>';
+  throw new Error('supabase-config.js no cargó');
+}
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global

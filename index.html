@@ -6,6 +6,7 @@
 <title>Reservia — Gestión inteligente para tu negocio</title>
 <meta name="description" content="Agenda, reservas online, CRM de clientes, comisiones por profesional y Club VIP con alianzas — todo en una sola plataforma para barberías, salones, spas y clínicas en Chile.">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
@@ -242,19 +243,32 @@ footer a:hover{color:#e8e8f0}
 </footer>
 
 <script>
-const SUPABASE_URL='https://dqoqykngmtxtvbokxbzp.supabase.co';
-const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
-const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+// Las credenciales las define supabase-config.js, cargado en el <head>.
+//
+// Acá la guarda NO corta la página, al revés que en el resto del sitio: esta
+// landing es contenido estático y lo único que usa de Supabase es el atajo de
+// más abajo. Si el archivo no llegó, el visitante tiene que seguir viendo la
+// landing completa — es la página que capta clientes, y reemplazarla por un
+// mensaje de error sería peor que perder el atajo. Se degrada en silencio,
+// como hace ubicacion-modal.js.
+//
+// En las demás páginas la guarda sí corta, porque sin Supabase no tienen nada
+// que mostrar.
+if (typeof SUPABASE_URL === 'undefined') {
+  console.error('supabase-config.js no cargó: SUPABASE_URL y SUPABASE_KEY no están definidas. La landing sigue funcionando; lo que se pierde es el atajo al panel de un dueño con sesión activa.');
+} else {
+  const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-// Un dueño que ya tiene sesión activa y entra a la raíz va directo al panel,
-// igual que hacía antes ingresar.html (entonces index.html) — no lo dejamos
-// varado viendo la landing.
-(async()=>{
-  try{
-    const {data:{session}} = await sb.auth.getSession();
-    if(session) window.location.replace('app.html');
-  }catch(e){}
-})();
+  // Un dueño que ya tiene sesión activa y entra a la raíz va directo al panel,
+  // igual que hacía antes ingresar.html (entonces index.html) — no lo dejamos
+  // varado viendo la landing.
+  (async()=>{
+    try{
+      const {data:{session}} = await sb.auth.getSession();
+      if(session) window.location.replace('app.html');
+    }catch(e){}
+  })();
+}
 </script>
 </body>
 </html>
