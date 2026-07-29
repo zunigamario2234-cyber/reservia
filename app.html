@@ -2209,10 +2209,12 @@ function renderChecklistServiciosBarbero(barberoId){
 }
 
 // Dar de baja sin borrar. Es lo que corresponde cuando alguien deja el negocio:
-// borrar la ficha desvincula su historial —visitas.barbero_id apunta a perfiles
-// con ON DELETE SET NULL, así que las visitas quedan sin dueño— y además falla
-// con un error crudo de Postgres si tiene bloqueos cargados, porque
-// bloqueos_profesional.profesional_id no declara ON DELETE.
+// borrar la ficha esconde su historial —el panel agrega las visitas por
+// barbero_nombre contra la tarjeta, así que sin tarjeta esas citas y comisiones
+// dejan de verse aunque las filas sigan intactas, y alguien con el mismo nombre
+// las heredaría— y además falla con un error crudo de Postgres si tiene
+// bloqueos cargados, porque bloqueos_profesional.profesional_id no declara
+// ON DELETE.
 //
 // La columna `activo` ya la respetaban las tres lecturas —reservar.html y
 // club.html desde e191046, mi-agenda.html desde antes—; lo único que faltaba
@@ -2236,7 +2238,7 @@ async function eliminarProfesional(id){
   // El confirm ofrece la alternativa ANTES de la acción destructiva: en la
   // mayoría de los casos el dueño no quiere borrar la ficha, quiere que la
   // persona deje de aparecer, y eso es dar de baja.
-  if(!confirm(`¿Eliminar a ${quien}?\n\nSe borra la ficha y su historial de citas queda sin dueño. Si solo dejó de trabajar acá, cancela y usa el interruptor "Activo" de su tarjeta, que conserva todo.`))return;
+  if(!confirm(`¿Eliminar a ${quien}?\n\nSe borra la ficha y sus citas y comisiones dejan de aparecer en el panel. Si solo dejó de trabajar acá, cancela y usa el interruptor "Activo" de su tarjeta, que conserva todo a la vista.`))return;
   const {error}=await sb.from('barberos').delete().eq('id',id);
   if(error){
     // Postgres devuelve el nombre del constraint, que no le dice nada al dueño
