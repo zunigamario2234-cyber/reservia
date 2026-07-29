@@ -421,18 +421,43 @@ function renderServicios(){
     </div>`).join('') || '<p style="color:#555;font-size:13px">No hay servicios disponibles.</p>';
 }
 
+// Un profesional califica para un servicio si tiene la fila activa en
+// barbero_servicios. Misma definición para filtrar la grilla y para decidir si
+// una selección previa sobrevive al cambio de servicio: si fueran criterios
+// distintos, la grilla y el estado se irían separando.
+function profesionalCalifica(prof, servicio){
+  return !!(prof && servicio && B.barberoServicios.some(bs=>
+    bs.barbero_id===prof.id && bs.servicio_id===servicio.id));
+}
+
 function selServicio(id){
   SEL.servicio = B.servicios.find(s=>s.id===id);
   document.querySelectorAll('.servicio-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('sv-'+id).classList.add('selected');
   document.getElementById('btn-s1').disabled = false;
-  // El profesional elegido puede dejar de calificar para el nuevo servicio
-  // — se re-renderiza la grilla filtrada y se limpia cualquier selección
-  // previa del paso 2 para no arrastrar un profesional que ya no aparece.
-  SEL.profesional = null;
-  document.getElementById('btn-s2').disabled = true;
-  document.getElementById('perfil-profesional').style.display = 'none';
+  // El profesional elegido puede dejar de calificar para el nuevo servicio, así
+  // que se limpia la selección y se re-renderiza la grilla filtrada.
+  //
+  // SOLO si dejó de calificar. Antes se limpiaba SIEMPRE, y eso rompía las
+  // reservas que entran por un link con ?profesional=: ahí el paso 2 está
+  // oculto y "Continuar" salta al 3, así que el cliente se quedaba sin ninguna
+  // pantalla donde volver a elegirlo y la reserva moría en irPaso(5) con
+  // "Falta elegir servicio, profesional, fecha u hora". Con un solo profesional
+  // el bug quedaba tapado, porque renderProfesionals() autoselecciona.
+  if(!profesionalCalifica(SEL.profesional, SEL.servicio)){
+    SEL.profesional = null;
+    document.getElementById('btn-s2').disabled = true;
+    document.getElementById('perfil-profesional').style.display = 'none';
+  }
   renderProfesionals();
+  // Si el profesional del link no hace este servicio no se puede seguir
+  // saltando el paso 2: se restaura el flujo normal para que el cliente elija,
+  // y se baja el banner, que quedaría anunciando a alguien que ya no es.
+  if(SALTAR_PROFESIONAL && !SEL.profesional){
+    SALTAR_PROFESIONAL = false;
+    document.getElementById('st-2').style.display = '';
+    document.getElementById('prof-preselec').style.display = 'none';
+  }
 }
 
 // Filtra por barbero_servicios: solo profesionales con ese servicio activo
@@ -452,7 +477,7 @@ function selServicio(id){
 // califican están inactivos — init() ya no los trae.
 function renderProfesionals(){
   const items = SEL.servicio
-    ? B.profesionals.filter(b=>B.barberoServicios.some(bs=>bs.barbero_id===b.id&&bs.servicio_id===SEL.servicio.id))
+    ? B.profesionals.filter(b=>profesionalCalifica(b,SEL.servicio))
     : B.profesionals;
   const cont = document.getElementById('lista-profesionals');
   if(!items.length){
@@ -464,7 +489,11 @@ function renderProfesionals(){
       <div class="profesional-avatar">${b.foto_url?`<img src="${b.foto_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`:'✂'}</div>
       <div class="profesional-nombre">${b.nombre}</div>
     </div>`).join('');
-  if(items.length===1) selProfesional(items[0].id);
+  // Re-pintar la grilla borra la clase 'selected' del DOM, así que la selección
+  // vigente se vuelve a aplicar. Importa sobre todo con ?profesional=, donde el
+  // paso 2 está oculto y la elección solo vive en SEL.
+  if(SEL.profesional && items.some(b=>b.id===SEL.profesional.id)) selProfesional(SEL.profesional.id);
+  else if(items.length===1) selProfesional(items[0].id);
 }
 
 function selProfesional(id){
