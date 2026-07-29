@@ -2231,9 +2231,31 @@ async function toggleProfesionalActivo(id,activo){
 }
 
 async function eliminarProfesional(id){
-  if(!confirm('¿Eliminar este profesional?'))return;
+  const b=S.barberos.find(x=>x.id===id);
+  const quien=b?.nombre||'este profesional';
+  // El confirm ofrece la alternativa ANTES de la acción destructiva: en la
+  // mayoría de los casos el dueño no quiere borrar la ficha, quiere que la
+  // persona deje de aparecer, y eso es dar de baja.
+  if(!confirm(`¿Eliminar a ${quien}?\n\nSe borra la ficha y su historial de citas queda sin dueño. Si solo dejó de trabajar acá, cancela y usa el interruptor "Activo" de su tarjeta, que conserva todo.`))return;
   const {error}=await sb.from('barberos').delete().eq('id',id);
-  if(error){notify(error.message,'err');return;}
+  if(error){
+    // Postgres devuelve el nombre del constraint, que no le dice nada al dueño
+    // y lo manda a buscar el problema donde no está. 23503 es violación de FK,
+    // y el único que puede frenar un borrado acá es bloqueos_profesional:
+    // barbero_servicios cascadea, y visitas ni siquiera apunta a esta tabla
+    // (va contra perfiles, con ON DELETE SET NULL).
+    //
+    // Va por alert() y no por notify(): el toast dura 3s y este mensaje pide
+    // hacer otra cosa, así que tiene que quedarse hasta que lo lean.
+    const msg=error.message||'';
+    if(error.code==='23503'||/foreign key/i.test(msg)){
+      alert(/bloqueos_profesional/.test(msg)
+        ? `No se puede eliminar a ${quien}: tiene bloqueos de horario cargados.\n\nSi dejó el negocio, dalo de baja con el interruptor "Activo" de su tarjeta. Deja de aparecer en la página de reservas y de poder entrar a Mi Agenda, pero conserva sus citas y comisiones.`
+        : `No se puede eliminar a ${quien}: tiene información asociada en el sistema.\n\nSi dejó el negocio, dalo de baja con el interruptor "Activo" de su tarjeta, que conserva su historial.`);
+      return;
+    }
+    notify(msg,'err');return;
+  }
   await loadBarberos();renderProfesionals();notify('Profesional eliminado');
 }
 
