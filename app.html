@@ -2208,6 +2208,28 @@ function renderChecklistServiciosBarbero(barberoId){
   }).join('');
 }
 
+// Dar de baja sin borrar. Es lo que corresponde cuando alguien deja el negocio:
+// borrar la ficha desvincula su historial —visitas.barbero_id apunta a perfiles
+// con ON DELETE SET NULL, así que las visitas quedan sin dueño— y además falla
+// con un error crudo de Postgres si tiene bloqueos cargados, porque
+// bloqueos_profesional.profesional_id no declara ON DELETE.
+//
+// La columna `activo` ya la respetaban las tres lecturas —reservar.html y
+// club.html desde e191046, mi-agenda.html desde antes—; lo único que faltaba
+// era una forma de escribirla. Hasta acá el producto la leía y nunca la ponía.
+async function toggleProfesionalActivo(id,activo){
+  const b=S.barberos.find(x=>x.id===id);
+  if(!activo&&!confirm(`¿Dar de baja a ${b?.nombre||'este profesional'}?\n\nDeja de aparecer en la página de reservas y no podrá entrar a Mi Agenda. Sus citas y comisiones se conservan, y puedes reactivarlo cuando quieras.`)){
+    // El navegador ya movió el checkbox antes de preguntar: re-renderizar lo
+    // devuelve al estado real en vez de dejarlo mintiendo.
+    renderProfesionals();return;
+  }
+  const {error}=await sb.from('barberos').update({activo}).eq('id',id);
+  if(error){notify(error.message,'err');renderProfesionals();return;}
+  await loadBarberos();renderProfesionals();
+  notify(activo?'Profesional reactivado ✓':'Profesional dado de baja');
+}
+
 async function eliminarProfesional(id){
   if(!confirm('¿Eliminar este profesional?'))return;
   const {error}=await sb.from('barberos').delete().eq('id',id);
@@ -3603,11 +3625,11 @@ function renderProfesionals(){
     const avatar=b.foto_url
       ?`<img src="${b.foto_url}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--p1);flex-shrink:0">`
       :`<div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;border:2px solid var(--p1)">👤</div>`;
-    return`<div class="card">
+    return`<div class="card"${b.activo?'':' style="opacity:.55"'}>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
         ${avatar}
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;color:var(--text);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.nombre}</div>
+          <div style="font-weight:600;color:var(--text);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.nombre}${b.activo?'':' <span class="badge b-red" title="No aparece en la página de reservas ni puede entrar a Mi Agenda">De baja</span>'}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:2px">Profesional · ${b.comision_pct||50}% comisión</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
@@ -3622,6 +3644,9 @@ function renderProfesionals(){
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
         ${b.whatsapp?`<a class="btn-wa" href="https://wa.me/${(b.whatsapp||'').replace(/[^0-9]/g,'')}" target="_blank">📱 WhatsApp</a>`:''}
         <button class="btn btn-ghost btn-sm" onclick="copiarLinkProfesional('${b.id}')" title="Copiar link de reserva individual">🔗 Link individual</button>
+        <label class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer" title="Si lo das de baja deja de aparecer en la página de reservas y no puede entrar a Mi Agenda. Sus citas y comisiones se conservan.">
+          <input type="checkbox" ${b.activo?'checked':''} onchange="toggleProfesionalActivo('${b.id}',this.checked)" style="width:auto"> Activo
+        </label>
         ${b.auth_user_id?'<span class="badge b-green" title="Ya tiene cuenta en Mi Agenda">✓ Mi Agenda</span>':`<button class="btn btn-ghost btn-sm" onclick="abrirInvitarProfesional('${b.id}')" title="Crear cuenta de Mi Agenda">👤 Invitar a Mi Agenda</button>`}
       </div>
     </div>`;
