@@ -243,6 +243,39 @@ footer a:hover{color:#e8e8f0}
 </footer>
 
 <script>
+// ─── Enlaces de correo que aterrizan acá por error ───
+//
+// Si Supabase rechaza el redirectTo de un enlace (por ejemplo porque salió de
+// www.mireservia.cl y la lista blanca solo tiene el dominio sin www), NO falla:
+// cae en silencio a la Site URL del proyecto, que es la raíz del sitio. O sea,
+// esta página. Ya pasó con un enlace de recuperación de contraseña.
+//
+// Se reenvía a mi-agenda.html CON el hash intacto, y esto va antes de crear el
+// cliente de Supabase a propósito: el SDK corre con detectSessionInUrl, así que
+// si llega a instanciarse se come el hash, arma una sesión y el enlace queda
+// gastado sin que nadie eligiera contraseña. Redirigiendo antes, mi-agenda.html
+// lo recibe como si el correo lo hubiera apuntado ahí desde el principio.
+//
+// No depende de supabase-config.js: es solo mirar la URL, así que va incluso
+// antes de la guarda de credenciales.
+// Devuelve a dónde reenviar, o null si el hash no es de un enlace de correo.
+// Va aparte y con nombre para poder probarla: corre solo en el camino de error
+// de un enlace, o sea casi nunca, y equivocarse acá no se nota hasta que un
+// profesional no puede entrar.
+function destinoEnlaceDeCorreo(hash){
+  var h = new URLSearchParams((hash || '').replace(/^#/, ''));
+  var tipo = h.get('type');
+  // signup queda afuera: confirmar un alta no es recuperar una contraseña.
+  var esEnlaceCorreo = tipo === 'recovery' || tipo === 'magiclink' || tipo === 'invite';
+  var hayError = h.get('error') || h.get('error_description');
+  return (esEnlaceCorreo || hayError) ? ('mi-agenda.html' + hash) : null;
+}
+
+(function(){
+  var destino = destinoEnlaceDeCorreo(window.location.hash);
+  if(destino) window.location.replace(destino);
+})();
+
 // Las credenciales las define supabase-config.js, cargado en el <head>.
 //
 // Acá la guarda NO corta la página, al revés que en el resto del sitio: esta
@@ -259,13 +292,25 @@ if (typeof SUPABASE_URL === 'undefined') {
 } else {
   const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-  // Un dueño que ya tiene sesión activa y entra a la raíz va directo al panel,
-  // igual que hacía antes ingresar.html (entonces index.html) — no lo dejamos
-  // varado viendo la landing.
+  // Quien ya tiene sesión activa y entra a la raíz va directo a SU panel, sin
+  // quedar varado viendo la landing.
+  //
+  // Antes esto mandaba a app.html a cualquiera con sesión, sin mirar el rol, y
+  // un profesional terminaba en el panel del dueño: RLS le devuelve vacías las
+  // tablas que exigen auth_rol()='dueno' (clientes, visitas, costos, reservas,
+  // comisiones), así que veía un panel ajeno y sin datos. No filtraba nada
+  // privado, pero es el lugar equivocado del sitio.
+  //
+  // perfiles_select_own va por id = auth.uid() y no exige rol, así que esta
+  // lectura funciona igual para dueño y profesional.
   (async()=>{
     try{
       const {data:{session}} = await sb.auth.getSession();
-      if(session) window.location.replace('app.html');
+      if(!session) return;
+      const {data:perfil} = await sb.from('perfiles').select('rol').eq('id',session.user.id).maybeSingle();
+      // Si el perfil no se puede leer se mantiene el destino de siempre:
+      // app.html ya sabe explicar que no encontró el perfil, la landing no.
+      window.location.replace(perfil?.rol==='profesional' ? 'mi-agenda.html' : 'app.html');
     }catch(e){}
   })();
 }

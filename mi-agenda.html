@@ -257,6 +257,15 @@ async function pedirRecuperacion(){
   // redirectTo tiene que estar en Authentication → URL Configuration → Redirect
   // URLs del proyecto. Si no está, el correo igual llega pero el enlace apunta a
   // la Site URL, que es donde venía el localhost:3000 del default.
+  //
+  // ⚠ EL HOST TIENE QUE COINCIDIR EXACTO, Y www CUENTA COMO OTRO HOST.
+  // Ya pasó: con la lista blanca en 'https://mireservia.cl/**' y el profesional
+  // entrando por 'https://www.mireservia.cl', origin quedó con www, Supabase
+  // rechazó el redirectTo sin avisar y el enlace del correo cayó a la Site URL
+  // —la raíz del sitio— en vez de a esta página. La lista tiene que incluir
+  // AMBOS hosts. Se deja window.location.origin y no un dominio fijo para que
+  // el enlace devuelva al profesional al mismo host desde el que pidió el
+  // correo, y para no romper las pruebas fuera de producción.
   const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+'/mi-agenda.html'});
   btn.disabled=false; btn.textContent='¿Olvidaste tu contraseña?';
   if(error){ mostrarLoginError('No se pudo enviar el correo: '+error.message); return; }
