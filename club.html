@@ -297,8 +297,12 @@ function rAhoraEnChile(){
   }
 }
 
-// Gemela de slotsParaDia() en reservar.html — ver ahí el detalle del criterio
-// de exclusión de la colación. Si se toca una, hay que tocar la otra.
+// Gemelas de PASO_MIN, slotsParaDia(), seSolapan(), cierreDelDia(),
+// cabeEnLaJornada() y bloqueoChocaCon() en reservar.html — ver ahí el detalle de
+// por qué el cálculo va por rangos y no por hora exacta. Si se toca una, hay
+// que tocar la otra.
+const R_PASO_MIN = 30;
+
 function rSlotsParaDia(diaSemana){
   const cfg = RB.horario[diaSemana];
   if(!cfg) return R_HORARIOS_BASE.slice();
@@ -308,24 +312,39 @@ function rSlotsParaDia(diaSemana){
   const colIni=rTimeToMin(cfg.hora_colacion_inicio), colFin=rTimeToMin(cfg.hora_colacion_fin);
   const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
   const out=[];
-  for(let m=ini; m<fin; m+=30) if(!enColacion(m)) out.push(rMinToTime(m));
+  for(let m=ini; m<fin; m+=R_PASO_MIN) if(!enColacion(m)) out.push(rMinToTime(m));
   return out;
 }
 
-function rBloqueoCubreSlot(b, hora, fecha, diaSemana){
-  const hMin=rTimeToMin(hora);
+function rSeSolapan(aIni,aDur,bIni,bDur){
+  return aIni < bIni+bDur && bIni < aIni+aDur;
+}
+
+function rCierreDelDia(diaSemana){
+  const cfg = RB.horario[diaSemana];
+  if(!cfg || cfg.cerrado) return null;
+  return rTimeToMin(cfg.hora_cierre);
+}
+
+function rCabeEnLaJornada(hMin, dur, cierre, unidades){
+  if(cierre!=null && hMin+dur > cierre) return false;
+  for(let m=hMin; m<hMin+dur; m+=R_PASO_MIN) if(!unidades.has(m)) return false;
+  return true;
+}
+
+function rBloqueoChocaCon(b, hMin, dur, fecha, diaSemana){
   if(b.tipo==='dia_completo') return b.fecha===fecha;
+  let ini=null, fin=null;
   if(b.tipo==='puntual'){
     if(b.fecha!==fecha) return false;
-    const ini=rTimeToMin(b.hora_inicio), fin=rTimeToMin(b.hora_fin);
-    return ini!=null && fin!=null && hMin>=ini && hMin<fin;
-  }
-  if(b.tipo==='recurrente'){
+    ini=rTimeToMin(b.hora_inicio); fin=rTimeToMin(b.hora_fin);
+  }else if(b.tipo==='recurrente'){
     if(b.dia_semana!==diaSemana) return false;
-    const ini=rTimeToMin(b.hora_inicio), fin=rTimeToMin(b.hora_fin);
-    return ini!=null && fin!=null && hMin>=ini && hMin<fin;
+    ini=rTimeToMin(b.hora_inicio); fin=rTimeToMin(b.hora_fin);
+  }else{
+    return false;
   }
-  return false;
+  return ini!=null && fin!=null && rSeSolapan(hMin,dur,ini,fin-ini);
 }
 
 function rFmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -447,9 +466,10 @@ async function rSelFecha(fecha){
   const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   document.getElementById('r-horarios-titulo').textContent = `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
-  // Misma vista pública reservas_disponibilidad que usa reservar.html — solo
-  // expone hora/profesional/estado, nunca datos del cliente.
-  const {data:ocupadas} = await sb.from('reservas_disponibilidad').select('hora,barbero_nombre').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha).eq('procesado',false);
+  // Misma vista pública reservas_disponibilidad que usa reservar.html — expone
+  // hora, profesional y la duración ya resuelta, nunca datos del cliente. Ver
+  // ahí por qué ya no se filtra por procesado=false.
+  const {data:ocupadas} = await sb.from('reservas_disponibilidad').select('hora,barbero_nombre,duracion_min').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha);
   RB.reservasOcupadas = ocupadas||[];
   rRenderHorarios();
 }
@@ -462,16 +482,23 @@ function rRenderHorarios(){
   const ahora = rAhoraEnChile();
   const esHoy = RSEL.fecha === ahora.fecha;
   const desdeMin = ahora.minutos + R_ANTICIPACION_MIN;
-  const slots = rSlotsParaDia(diaSemana).filter(h => !esHoy || rTimeToMin(h) >= desdeMin);
+  const dur = RSEL.servicio?.duracion_min || 30;
+  const delDia = rSlotsParaDia(diaSemana);
+  const unidades = new Set(delDia.map(rTimeToMin));
+  const cierre = rCierreDelDia(diaSemana);
+  const slots = delDia.filter(h => !esHoy || rTimeToMin(h) >= desdeMin);
   document.getElementById('r-lista-horarios').innerHTML = slots.map(h=>{
+    const hMin = rTimeToMin(h);
+    const cabe = rCabeEnLaJornada(hMin, dur, cierre, unidades);
     const ocupadoPorReserva = RB.reservasOcupadas.some(r=>{
       if(RSEL.profesional && r.barbero_nombre!==RSEL.profesional.nombre) return false;
-      return r.hora && r.hora.startsWith(h);
+      const rMin = rTimeToMin(r.hora);
+      return rMin!=null && rSeSolapan(hMin, dur, rMin, r.duracion_min||30);
     });
     const bloqueado = RSEL.profesional
-      ? RB.bloqueos.some(b=>b.profesional_id===RSEL.profesional.id && rBloqueoCubreSlot(b,h,RSEL.fecha,diaSemana))
-      : RB.bloqueos.some(b=>rBloqueoCubreSlot(b,h,RSEL.fecha,diaSemana));
-    const ocupado = ocupadoPorReserva || bloqueado;
+      ? RB.bloqueos.some(b=>b.profesional_id===RSEL.profesional.id && rBloqueoChocaCon(b,hMin,dur,RSEL.fecha,diaSemana))
+      : RB.bloqueos.some(b=>rBloqueoChocaCon(b,hMin,dur,RSEL.fecha,diaSemana));
+    const ocupado = !cabe || ocupadoPorReserva || bloqueado;
     const sel = h===RSEL.hora;
     return`<button class="horario-btn ${sel?'selected':''}" ${ocupado?'disabled':''} onclick="rSelHora('${h}',event)">${h}</button>`;
   }).join('') || `<div class="no-horarios">${esHoy?'Ya no quedan horarios disponibles para hoy. Elige otro día.':'No hay horarios disponibles.'}</div>`;

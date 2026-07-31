@@ -145,8 +145,75 @@ function ahoraCon(fuente, nombre, isoUtc){
 
 // Config por archivo: las dos páginas son gemelas pero con nombres distintos.
 var NOMBRES = {
-  'reservar.html': { ahora:'ahoraEnChile',  anticip:'ANTICIPACION_MIN',   slots:'slotsParaDia'  },
-  'club.html':     { ahora:'rAhoraEnChile', anticip:'R_ANTICIPACION_MIN', slots:'rSlotsParaDia' }
+  'reservar.html': {
+    ahora:'ahoraEnChile',  anticip:'ANTICIPACION_MIN',
+    estado:'B',  base:'HORARIOS_BASE',   paso:'PASO_MIN',
+    fns:['timeToMin','minToTime','seSolapan','cierreDelDia','cabeEnLaJornada',
+         'bloqueoChocaCon','slotsParaDia']
+  },
+  'club.html': {
+    ahora:'rAhoraEnChile', anticip:'R_ANTICIPACION_MIN',
+    estado:'RB', base:'R_HORARIOS_BASE', paso:'R_PASO_MIN',
+    fns:['rTimeToMin','rMinToTime','rSeSolapan','rCierreDelDia','rCabeEnLaJornada',
+         'rBloqueoChocaCon','rSlotsParaDia']
+  }
+};
+
+// El HORARIOS_BASE real del archivo, no una copia: el fallback tiene un hueco
+// implícito de almuerzo (12:30 → 14:00) y una copia desactualizada probaría otra
+// cosa que la que corre en producción.
+function horariosBase(js, nombre){
+  var m = new RegExp(nombre + '\\s*=\\s*\\[([^\\]]*)\\]').exec(js);
+  if(!m) return null;
+  var out = [], re = /'([^']+)'/g, x;
+  while((x = re.exec(m[1])) !== null) out.push(x[1]);
+  return out;
+}
+
+// Reconstruye las funciones REALES del archivo en un entorno controlado, para
+// poder correr el cálculo contra horarios y reservas inventados. Sin esto solo
+// se puede comprobar que el código "menciona" la duración, no que la use bien —
+// y esa diferencia es justamente la que dejó reservas encimadas en producción.
+function armarSandbox(js, cfg, horario){
+  var fuentes = [];
+  for(var i = 0; i < cfg.fns.length; i++){
+    var f = extraerFuncion(js, cfg.fns[i]);
+    if(f === '') return null;
+    fuentes.push(f);
+  }
+  var mPaso = new RegExp('(?:const|let|var)\\s+' + cfg.paso + '\\s*=\\s*(\\d+)').exec(js);
+  if(!mPaso) return null;
+  var base = horariosBase(js, cfg.base);
+  if(!base) return null;
+  var src = 'var ' + cfg.paso + ' = ' + mPaso[1] + ';\n' +
+            fuentes.join('\n') +
+            '\nreturn [' + cfg.fns.join(',') + '];';
+  var api;
+  try {
+    api = new Function(cfg.estado, cfg.base, src)({ horario: horario }, base);
+  } catch(e){ return null; }
+  return {
+    paso: Number(mPaso[1]),
+    timeToMin: api[0], minToTime: api[1], seSolapan: api[2],
+    cierreDelDia: api[3], cabeEnLaJornada: api[4],
+    bloqueoChocaCon: api[5], slotsParaDia: api[6]
+  };
+}
+
+// Horario de prueba. Los días existen para cubrir casos distintos, no para
+// parecerse a un negocio real.
+var HORARIO_PRUEBA = {
+  // Martes: jornada normal con colación de 14:00 a 15:00.
+  2: { hora_apertura:'09:00', hora_cierre:'19:00',
+       hora_colacion_inicio:'14:00', hora_colacion_fin:'15:00', cerrado:false },
+  // Miércoles: cierre NO alineado a la grilla, para el caso que el conjunto de
+  // unidades no puede ver por sí solo.
+  3: { hora_apertura:'09:00', hora_cierre:'19:20',
+       hora_colacion_inicio:null, hora_colacion_fin:null, cerrado:false },
+  // Domingo cerrado.
+  0: { hora_apertura:'09:00', hora_cierre:'19:00',
+       hora_colacion_inicio:null, hora_colacion_fin:null, cerrado:true }
+  // El jueves (4) NO existe a propósito: es el fallback a HORARIOS_BASE.
 };
 
 function correr(src){
@@ -262,8 +329,8 @@ function correr(src){
 
     //    Y que el filtro esté efectivamente aplicado sobre los slots del día:
     //    tener la función de "ahora" sin usarla es el fallo silencioso obvio.
-    var filtro = new RegExp(N.slots + '\\([^)]*\\)\\s*\\.filter\\(').test(js);
-    check('filtra los slots del día por la hora actual', filtro, true);
+    check('filtra los slots del día por la hora actual',
+          /delDia\s*\.filter\s*\(/.test(js) && /desdeMin/.test(js), true);
     check('el filtro solo aplica al día de hoy', /esHoy/.test(js), true);
 
     //    El calendario tiene que usar la MISMA fuente de "hoy" que la grilla.
@@ -271,6 +338,115 @@ function correr(src){
     check('el calendario ya no compara contra el reloj local',
           /const past = fecha < hoy/.test(js), false);
     check('el calendario usa la fecha chilena', /fechaStr < hoyStr/.test(js), true);
+
+    // 8. La duración del servicio no bloqueaba los horarios siguientes. Un corte
+    //    de 60 min a las 11:30 marcaba ocupado SOLO el slot 11:30, así que un
+    //    segundo cliente reservaba encima. Confirmado en producción.
+    //
+    //    Estos checks corren las funciones REALES del archivo contra un horario
+    //    inventado, así que prueban el cálculo, no su apariencia.
+    var S = armarSandbox(js, N, HORARIO_PRUEBA);
+    check('se puede reconstruir el cálculo de slots', S !== null, true);
+
+    if(S){
+      var MAR = 2, MIE = 3, DOM = 0, JUE = 4;
+      var t = S.timeToMin;
+      var unidadesDe = function(dia){
+        var out = {}, arr = S.slotsParaDia(dia);
+        for(var i=0;i<arr.length;i++) out[t(arr[i])] = true;
+        return { has: function(m){ return out[m] === true; } };
+      };
+
+      //    EL CASO REPORTADO. Reserva de 60 min a las 11:30 → ocupa 11:30-12:30.
+      //    Un servicio de 30 min a las 12:00 se le mete adentro.
+      check('un servicio a las 12:00 choca con una reserva de 60 min de las 11:30',
+            S.seSolapan(t('12:00'), 30, t('11:30'), 60), true);
+
+      //    Y el borde, que es donde viven los off-by-one: la reserva TERMINA a
+      //    las 12:30, así que las 12:30 quedan libres. Bloquearlas sería perder
+      //    una hora vendible cada vez.
+      check('las 12:30 quedan libres: la reserva de 11:30 termina justo ahí',
+            S.seSolapan(t('12:30'), 30, t('11:30'), 60), false);
+
+      //    El solapamiento va en los dos sentidos: el servicio NUEVO también
+      //    puede ser largo y comerse una reserva corta posterior.
+      check('un servicio de 60 min a las 12:00 choca con una reserva de las 12:30',
+            S.seSolapan(t('12:00'), 60, t('12:30'), 30), true);
+      check('dos citas consecutivas que no se tocan conviven',
+            S.seSolapan(t('09:00'), 30, t('09:30'), 30), false);
+
+      //    CIERRE. Un servicio largo cerca del cierre se pasaba de largo.
+      var uMar = unidadesDe(MAR), cMar = S.cierreDelDia(MAR);
+      check('cierre 19:00 — un servicio de 30 min cabe a las 18:30',
+            S.cabeEnLaJornada(t('18:30'), 30, cMar, uMar), true);
+      check('cierre 19:00 — uno de 60 min NO cabe a las 18:30',
+            S.cabeEnLaJornada(t('18:30'), 60, cMar, uMar), false);
+
+      //    COLACIÓN. Antes solo se miraba el inicio, así que un servicio de 60
+      //    min a las 13:30 se metía media hora en el almuerzo.
+      check('colación 14:00 — uno de 30 min cabe a las 13:30',
+            S.cabeEnLaJornada(t('13:30'), 30, cMar, uMar), true);
+      check('colación 14:00 — uno de 60 min NO cabe a las 13:30',
+            S.cabeEnLaJornada(t('13:30'), 60, cMar, uMar), false);
+      check('después de la colación se puede de nuevo',
+            S.cabeEnLaJornada(t('15:00'), 60, cMar, uMar), true);
+
+      //    CIERRE NO ALINEADO A LA GRILLA. Es el hueco que el conjunto de
+      //    unidades no ve solo: la unidad de las 19:00 existe (19:00 < 19:20),
+      //    así que sin el chequeo explícito contra el cierre esto pasaría.
+      var uMie = unidadesDe(MIE), cMie = S.cierreDelDia(MIE);
+      check('la unidad de las 19:00 existe con cierre 19:20',
+            uMie.has(t('19:00')), true);
+      check('cierre 19:20 — uno de 30 min a las 19:00 se pasaría, y se rechaza',
+            S.cabeEnLaJornada(t('19:00'), 30, cMie, uMie), false);
+
+      //    FALLBACK HORARIOS_BASE (día sin fila configurada). No hay hora_cierre
+      //    que consultar, pero la lista trae su propio hueco de almuerzo.
+      check('sin horario configurado hay slots igual', S.slotsParaDia(JUE).length > 0, true);
+      check('sin horario configurado no hay cierre que consultar',
+            S.cierreDelDia(JUE), null);
+      var uJue = unidadesDe(JUE);
+      check('fallback — uno de 30 min cabe a las 12:30',
+            S.cabeEnLaJornada(t('12:30'), 30, null, uJue), true);
+      check('fallback — uno de 60 min a las 12:30 cae en el hueco del almuerzo',
+            S.cabeEnLaJornada(t('12:30'), 60, null, uJue), false);
+
+      //    DÍA CERRADO: no se ofrece nada, pase lo que pase.
+      check('domingo cerrado no genera slots', S.slotsParaDia(DOM).length, 0);
+
+      //    BLOQUEOS. Mismo defecto que la colación: se miraba solo el inicio.
+      var blo = { tipo:'puntual', fecha:'2026-08-04', hora_inicio:'14:00', hora_fin:'15:00' };
+      check('bloqueo 14:00-15:00 — uno de 60 min a las 13:30 choca',
+            S.bloqueoChocaCon(blo, t('13:30'), 60, '2026-08-04', MAR), true);
+      check('bloqueo 14:00-15:00 — uno de 30 min a las 13:30 termina justo antes',
+            S.bloqueoChocaCon(blo, t('13:30'), 30, '2026-08-04', MAR), false);
+      check('bloqueo de otra fecha no afecta',
+            S.bloqueoChocaCon(blo, t('14:00'), 30, '2026-08-05', MAR), false);
+      var bloDia = { tipo:'dia_completo', fecha:'2026-08-04' };
+      check('bloqueo de día completo tapa cualquier hora',
+            S.bloqueoChocaCon(bloDia, t('09:00'), 30, '2026-08-04', MAR), true);
+
+      //    La grilla sigue generándose con el paso esperado.
+      check('el paso de la grilla es de 30 min', S.paso, 30);
+      var mar = S.slotsParaDia(MAR);
+      check('la grilla del martes empieza a las 09:00', mar[0], '09:00');
+      check('la grilla del martes no incluye la colación',
+            mar.indexOf('14:00') === -1 && mar.indexOf('14:30') === -1, true);
+      check('la grilla del martes termina antes del cierre',
+            mar[mar.length-1], '18:30');
+    }
+
+    //    La consulta tiene que pedir la duración, y ya no filtrar por procesado:
+    //    app.html marca procesado=true junto con estado='Atendida', y el dueño
+    //    cobra cuando el cliente se sienta, no cuando se va.
+    var vista = lecturasDeTabla(js).filter(function(l){
+      return l.tabla === 'reservas_disponibilidad';
+    });
+    check('lee la vista de disponibilidad una sola vez', vista.length, 1);
+    check('pide la duración de las reservas existentes',
+          vista.length === 1 && /duracion_min/.test(vista[0].resto), true);
+    check('ya no filtra por procesado',
+          vista.length === 1 && /\.eq\('procesado'/.test(vista[0].resto), false);
   });
 
   pintar();

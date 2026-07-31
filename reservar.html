@@ -285,13 +285,19 @@ function ahoraEnChile(){
   }
 }
 
-// Slots de 30 min para un día de la semana según horario_negocio. Si el
-// negocio no configuró ese día (tabla vacía o falta esa fila puntual), se
-// usa HORARIOS_BASE como antes — para no dejar sin horarios a negocios que
-// todavía no configuraron su horario.
-// La colación es opcional: si las dos columnas vienen nulas, el negocio
-// atiende corrido y no se excluye nada. El slot se descarta cuando EMPIEZA
-// dentro del rango, el mismo criterio que usa bloqueoCubreSlot() más abajo.
+// Cada cuántos minutos arranca un slot. Es el único lugar donde vive el paso de
+// la grilla: cuando el intervalo se haga configurable por negocio, se cambia acá.
+const PASO_MIN = 30;
+
+// Slots para un día de la semana según horario_negocio. Si el negocio no
+// configuró ese día (tabla vacía o falta esa fila puntual), se usa
+// HORARIOS_BASE como antes — para no dejar sin horarios a negocios que todavía
+// no configuraron su horario.
+// La colación es opcional: si las dos columnas vienen nulas, el negocio atiende
+// corrido y no se excluye nada.
+//
+// OJO: esto devuelve dónde PUEDE EMPEZAR una cita, no dónde cabe. Que una cita
+// de 60 min quepa a esa hora lo decide cabeEnLaJornada().
 function slotsParaDia(diaSemana){
   const cfg = B.horario[diaSemana];
   if(!cfg) return HORARIOS_BASE.slice();
@@ -301,25 +307,61 @@ function slotsParaDia(diaSemana){
   const colIni=timeToMin(cfg.hora_colacion_inicio), colFin=timeToMin(cfg.hora_colacion_fin);
   const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
   const out=[];
-  for(let m=ini; m<fin; m+=30) if(!enColacion(m)) out.push(minToTime(m));
+  for(let m=ini; m<fin; m+=PASO_MIN) if(!enColacion(m)) out.push(minToTime(m));
   return out;
 }
 
-// ¿Este bloqueo cubre el slot "hora" (HH:MM) de esa fecha/día de semana?
-function bloqueoCubreSlot(b, hora, fecha, diaSemana){
-  const hMin=timeToMin(hora);
+// ¿Se pisan los intervalos [aIni,aIni+aDur) y [bIni,bIni+bDur)?
+// Este es el criterio que faltaba en todo el cálculo: antes se comparaba solo
+// el INICIO, así que un corte de 60 min a las 11:30 dejaba libres las 12:00 y
+// las 12:30 con el profesional todavía ocupado.
+function seSolapan(aIni,aDur,bIni,bDur){
+  return aIni < bIni+bDur && bIni < aIni+aDur;
+}
+
+// Hora de cierre del día en minutos, o null si el negocio no configuró ese día
+// (ahí manda HORARIOS_BASE y no hay cierre que consultar).
+function cierreDelDia(diaSemana){
+  const cfg = B.horario[diaSemana];
+  if(!cfg || cfg.cerrado) return null;
+  return timeToMin(cfg.hora_cierre);
+}
+
+// ¿Una cita de `dur` minutos que empieza en `hMin` cabe dentro de la jornada?
+// Dos criterios, y hacen falta los dos porque cada uno tapa el hueco del otro:
+//
+//  - Todas las unidades de la grilla que la cita ocupa tienen que existir en el
+//    día. Eso cubre la colación (un servicio de 60 min a las 13:30 con almuerzo
+//    a las 14:00 hoy se ofrece, porque solo se mira el inicio) y cubre el
+//    fallback HORARIOS_BASE, que no tiene hora_cierre que consultar sino un
+//    hueco implícito de 12:30 a 14:00.
+//
+//  - Y el final no puede pasarse del cierre configurado. Hace falta aparte
+//    porque con un cierre no alineado a la grilla —19:20 con pasos de 30— la
+//    unidad de las 19:00 existe, y un servicio de 30 min ahí se saldría 10
+//    minutos sin que el primer criterio lo note.
+function cabeEnLaJornada(hMin, dur, cierre, unidades){
+  if(cierre!=null && hMin+dur > cierre) return false;
+  for(let m=hMin; m<hMin+dur; m+=PASO_MIN) if(!unidades.has(m)) return false;
+  return true;
+}
+
+// ¿Este bloqueo choca con una cita de `dur` minutos que empieza en `hMin`?
+// Antes se preguntaba si el bloqueo cubría el INICIO del slot, así que un
+// bloqueo de 14:00 a 15:00 no impedía un servicio de 60 min a las 13:30.
+function bloqueoChocaCon(b, hMin, dur, fecha, diaSemana){
   if(b.tipo==='dia_completo') return b.fecha===fecha;
+  let ini=null, fin=null;
   if(b.tipo==='puntual'){
     if(b.fecha!==fecha) return false;
-    const ini=timeToMin(b.hora_inicio), fin=timeToMin(b.hora_fin);
-    return ini!=null && fin!=null && hMin>=ini && hMin<fin;
-  }
-  if(b.tipo==='recurrente'){
+    ini=timeToMin(b.hora_inicio); fin=timeToMin(b.hora_fin);
+  }else if(b.tipo==='recurrente'){
     if(b.dia_semana!==diaSemana) return false;
-    const ini=timeToMin(b.hora_inicio), fin=timeToMin(b.hora_fin);
-    return ini!=null && fin!=null && hMin>=ini && hMin<fin;
+    ini=timeToMin(b.hora_inicio); fin=timeToMin(b.hora_fin);
+  }else{
+    return false;
   }
-  return false;
+  return ini!=null && fin!=null && seSolapan(hMin,dur,ini,fin-ini);
 }
 
 // Arma/compara fechas solo con componentes locales (año/mes/día) — nunca vía
@@ -591,8 +633,16 @@ async function selFecha(fecha){
   document.getElementById('horarios-titulo').textContent = `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
   // Cargar reservas existentes para ese día y profesional. Se usa la vista
   // pública reservas_disponibilidad (no la tabla real) para no exponer datos
-  // del cliente a visitantes anónimos — solo expone hora/profesional/estado.
-  let query = sb.from('reservas_disponibilidad').select('hora,barbero_nombre').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha).eq('procesado',false);
+  // del cliente a visitantes anónimos — expone hora, profesional y la duración
+  // ya resuelta, nunca nombre/whatsapp/correo/notas.
+  //
+  // Ya NO se filtra por procesado=false, a propósito: procesarReserva() en
+  // app.html marca procesado=true junto con estado='Atendida', y el dueño suele
+  // cobrar cuando el cliente se sienta, no cuando se va. Con el cálculo por
+  // duración, filtrarlo liberaba los slots siguientes con el profesional
+  // todavía ocupado. Las canceladas las descarta la propia vista, así que todo
+  // lo que llega acá ocupa la silla de verdad.
+  let query = sb.from('reservas_disponibilidad').select('hora,barbero_nombre,duracion_min').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha);
   const {data:ocupadas} = await query;
   B.reservasOcupadas = ocupadas||[];
   renderHorarios();
@@ -607,11 +657,23 @@ function renderHorarios(){
   const ahora = ahoraEnChile();
   const esHoy = SEL.fecha === ahora.fecha;
   const desdeMin = ahora.minutos + ANTICIPACION_MIN;
-  const slots = slotsParaDia(diaSemana).filter(h => !esHoy || timeToMin(h) >= desdeMin);
+  // El servicio se elige en el paso 1, así que acá ya está. El fallback de 30
+  // es la red por si algún camino nuevo llega antes de tiempo, y coincide con
+  // el que usa la vista para las reservas sin servicio.
+  const dur = SEL.servicio?.duracion_min || 30;
+  const delDia = slotsParaDia(diaSemana);
+  const unidades = new Set(delDia.map(timeToMin));
+  const cierre = cierreDelDia(diaSemana);
+  const slots = delDia.filter(h => !esHoy || timeToMin(h) >= desdeMin);
   document.getElementById('lista-horarios').innerHTML = slots.map(h=>{
+    const hMin = timeToMin(h);
+    // La cita ocupa [hMin, hMin+dur). Tiene que caber en la jornada y no pisar
+    // ninguna reserva ni bloqueo del profesional.
+    const cabe = cabeEnLaJornada(hMin, dur, cierre, unidades);
     const ocupadoPorReserva = B.reservasOcupadas.some(r=>{
       if(SEL.profesional && r.barbero_nombre!==SEL.profesional.nombre) return false;
-      return r.hora && r.hora.startsWith(h);
+      const rMin = timeToMin(r.hora);
+      return rMin!=null && seSolapan(hMin, dur, rMin, r.duracion_min||30);
     });
     // Al paso 3 no se llega sin profesional elegido, así que en la práctica
     // siempre se toma la primera rama. La segunda queda como red por si algún
@@ -619,9 +681,9 @@ function renderHorarios(){
     // es el error barato. Antes era el caso normal, cuando existía "Cualquier
     // profesional".
     const bloqueado = SEL.profesional
-      ? B.bloqueos.some(b=>b.profesional_id===SEL.profesional.id && bloqueoCubreSlot(b,h,SEL.fecha,diaSemana))
-      : B.bloqueos.some(b=>bloqueoCubreSlot(b,h,SEL.fecha,diaSemana));
-    const ocupado = ocupadoPorReserva || bloqueado;
+      ? B.bloqueos.some(b=>b.profesional_id===SEL.profesional.id && bloqueoChocaCon(b,hMin,dur,SEL.fecha,diaSemana))
+      : B.bloqueos.some(b=>bloqueoChocaCon(b,hMin,dur,SEL.fecha,diaSemana));
+    const ocupado = !cabe || ocupadoPorReserva || bloqueado;
     const sel = h===SEL.hora;
     return`<button class="horario-btn ${sel?'selected':''}" ${ocupado?'disabled':''} onclick="selHora('${h}')">${h}</button>`;
   }).join('') || `<div class="no-horarios">${esHoy?'Ya no quedan horarios disponibles para hoy. Elige otro día.':'No hay horarios disponibles.'}</div>`;
