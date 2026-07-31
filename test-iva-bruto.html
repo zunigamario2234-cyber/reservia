@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — IVA sobre precio bruto</title>
+
+<!--
+  Red de seguridad para la interpretación de visitas.valor.
+
+  LA REGLA
+  visitas.valor es SIEMPRE el precio que pagó el cliente, CON IVA incluido.
+  El precio sale de la ficha del servicio y ahí el dueño carga el precio de
+  venta, que en Chile va con IVA adentro. Entonces el IVA se EXTRAE
+  (valor*p/(100+p)), nunca se SUMA por fuera (valor*p/100).
+
+  POR QUÉ EXISTE
+  app.html tenía las dos interpretaciones conviviendo:
+    · calcularComision() en modo neto_iva lo extraía de adentro — bien.
+    · el módulo de IVA, los reportes, el dashboard, la tabla de citas y el
+      modal de registrar cita lo sumaban por fuera — mal — y encima rotulaban
+      el bruto como "Valor neto".
+  El error inflaba el IVA débito en p²/(100·(100+p)) del bruto: 3,03% de las
+  ventas con IVA al 19%. Como el débito entra directo en "IVA a pagar SII",
+  era plata declarada de más, verificada contra la base real antes de tocar
+  nada.
+
+  Cinco de esas ocho copias además tenían el 19 hardcodeado e ignoraban el
+  iva_pct configurado del negocio, así que un negocio con otro porcentaje veía
+  cifras que no eran suyas.
+
+  QUÉ COMPRUEBA
+  Corre las funciones REALES extraídas de app.html contra montos elegidos por
+  lo que rompen, y revisa que ninguna pantalla haya vuelto a calcular el IVA
+  por su cuenta.
+
+  ⚠ OJO CON EL FALSO VERDE
+  Con IVA al 19% los dos criterios dan números parecidos —2.970 contra 3.534
+  sobre 18.600— y los dos "se ven razonables" en pantalla. Ningún test que
+  solo mire que el resultado sea un número positivo va a ver la diferencia.
+  Por eso los casos traen el valor esperado calculado a mano, y por eso la
+  sección 4 verifica el porcentaje configurable: es la única forma de
+  distinguir "usa la fórmula correcta" de "tiene 19 escrito en el código".
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md — con Chrome abierto hay una trampa que devuelve salida vacía
+  y parece que pasó.
+
+  Tiene que quedar en la misma carpeta que los HTML: las rutas son relativas.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — IVA sobre precio bruto</h1>
+<p>Verifica que <code>visitas.valor</code> se trate como precio con IVA
+incluido en todas las pantallas de <code>app.html</code>.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer el archivo por mi cuenta.
+  Pásamelo y sigo:</p>
+  <input type="file" id="archivo" accept=".html">
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+function correr(html){
+  var js = sinComentarios(inlineScripts(html).join('\n'));
+
+  // ── 1. Las funciones existen y se pueden correr ─────────────────────────
+  titulo('extracción desde app.html');
+  var fuente = ['ivaPctNegocio','ivaDe','netoDe'].map(function(n){
+    var f = extraerFuncion(js, n);
+    check('define ' + n + '()', f !== '', true);
+    return f;
+  }).join('\n');
+  if(fuente.indexOf('function ivaDe') === -1){ pintar(); return; }
+
+  // S es el estado global de app.html; acá se inyecta uno de mentira para
+  // poder mover el iva_pct del negocio.
+  function conIva(pct){
+    return new Function('S', fuente + '\nreturn {ivaDe:ivaDe, netoDe:netoDe, pct:ivaPctNegocio};')
+           ({ barberia: { iva_pct: pct } });
+  }
+  var F = conIva(19);
+
+  // ── 2. Los montos, calculados a mano ────────────────────────────────────
+  // 18.600 con IVA 19% => IVA = 18600*19/119 = 2969,7... => 2970
+  //                       neto = 18600 - 2970 = 15630
+  // Con la fórmula vieja (18600*0,19) daba 3.534: 564 de más en UNA venta.
+  titulo('extrae el IVA de adentro del precio');
+  check('IVA de 18.600 al 19%',   F.ivaDe(18600),  2970);
+  check('neto de 18.600 al 19%',  F.netoDe(18600), 15630);
+  check('NO es la fórmula vieja (18.600 * 0,19 = 3.534)',
+        F.ivaDe(18600) === 3534, false);
+
+  check('IVA de 10.000 al 19%',   F.ivaDe(10000),  1597);
+  check('neto de 10.000 al 19%',  F.netoDe(10000), 8403);
+
+  // ── 3. El desglose tiene que sumar exacto ───────────────────────────────
+  // Las tablas muestran Neto | IVA | Total en la misma fila. Si el redondeo
+  // se hiciera por separado, la fila no cuadraría y el dueño lo vería.
+  titulo('neto + IVA = lo cobrado, sin descuadre');
+  [0, 1, 999, 1000, 12345, 18600, 33333, 1234567].forEach(function(b){
+    check('cuadra en ' + b, F.netoDe(b) + F.ivaDe(b), b);
+  });
+
+  // ── 4. Respeta el iva_pct del negocio (acá muere el 19 hardcodeado) ─────
+  titulo('usa el porcentaje configurado, no un 19 fijo');
+  var F10 = conIva(10);
+  check('IVA de 11.000 al 10%',  F10.ivaDe(11000),  1000);
+  check('neto de 11.000 al 10%', F10.netoDe(11000), 10000);
+  check('el mismo monto da distinto que al 19%',
+        F10.ivaDe(11000) === F.ivaDe(11000), false);
+
+  // Sin negocio cargado cae a 19, igual que hacía el `||19` de cada copia.
+  var Fsin = new Function('S', fuente + '\nreturn {ivaDe:ivaDe, pct:ivaPctNegocio};')({});
+  check('sin barbería cargada cae a 19', Fsin.pct(), 19);
+  check('iva_pct en 0 también cae a 19', conIva(0).pct(), 19);
+
+  // ── 5. Montos vacíos no rompen ──────────────────────────────────────────
+  titulo('montos vacíos');
+  check('IVA de 0',         F.ivaDe(0),         0);
+  check('IVA de null',      F.ivaDe(null),      0);
+  check('IVA de undefined', F.ivaDe(undefined), 0);
+  check('neto de null',     F.netoDe(null),     0);
+
+  // ── 6. Ninguna pantalla vuelve a calcular el IVA por su cuenta ──────────
+  // LOAD-BEARING: las secciones de arriba prueban la función, no su uso. El
+  // bug original no era una fórmula mal escrita sino ocho copias sueltas.
+  titulo('un solo lugar calcula el IVA');
+  check('el módulo de IVA usa el helper',   /const ivaV=ivaDe\(vBruto\)/.test(js), true);
+  check('suma antes de redondear (como lo ya declarado)',
+        /const vBruto=vMes\.reduce/.test(js), true);
+  check('el dashboard y los reportes usan el helper',
+        (js.match(/const iva=ivaDe\(/g) || []).length >= 3, true);
+  check('las filas de citas y el Excel usan el helper',
+        (js.match(/const iv=ivaDe\(v\.valor\)/g) || []).length >= 2, true);
+  check('el modal de registrar cita desglosa en vez de sumar',
+        /v-neto-calc'\)\.value=fmt\(netoDe\(/.test(js), true);
+
+  // Todo 0.19 que quede tiene que ser de COSTOS, que es otro caso: ahí el
+  // dueño escribe el monto NETO y el sistema le suma el IVA, y la tabla
+  // guarda monto_neto/iva/total por separado.
+  var sueltos = js.split('\n').filter(function(l){
+    return l.indexOf('0.19') !== -1 && !/conIva|co-iva|co-monto/.test(l);
+  });
+  check('no queda ningún 0.19 fuera de costos', sueltos.join(' | '), '');
+
+  // La forma vieja: porcentaje sobre 100 aplicado a un monto de venta.
+  check('no vuelve la división por 100 sobre el valor',
+        /valor\|\|0\)\s*\*\s*\(\(?S\.barberia\?\.iva_pct/.test(js), false);
+
+  // ── 7. calcularComision NO se tocó ──────────────────────────────────────
+  // Ya interpretaba bruto bien, y trabaja con la base sin redondear: pasarla
+  // por netoDe() movería comisiones ya congeladas en visitas.comision_monto.
+  titulo('la comisión queda como estaba');
+  check('sigue extrayendo el IVA con su propia base sin redondear',
+        /base=v-\(v\*ivaPct\/\(100\+ivaPct\)\)/.test(js), true);
+  check('no la pasaron por netoDe()',
+        /base=netoDe\(/.test(js), false);
+
+  // ── 8. Los rótulos dejaron de mentir ────────────────────────────────────
+  titulo('rótulos');
+  check('ya no dice "Valor neto" sobre el bruto', /<th>Valor neto<\/th>/.test(html), false);
+  check('ya no dice "Ventas netas" sobre el bruto', />Ventas netas</.test(html), false);
+  check('ya no ofrece "Total con IVA" sumado aparte', /Total con IVA/.test(html), false);
+  check('ya no hardcodea "IVA 19%" en un encabezado', /<th>IVA 19%<\/th>/.test(html), false);
+
+  pintar();
+}
+
+fetch('app.html').then(function(r){
+  if(!r.ok) throw new Error('app.html respondió HTTP ' + r.status);
+  return r.text();
+}).then(correr).catch(function(){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando app.html… (el navegador no me deja leerlo solo)';
+  document.getElementById('archivo').addEventListener('change', function(e){
+    var f = e.target.files[0];
+    if(!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){ correr(String(fr.result)); };
+    fr.readAsText(f);
+  });
+});
+</script>
+</html>

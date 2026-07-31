@@ -487,7 +487,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
   <div class="card">
     <div class="tbl-wrap">
-      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Neto</th><th>IVA 19%</th><th>Total</th><th>Pago</th><th></th></tr></thead>
+      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Neto</th><th>IVA</th><th>Total</th><th>Pago</th><th></th></tr></thead>
       <tbody id="t-citas"></tbody></table>
     </div>
     <div id="e-citas" class="empty">Sin citas en este periodo.</div>
@@ -778,7 +778,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="card"><div class="card-hdr"><span class="card-title">Ventas por servicio</span></div><div id="rep-por-servicio"></div></div>
     </div>
     <div class="card"><div class="card-hdr"><span class="card-title">Detalle de citas</span><button class="btn btn-ghost btn-sm" onclick="exportarExcel('citas')">📥 Excel</button></div>
-      <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Valor neto</th><th>IVA</th><th>Total</th><th>Pago</th></tr></thead>
+      <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Neto</th><th>IVA</th><th>Total</th><th>Pago</th></tr></thead>
       <tbody id="rep-tabla-citas"></tbody></table></div>
     </div>
   </div>
@@ -970,8 +970,10 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <input type="hidden" id="v-id">
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="v-fecha" type="date"></div><div class="fg"><label>Hora</label><input id="v-hora" type="time"></div></div>
     <div class="fr"><div class="fg"><label>Cliente *</label><select id="v-cliente"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional *</label><select id="v-profesional"><option value="">Seleccionar...</option></select></div></div>
-    <div class="fr"><div class="fg"><label>Servicio *</label><select id="v-servicio" onchange="autoValor()"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Valor neto ($)</label><input id="v-valor" type="number" placeholder="0" oninput="calcIvaV()"></div></div>
-    <div class="fr"><div class="fg"><label>IVA 19%</label><input id="v-iva-calc" readonly></div><div class="fg"><label>Total con IVA</label><input id="v-total-calc" readonly style="color:#d4a853"></div></div>
+    <div class="fr"><div class="fg"><label>Servicio *</label><select id="v-servicio" onchange="autoValor()"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Valor cobrado ($)</label><input id="v-valor" type="number" placeholder="0" oninput="calcIvaV()"></div></div>
+    <!-- El valor que se escribe arriba es lo que paga el cliente, con IVA
+         incluido: estos dos campos lo DESGLOSAN, no le suman nada. -->
+    <div class="fr"><div class="fg"><label>IVA incluido</label><input id="v-iva-calc" readonly></div><div class="fg"><label>Neto (sin IVA)</label><input id="v-neto-calc" readonly style="color:#d4a853"></div></div>
     <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Reserva Web</option><option>WhatsApp</option><option>Instagram</option><option value="Setmore">Setmore (antiguo)</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="v-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="v-notas" rows="2"></textarea></div>
@@ -1451,6 +1453,33 @@ function fmtHora(h){ return h?h.slice(0,5):''; }
 
 // Comisión: modo 'total' (default) = % sobre el precio completo.
 // Modo 'neto_iva' = % sobre el precio menos el IVA incluido, usando el % de IVA configurado del negocio.
+// ─── IVA: visitas.valor SIEMPRE viene con IVA incluido ───────────────────
+// El precio sale de la ficha del servicio, y ahí el dueño carga el precio que
+// le cobra al cliente, que en Chile es con IVA incluido. Así que el IVA está
+// ADENTRO de valor y hay que extraerlo (valor*p/(100+p)), no sumarlo por
+// fuera (valor*p/100).
+//
+// Hasta acá cada pantalla lo resolvía por su cuenta y con dos criterios
+// contradictorios en el mismo archivo: la comisión en modo neto_iva lo
+// extraía de adentro —bien—, mientras que el módulo de IVA, los reportes, el
+// dashboard y la tabla de citas lo sumaban por fuera y rotulaban el bruto
+// como "Valor neto". Eso sobredeclaraba el IVA débito en un 19% (la
+// diferencia es p²/(100·(100+p)) del bruto, ~3,03% de las ventas), y como el
+// débito entra directo en "IVA a pagar SII", era plata.
+//
+// Varias de esas copias además tenían el 19 hardcodeado e ignoraban el
+// iva_pct del negocio. Por eso el cálculo vive en UN solo lugar: es el mismo
+// lugar donde va a enchufarse la elección bruto/neto por negocio cuando se
+// haga.
+//
+// calcularComision() NO usa estas funciones a propósito: ya interpreta bruto
+// bien, y trabaja con la base SIN redondear (redondea recién la comisión).
+// Pasarla por netoDe() redondearía antes y movería comisiones ya congeladas
+// en visitas.comision_monto.
+function ivaPctNegocio(){ return S.barberia?.iva_pct||19; }
+function ivaDe(bruto){ const p=ivaPctNegocio(); return Math.round((bruto||0)*p/(100+p)); }
+function netoDe(bruto){ return (bruto||0)-ivaDe(bruto); }
+
 function calcularComision(valor,pct){
   const v=valor||0, p=pct||0;
   let base=v;
@@ -1583,7 +1612,7 @@ function initModal(id){
     document.getElementById('v-valor').value='';
     document.getElementById('v-notas').value='';
     document.getElementById('v-iva-calc').value='';
-    document.getElementById('v-total-calc').value='';
+    document.getElementById('v-neto-calc').value='';
     document.getElementById('v-estado').value='Atendida';
     sel('v-cliente',S.clientes.map(c=>({v:c.id,t:c.nombre+' '+(c.apellido||'')})));
     sel('v-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})));
@@ -1665,7 +1694,9 @@ function autoValor(){
   const v=document.getElementById('v-servicio').value;
   if(v){const p=v.split('|')[1]; if(p){document.getElementById('v-valor').value=p; calcIvaV();}}
 }
-function calcIvaV(){ const n=parseFloat(document.getElementById('v-valor').value)||0; const iva=Math.round(n*0.19); document.getElementById('v-iva-calc').value=fmt(iva); document.getElementById('v-total-calc').value=fmt(n+iva); }
+// Desglosa lo que paga el cliente. Antes sumaba 19% por fuera y con el
+// porcentaje hardcodeado, así que mostraba un total que nadie iba a cobrar.
+function calcIvaV(){ const b=parseFloat(document.getElementById('v-valor').value)||0; document.getElementById('v-iva-calc').value=fmt(ivaDe(b)); document.getElementById('v-neto-calc').value=fmt(netoDe(b)); }
 function calcIvaCo(){ const n=parseFloat(document.getElementById('co-monto').value)||0; const conIva=document.getElementById('co-iva-opt').value==='si'; const iva=conIva?Math.round(n*0.19):0; document.getElementById('co-iva-val').value=fmt(iva); document.getElementById('co-total-val').value=fmt(n+iva); }
 
 // ─── GUARDAR ───
@@ -3104,7 +3135,7 @@ function renderDashboard(){
   const vPrev=S.visitas.filter(v=>enRango(v.fecha,range.prevFrom,range.prevTo));
   const ventas=vCur.reduce((s,v)=>s+(v.valor||0),0);
   const ventasPrev=vPrev.reduce((s,v)=>s+(v.valor||0),0);
-  const iva=Math.round(ventas*0.19);
+  const iva=ivaDe(ventas);
   const ticket=vCur.length?Math.round(ventas/vCur.length):0;
   const ticketPrev=vPrev.length?Math.round(ventasPrev/vPrev.length):0;
   const nuevosClientes=S.clientes.filter(c=>{const f=c.created_at?c.created_at.split('T')[0]:(c.fecha_registro||null);return f&&enRango(f,range.curFrom,range.curTo);}).length;
@@ -3127,8 +3158,10 @@ function renderDashboard(){
   document.getElementById('d-clientes-sub').innerHTML=nuevosClientes>0?`+${nuevosClientes} nuevos ${range.nombre}`:'Base activa';
   document.getElementById('d-citas').textContent=fmtN(vCur.length);
   document.getElementById('d-citas-sub').innerHTML=deltaHtml(vCur.length,vPrev.length,range.nombrePrev);
-  document.getElementById('d-ventas').textContent=fmt(ventas+iva);
-  document.getElementById('d-ventas-neto').innerHTML='Neto: '+fmt(ventas)+' · '+deltaHtml(ventas,ventasPrev,range.nombrePrev);
+  // `ventas` ya es lo cobrado con IVA: sumarle el IVA otra vez inflaba la
+  // tarjeta. El neto es lo que queda al sacarle el IVA de adentro.
+  document.getElementById('d-ventas').textContent=fmt(ventas);
+  document.getElementById('d-ventas-neto').innerHTML='Neto: '+fmt(ventas-iva)+' · '+deltaHtml(ventas,ventasPrev,range.nombrePrev);
   document.getElementById('d-vip').textContent=fmtN(vips);
   document.getElementById('d-vip-sub').textContent=nivelesOrdenados().map(nv=>nv.nombre).join(' · ')||'Sin niveles configurados';
   document.getElementById('d-inactivos').textContent=fmtN(inact);
@@ -3479,7 +3512,7 @@ function renderVisitas(){
   if(bf)document.getElementById('f-bar-vis').value=bf;
   const list=S.visitas.filter(v=>(!mes||v.fecha?.startsWith(mes))&&(!bf||v.barbero_nombre===bf)).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   const total=list.reduce((s,v)=>s+(v.valor||0),0);
-  const iva=Math.round(total*0.19);
+  const iva=ivaDe(total);
   document.getElementById('v-cnt').textContent=fmtN(list.length);
   document.getElementById('v-bruto').textContent=fmt(total);
   document.getElementById('v-iva').textContent=fmt(iva);
@@ -3487,12 +3520,12 @@ function renderVisitas(){
   document.getElementById('e-citas').style.display=list.length?'none':'';
   tb.innerHTML=list.map(v=>{
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
-    const iv=Math.round((v.valor||0)*0.19);
+    const iv=ivaDe(v.valor);
     return`<tr>
       <td>${v.fecha}${v.hora?' '+fmtHora(v.hora):''}</td>
       <td>${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td>
       <td>${v.servicio||'—'}</td><td>${v.barbero_nombre||'—'}</td>
-      <td>${fmt(v.valor)}</td><td class="gold">${fmt(iv)}</td><td>${fmt((v.valor||0)+iv)}</td>
+      <td>${fmt((v.valor||0)-iv)}</td><td class="gold">${fmt(iv)}</td><td>${fmt(v.valor)}</td>
       <td><span class="badge b-green">${v.metodo_pago||'—'}</span></td>
       <td><button class="btn btn-danger btn-sm" onclick="eliminar('citas','${v.id}',loadVisitas,renderVisitas)">×</button></td>
     </tr>`;
@@ -3678,12 +3711,14 @@ function renderCostos(){
   // IVA
   const mes=mesActual();
   const vMes=S.visitas.filter(v=>v.fecha?.startsWith(mes));
-  const vNeto=vMes.reduce((s,v)=>s+(v.valor||0),0);
-  const ivaV=Math.round(vNeto*(S.barberia?.iva_pct||19)/100);
+  // Suma primero y redondea una sola vez al final, igual que antes: si se
+  // redondeara por visita los totales no cuadrarían con lo ya declarado.
+  const vBruto=vMes.reduce((s,v)=>s+(v.valor||0),0);
+  const ivaV=ivaDe(vBruto);
   const cMes=S.costos.filter(c=>c.fecha?.startsWith(mes));
   const ivaC=cMes.reduce((s,c)=>s+(c.iva||0),0);
   const ivaPagar=ivaV-ivaC;
-  document.getElementById('iva-ventas').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Ventas netas</span><span>${fmt(vNeto)}</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA débito</span><span class="gold">${fmt(ivaV)}</span></div>`;
+  document.getElementById('iva-ventas').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Ventas cobradas</span><span>${fmt(vBruto)}</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA débito</span><span class="gold">${fmt(ivaV)}</span></div>`;
   document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${cMes.filter(c=>c.iva>0).length} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
   // Comisiones
@@ -3720,7 +3755,7 @@ function renderProfesionals(){
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Citas este mes</span><span style="font-weight:600">${vs.length}/${meta}</span></div>
       <div class="bar-h"><div class="bar-fill" style="width:${pct.toFixed(0)}%"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Ventas netas</span><span>${fmt(ventas)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Ventas cobradas</span><span>${fmt(ventas)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Comisión</span><span class="gold">${fmt(com)}</span></div>
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
         ${b.whatsapp?`<a class="btn-wa" href="https://wa.me/${(b.whatsapp||'').replace(/[^0-9]/g,'')}" target="_blank">📱 WhatsApp</a>`:''}
@@ -4181,14 +4216,14 @@ function renderReporteResumen(){
   const mesFin=document.getElementById('rep-mes-fin').value;
   const citas=getRepCitas(mesIni,mesFin);
   const ventas=citas.reduce((s,v)=>s+(v.valor||0),0);
-  const iva=Math.round(ventas*((S.barberia?.iva_pct||19)/100));
+  const iva=ivaDe(ventas);
   const ticket=citas.length?Math.round(ventas/citas.length):0;
   const clientes=new Set(citas.map(v=>v.cliente_id)).size;
 
   document.getElementById('rep-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Total citas</div><div class="mc-val">${citas.length}</div></div>
-    <div class="mc"><div class="mc-label">Ventas netas</div><div class="mc-val">${fmt(ventas)}</div></div>
-    <div class="mc"><div class="mc-label">IVA generado</div><div class="mc-val gold">${fmt(iva)}</div></div>
+    <div class="mc"><div class="mc-label">Ventas cobradas</div><div class="mc-val">${fmt(ventas)}</div></div>
+    <div class="mc"><div class="mc-label">IVA incluido</div><div class="mc-val gold">${fmt(iva)}</div></div>
     <div class="mc"><div class="mc-label">Ticket promedio</div><div class="mc-val">${fmt(ticket)}</div></div>`;
 
   // Evolución mensual
@@ -4216,8 +4251,8 @@ function renderReporteResumen(){
   // Tabla citas
   document.getElementById('rep-tabla-citas').innerHTML=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
     const cl=S.clientes.find(c=>c.id===v.cliente_id);
-    const iv=Math.round((v.valor||0)*((S.barberia?.iva_pct||19)/100));
-    return`<tr><td data-label="Fecha">${v.fecha}</td><td data-label="Cliente">${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td data-label="Servicio">${v.servicio||'—'}</td><td data-label="Profesional">${v.barbero_nombre||'—'}</td><td data-label="Valor neto">${fmt(v.valor)}</td><td data-label="IVA" class="gold">${fmt(iv)}</td><td data-label="Total">${fmt((v.valor||0)+iv)}</td><td data-label="Pago">${v.metodo_pago||'—'}</td></tr>`;
+    const iv=ivaDe(v.valor);
+    return`<tr><td data-label="Fecha">${v.fecha}</td><td data-label="Cliente">${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td data-label="Servicio">${v.servicio||'—'}</td><td data-label="Profesional">${v.barbero_nombre||'—'}</td><td data-label="Neto">${fmt((v.valor||0)-iv)}</td><td data-label="IVA" class="gold">${fmt(iv)}</td><td data-label="Total">${fmt(v.valor)}</td><td data-label="Pago">${v.metodo_pago||'—'}</td></tr>`;
   }).join('')||'<tr><td colspan="8" class="empty">Sin citas</td></tr>';
 }
 
@@ -4364,8 +4399,8 @@ function exportarExcel(tipo){
     const citas=getRepCitas(mesIni,mesFin);
     data=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
       const cl=S.clientes.find(c=>c.id===v.cliente_id);
-      const iv=Math.round((v.valor||0)*((S.barberia?.iva_pct||19)/100));
-      return{Fecha:v.fecha,Cliente:cl?cl.nombre+' '+(cl.apellido||''):'—',Servicio:v.servicio||'—',Profesional:v.barbero_nombre||'—','Valor neto':v.valor||0,'IVA':iv,'Total con IVA':(v.valor||0)+iv,'Método pago':v.metodo_pago||'—'};
+      const iv=ivaDe(v.valor);
+      return{Fecha:v.fecha,Cliente:cl?cl.nombre+' '+(cl.apellido||''):'—',Servicio:v.servicio||'—',Profesional:v.barbero_nombre||'—','Neto':(v.valor||0)-iv,'IVA':iv,'Total cobrado':v.valor||0,'Método pago':v.metodo_pago||'—'};
     });
     nombre='citas_'+ahoraEnChile().fecha;
   }
