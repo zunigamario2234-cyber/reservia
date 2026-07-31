@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — desglose del cobro</title>
+
+<!--
+  Red de seguridad para el modal m-cobro: precio editable, descuento y propina.
+
+  LA REGLA QUE PROTEGE
+  `valor` es lo cobrado por el SERVICIO, bruto (con IVA incluido), ya
+  descontado y SIN propina. La propina va en su propia columna. Si algún día
+  alguien la suma a `valor` para que "el total quede bien", pasan dos cosas a
+  la vez y ninguna se ve en pantalla: se declara IVA sobre plata que no es
+  venta, y la propina entra al reparto de comisión. Las dos son plata, y las
+  dos son invisibles hasta que alguien cuadra los números a mano.
+
+  POR QUÉ EXISTE
+  Antes del modal, los cuatro botones de método de pago cobraban al PRIMER
+  clic con el precio de lista, sin confirmación y sin poder tocar el monto.
+  Por eso las reservas cobradas en físico con otro precio quedaban atascadas
+  en "Confirmada" sin procesar: el sistema no sabía registrar el monto real.
+
+  QUÉ COMPRUEBA
+  Corre las funciones REALES extraídas de app.html contra inputs REALES del
+  DOM: escribe en los campos, dispara los mismos handlers que el dueño
+  dispara al hacer clic, y lee lo que queda en pantalla. La parte que toca
+  Supabase no se puede correr acá, así que esa se verifica sobre el texto del
+  archivo — que es donde vive la decisión de qué columna recibe qué.
+
+  ⚠ OJO CON EL FALSO VERDE
+  Todos los montos de este test son verosímiles: 15.000, 12.750, 1.275. Un
+  test que solo comprobara "es un número positivo" pasaría con la propina
+  sumada dentro de valor, con el descuento al revés y con el IVA sumado por
+  fuera. Por eso cada caso trae el resultado calculado a mano, y por eso la
+  sección 5 mira el insert real: la mitad de las decisiones de este diseño no
+  son una fórmula, son en qué columna cae cada peso.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md — con Chrome abierto hay una trampa que devuelve salida vacía
+  y parece que pasó.
+
+  Tiene que quedar en la misma carpeta que los HTML: las rutas son relativas.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#banco{position:absolute;left:-9999px}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — desglose del cobro</h1>
+<p>Verifica precio, descuento y propina del modal <code>m-cobro</code>, y que
+la propina nunca entre en <code>valor</code>.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer el archivo por mi cuenta.
+  Pásamelo y sigo:</p>
+  <input type="file" id="archivo" accept=".html">
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<!-- Los mismos ids que usa el modal real. -->
+<div id="banco">
+  <input id="cob-desc-pct"><input id="cob-final"><input id="cob-propina">
+  <span id="cob-desc-monto"></span><span id="cob-total"></span><span id="cob-desglose"></span>
+</div>
+
+<script>
+'use strict';
+
+var lineas=[],fallos=0,comprobaciones=0;
+function titulo(t){ lineas.push('',t,'─'.repeat(t.length)); }
+function check(nombre,real,esperado){
+  comprobaciones++;
+  var ok=(real===esperado);
+  if(!ok)fallos++;
+  lineas.push((ok?'OK   ':'FALLO')+' │ '+nombre);
+  if(!ok){ lineas.push('      │   esperado: '+esperado); lineas.push('      │   obtenido: '+real); }
+}
+function pintar(){
+  var fin=fallos===0
+    ? '\n\n>>> TODO OK — '+comprobaciones+' comprobaciones'
+    : '\n\n>>> '+fallos+' FALLO(S) de '+comprobaciones+' comprobaciones';
+  var pre=document.getElementById('resultado');
+  pre.textContent=lineas.join('\n')+fin;
+  pre.className=fallos===0?'ok':'fail';
+}
+function inlineScripts(html){
+  var re=/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi,m,o=[];
+  while((m=re.exec(html))!==null){ if(m[1].trim())o.push(m[1]); }
+  return o;
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^[ \t]*\/\/.*$/gm,'');
+}
+function extraerFuncion(js,nombre){
+  var i=js.indexOf('function '+nombre+'(');
+  if(i===-1)return '';
+  var ini=js.indexOf('{',i),prof=0;
+  for(var k=ini;k<js.length;k++){
+    if(js[k]==='{')prof++;
+    else if(js[k]==='}'){ prof--; if(prof===0)return js.slice(i,k+1); }
+  }
+  return '';
+}
+function val(id){ return document.getElementById(id).value; }
+function txt(id){ return document.getElementById(id).textContent; }
+
+function correr(html){
+  var js=sinComentarios(inlineScripts(html).join('\n'));
+
+  // ── 1. Extracción ───────────────────────────────────────────────────────
+  titulo('extracción desde app.html');
+  var FN=['ivaPctNegocio','ivaDe','netoDe','fmt','resolveServicioPrecio',
+          'cobroDescuento','cobroDescuentoEditado','cobroPrecioEditado',
+          'cobroPropina','cobroPropinaEditada','cobroRecalcular'];
+  var fuente=FN.map(function(n){
+    var f=extraerFuncion(js,n);
+    check('define '+n+'()',f!=='',true);
+    return f;
+  }).join('\n');
+  var decls=(js.match(/^[ \t]*(?:const|let)[ \t]+(?:DESCUENTO_TRAMOS|PROPINA_TRAMOS|COBRO_CTX)[^\n]*$/gm)||[]).join('\n');
+  check('define los tramos y el contexto',decls!=='',true);
+  if(fuente.indexOf('function cobroRecalcular')===-1){ pintar(); return; }
+
+  var M=new Function('S',decls+'\n'+fuente+
+    '\nreturn {setCtx:function(c){COBRO_CTX=c;},getCtx:function(){return COBRO_CTX;},'+
+    ' resolveServicioPrecio:resolveServicioPrecio,'+
+    ' cobroDescuento:cobroDescuento,cobroDescuentoEditado:cobroDescuentoEditado,'+
+    ' cobroPrecioEditado:cobroPrecioEditado,cobroPropina:cobroPropina,'+
+    ' cobroPropinaEditada:cobroPropinaEditada,cobroRecalcular:cobroRecalcular,'+
+    ' ivaDe:ivaDe,netoDe:netoDe,'+
+    ' TRAMOS_D:DESCUENTO_TRAMOS,TRAMOS_P:PROPINA_TRAMOS};'
+  )({
+    barberia:{iva_pct:19},
+    servicios:[{id:'sv-1',nombre:'Corte clásico',precio:15000},
+               {id:'sv-2',nombre:'Barba',precio:8000}]
+  });
+
+  function arrancar(lista){
+    M.setCtx({reservaId:'r-1',lista:lista,descPct:null,propinaPct:null});
+    document.getElementById('cob-desc-pct').value='';
+    document.getElementById('cob-final').value=lista||'';
+    document.getElementById('cob-propina').value='';
+    M.cobroRecalcular();
+  }
+
+  // ── 2. Resolución del servicio (la trampa del cobro en $0) ──────────────
+  titulo('resolver el servicio');
+  check('por id',           M.resolveServicioPrecio('sv-1').como, 'id');
+  check('por nombre exacto',M.resolveServicioPrecio('Corte clásico').como, 'nombre');
+  check('normalizado (mayúsculas y espacios)',
+        M.resolveServicioPrecio('  CORTE CLÁSICO ').como, 'normalizado');
+  check('trae el precio correcto',
+        M.resolveServicioPrecio('  CORTE CLÁSICO ').sv.precio, 15000);
+  check('servicio inexistente no matchea',
+        M.resolveServicioPrecio('Servicio Borrado').sv, null);
+  check('servicio vacío no matchea', M.resolveServicioPrecio('').sv, null);
+
+  // ── 3. Descuento ────────────────────────────────────────────────────────
+  // 15.000 con 15% => descuento 2.250 => precio final 12.750
+  titulo('descuento');
+  arrancar(15000);
+  check('arranca en el precio de lista', val('cob-final'), '15000');
+  M.cobroDescuento(15);
+  check('15% deja el precio final en 12.750', val('cob-final'), '12750');
+  check('muestra el descuento en plata', txt('cob-desc-monto'), '−$2.250');
+  check('recuerda el % para guardarlo', M.getCtx().descPct, 15);
+
+  M.cobroDescuento(0);
+  check('"sin descuento" vuelve al precio de lista', val('cob-final'), '15000');
+  check('y borra el % guardado', M.getCtx().descPct, null);
+
+  // El precio final MANDA: editarlo a mano descarta el %, porque un % que ya
+  // no explica el monto sería una mentira guardada en la base.
+  M.cobroDescuento(20);
+  document.getElementById('cob-final').value='11000';
+  M.cobroPrecioEditado();
+  check('editar el precio a mano borra el % guardado', M.getCtx().descPct, null);
+  check('y limpia el campo de %', val('cob-desc-pct'), '');
+  check('el precio escrito manda', val('cob-final'), '11000');
+  check('el descuento se deduce del precio', txt('cob-desc-monto'), '−$4.000');
+
+  // ── 4. Propina ──────────────────────────────────────────────────────────
+  // Sobre el precio FINAL, no sobre el de lista: 10% de 12.750 = 1.275.
+  titulo('propina');
+  arrancar(15000);
+  M.cobroDescuento(15);
+  M.cobroPropina(10);
+  check('10% sobre el precio final, no sobre el de lista', val('cob-propina'), '1275');
+  check('recuerda el tramo elegido', M.getCtx().propinaPct, 10);
+  check('el total suma servicio + propina', txt('cob-total'), '$14.025');
+
+  M.cobroPropina(0);
+  check('"sin propina" limpia el monto', val('cob-propina'), '');
+  check('y borra el tramo', M.getCtx().propinaPct, null);
+  check('el total vuelve al precio del servicio', txt('cob-total'), '$12.750');
+
+  document.getElementById('cob-propina').value='2000';
+  M.cobroPropinaEditada();
+  check('un monto a mano no guarda tramo', M.getCtx().propinaPct, null);
+  check('y entra igual al total', txt('cob-total'), '$14.750');
+
+  check('los tramos ofrecidos son 5/10/15/20 más el cero',
+        M.TRAMOS_P.join(','), '0,5,10,15,20');
+
+  // ── 5. La propina NO toca el IVA ────────────────────────────────────────
+  // LOAD-BEARING. El IVA se calcula sobre el servicio, nunca sobre el total
+  // cobrado. Con propina de 2.000 el total es 14.750, pero el IVA sigue
+  // siendo el de 12.750.
+  titulo('el IVA mira el servicio, no el total cobrado');
+  check('IVA del servicio con descuento', M.ivaDe(12750), 2036);
+  check('neto del servicio con descuento', M.netoDe(12750), 10714);
+  check('el desglose en pantalla muestra el IVA del servicio',
+        txt('cob-desglose').indexOf('$2.036')!==-1, true);
+  check('y NO el IVA del total con propina (que sería $2.355)',
+        txt('cob-desglose').indexOf('$2.355')!==-1, false);
+
+  // ── 6. Dónde cae cada peso (sobre el texto del insert) ──────────────────
+  // Esta parte no se puede ejecutar sin Supabase, pero es donde vive la mitad
+  // de las decisiones del diseño.
+  titulo('el insert manda cada cosa a su columna');
+  check('procesarReserva recibe el desglose ya decidido',
+        /async function procesarReserva\(id,metodoPago,d\)/.test(js), true);
+  check('guarda la propina en su propia columna',
+        /\n\s*propina,/.test(js), true);
+  check('guarda las cuatro columnas del desglose',
+        /precio_lista:d\?\.precio_lista/.test(js)
+        && /descuento_pct:d\?\.descuento_pct/.test(js)
+        && /descuento_monto:d\?\.descuento_monto/.test(js)
+        && /propina_pct:d\?\.propina_pct/.test(js), true);
+  // Mira la COLUMNA valor, no cualquier suma: fmt(valor+propina) es el total
+  // a cobrar en pantalla y ahí sumar la propina es lo correcto. Lo que no
+  // puede pasar es que el insert mande valor: algo-con-propina.
+  check('NUNCA suma la propina dentro de la columna valor',
+        /valor:[^,}\n]*propina/.test(js), false);
+  check('el insert manda el valor del servicio tal cual',
+        /estado:'Atendida',comision_monto,metodo_pago/.test(js)
+        && /hora:r\.hora,/.test(js), true);
+  check('la comisión se calcula sobre el valor cobrado',
+        /calcularComision\(valor,barObj\?\.comision_pct\|\|50\)/.test(js), true);
+  check('el descuento nunca queda negativo (el check de la base lo rechaza)',
+        /Math\.max\(0,lista-valor\)/.test(js), true);
+  check('sin precio de lista no se inventa uno',
+        /precio_lista:\s*lista>0\?lista:null/.test(js), true);
+
+  // Si la visita no entra, la reserva NO puede quedar marcada: antes el
+  // insert se hacía sin mirar el error y el cobro desaparecía.
+  check('no marca la reserva si el insert falló',
+        /if\(error\)\{notify\(error\.message,'err'\);return false;\}/.test(js), true);
+
+  // ── 7. Los otros lectores ───────────────────────────────────────────────
+  titulo('reportes y edición');
+  check('el agregado por profesional acumula propinas aparte',
+        /propinas:0/.test(js) && /byP\[p\]\.propinas\+=prop/.test(js), true);
+  check('editar el monto a mano limpia el desglose',
+        /precio_lista:null,descuento_pct:null,descuento_monto:null/.test(js), true);
+  check('pero NO borra la propina al editar el monto',
+        /precio_lista:null,descuento_pct:null,descuento_monto:null,propina:null/.test(js), false);
+
+  // ── 8. El selector viejo no volvió ──────────────────────────────────────
+  // Cobrar es irreversible: no puede colgar de un clic en una tabla.
+  titulo('no vuelve el cobro de un clic');
+  check('no quedan botones que cobren directo desde la tabla',
+        /onclick="procesarReserva\('/.test(html), false);
+  check('la tabla abre el modal', /onclick="abrirCobro\('/.test(html), true);
+
+  pintar();
+}
+
+fetch('app.html').then(function(r){
+  if(!r.ok)throw new Error('app.html respondió HTTP '+r.status);
+  return r.text();
+}).then(correr).catch(function(){
+  document.getElementById('manual').style.display='block';
+  document.getElementById('resultado').textContent=
+    'Esperando app.html… (el navegador no me deja leerlo solo)';
+  document.getElementById('archivo').addEventListener('change',function(e){
+    var f=e.target.files[0]; if(!f)return;
+    var fr=new FileReader();
+    fr.onload=function(){ correr(String(fr.result)); };
+    fr.readAsText(f);
+  });
+});
+</script>
+</html>

@@ -605,7 +605,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card"><div class="card-hdr"><span class="card-title">Resultado IVA mensual</span></div><div id="iva-resultado"></div></div>
   </div>
   <div id="tc-com" style="display:none">
-    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Para negocio</th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
     <tbody id="t-comisiones"></tbody></table></div></div>
   </div>
 </div>
@@ -800,7 +800,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="g3" id="rep-prof-metrics"></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Comisiones por profesional</span></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
+      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Totales por método de pago</span></div>
@@ -1022,20 +1022,63 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="rm-footer" id="rm-footer-normal" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarReserva()">Guardar reserva</button>
       <button class="btn btn-ghost" onclick="closeM('m-reserva')">Cancelar</button>
-      <button id="r-btn-pagar" class="btn btn-primary" style="display:none;margin-left:auto" onclick="togglePagoModal()">Pagar</button>
+      <!-- Abre m-cobro ENCIMA de este modal. El apilamiento lo resuelve openM
+           desde el arreglo del recorte de foto; antes esto habría quedado
+           tapado. -->
+      <button id="r-btn-pagar" class="btn btn-primary" style="display:none;margin-left:auto" onclick="abrirCobro(document.getElementById('r-id').value)">Cobrar</button>
       <button id="r-btn-eliminar" class="btn btn-danger" style="display:none" onclick="eliminarReservaModal(document.getElementById('r-id').value)">Eliminar reserva</button>
-    </div>
-    <div class="rm-footer" id="rm-footer-pago" style="display:none;gap:8px;margin-top:6px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Efectivo')">Efectivo</button>
-      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Transferencia')">Transferencia</button>
-      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Débito')">Débito</button>
-      <button class="btn btn-primary btn-sm" onclick="procesarReserva(document.getElementById('r-id').value,'Crédito')">Crédito</button>
-      <button class="btn btn-ghost btn-sm" onclick="togglePagoModal()">Cancelar</button>
     </div>
   </div>
 </div>
 
 <!-- Costo -->
+<!-- Cobro con desglose (precio, descuento, propina) — ver abrirCobro().
+     Se abre desde la tabla de Reservas y también DESDE m-reserva, o sea un
+     modal sobre otro modal: eso funciona gracias a la pila de openM(). -->
+<div class="overlay" id="m-cobro">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hdr"><span class="modal-title">Cobrar</span><button class="xbtn" onclick="closeM('m-cobro')">×</button></div>
+
+    <div id="cob-resumen" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px"></div>
+    <div id="cob-aviso-precio" style="display:none;background:rgba(224,80,80,0.12);border:0.5px solid #e05050;color:#ff8f8f;border-radius:8px;padding:10px;font-size:11px;line-height:1.5;margin-bottom:12px"></div>
+
+    <div class="fg"><label>Precio de lista</label><input id="cob-lista" type="text" readonly></div>
+
+    <div class="fg">
+      <label>Descuento</label>
+      <div id="cob-desc-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="cob-desc-pct" type="number" min="0" max="100" placeholder="0" oninput="cobroDescuentoEditado()" style="max-width:90px">
+        <span style="font-size:12px;color:var(--text3)">%</span>
+        <span id="cob-desc-monto" style="font-size:12px;color:var(--text3);margin-left:auto"></span>
+      </div>
+    </div>
+
+    <!-- El precio final MANDA: el % de arriba lo escribe, pero si lo editas a
+         mano el % se descarta (no se puede guardar un % que ya no explica el
+         monto). -->
+    <div class="fg"><label>Precio final ($)</label><input id="cob-final" type="number" min="0" oninput="cobroPrecioEditado()"></div>
+
+    <div class="fg">
+      <label>Propina</label>
+      <div id="cob-prop-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
+      <input id="cob-propina" type="number" min="0" placeholder="0" oninput="cobroPropinaEditada()">
+    </div>
+
+    <div style="background:var(--bg2);border-radius:10px;padding:12px;margin:14px 0">
+      <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700"><span>Total a cobrar</span><span id="cob-total" class="gold">$0</span></div>
+      <div id="cob-desglose" style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:6px"></div>
+    </div>
+
+    <div class="fg"><label>Método de pago</label><select id="cob-metodo"></select></div>
+
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" id="cob-btn" onclick="confirmarCobro()">Registrar cobro</button>
+      <button class="btn btn-ghost" onclick="closeM('m-cobro')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="m-costo">
   <div class="modal">
     <div class="modal-hdr"><span class="modal-title">Agregar gasto</span><button class="xbtn" onclick="closeM('m-costo')">×</button></div>
@@ -1514,9 +1557,13 @@ function agregarComisionesPorProfesional(citas){
     const bar=S.barberos.find(b=>b.nombre===p);
     const pct=bar?.comision_pct||50;
     const com=v.comision_monto??calcularComision(v.valor,pct);
+    // La propina va ENTERA al profesional, fuera del reparto: se acumula
+    // aparte porque el dueño le debe comisión + propina. Sumarla a la
+    // comisión escondería de dónde viene cada peso.
+    const prop=v.propina||0;
     const sNombre=resolveServicioInfo(v.servicio).nombre;
-    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,pct,servicios:{}};
-    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;
+    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,propinas:0,pct,servicios:{}};
+    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;byP[p].propinas+=prop;
     if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0,com:0};
     byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);byP[p].servicios[sNombre].com+=com;
   });
@@ -1640,7 +1687,6 @@ function initModal(id){
     document.getElementById('r-btn-pagar').style.display='none';
     document.getElementById('r-procesado').value='0';
     document.getElementById('rm-footer-normal').style.display='flex';
-    document.getElementById('rm-footer-pago').style.display='none';
     document.getElementById('rn-canal').value='Directo';
     sel('rn-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
   }
@@ -2003,6 +2049,14 @@ async function guardarCita(){
   };
   let error;
   if(id){
+    // Editar el monto a mano invalida el desglose que dejó m-cobro: precio de
+    // lista y descuento dejarían de explicar el valor y nadie se enteraría.
+    // Se limpia en vez de mentir — por eso la base NO lleva un CHECK de la
+    // invariante, que acá reventaría con un error crudo de Postgres.
+    // La propina no se toca: es plata del profesional y no depende del precio
+    // del servicio.
+    const prev=S.visitas.find(x=>x.id===id);
+    if(prev&&(prev.valor||0)!==val) Object.assign(payload,{precio_lista:null,descuento_pct:null,descuento_monto:null});
     ({error}=await sb.from('visitas').update(payload).eq('id',id));
   } else {
     ({error}=await sb.from('visitas').insert({barberia_id:S.barberia.id,...payload}));
@@ -2914,8 +2968,13 @@ async function eliminarReservaModal(id){
   if(await eliminar('reservas',id,loadReservas,renderReservas))closeM('m-reserva');
 }
 
-async function procesarReserva(id,metodoPago){
-  const r=S.reservas.find(x=>x.id===id); if(!r)return;
+// Ejecuta el cobro. El monto y el desglose YA vienen decididos por m-cobro
+// (ver confirmarCobro()): acá no se resuelve ningún precio. Antes esta función
+// tomaba el precio del servicio por su cuenta y no había forma de cobrar otra
+// cosa, que es lo que dejaba atascadas las reservas ya cobradas en físico.
+// Devuelve true/false para que el modal sepa si puede cerrarse.
+async function procesarReserva(id,metodoPago,d){
+  const r=S.reservas.find(x=>x.id===id); if(!r)return false;
   // Chequeo fresco contra Supabase, no S.clientes (caché en memoria de
   // cuando cargó la página): si el cliente reservó por reservar.html y
   // buscar_o_crear_cliente_club() ya le creó la ficha mientras esta
@@ -2924,20 +2983,166 @@ async function procesarReserva(id,metodoPago){
   // el mismo whatsapp.
   let {data:cl}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).eq('whatsapp',r.whatsapp_cliente).maybeSingle();
   if(!cl){
-    const {data}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,cumpleanos:r.cumpleanos_cliente||null,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
+    const {data,error:clErr}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,cumpleanos:r.cumpleanos_cliente||null,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
+    if(clErr||!data){notify(clErr?.message||'No se pudo crear la ficha del cliente','err');return false;}
     cl=data; await loadClientes();
   }
-  const svObj=S.servicios.find(s=>s.nombre===r.servicio);
-  if(!svObj) console.warn('procesarReserva: no se encontró el servicio "'+r.servicio+'" en S.servicios (¿borrado o renombrado?) — se guarda valor:0');
-  const valor=svObj?.precio||0;
+  const valor=Math.max(0,Math.round(d?.valor||0));
+  const propina=Math.max(0,Math.round(d?.propina||0));
   const barObj=S.barberos.find(b=>b.nombre===r.barbero_nombre);
+  // La comisión va sobre lo COBRADO, no sobre el precio de lista: el descuento
+  // lo absorben los dos. Decisión del dueño, 2026-07-31.
   const comision_monto=calcularComision(valor,barObj?.comision_pct||50);
-  await sb.from('visitas').insert({barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',servicio:r.servicio||'',valor,fecha:r.fecha,hora:r.hora,fuente:'Reserva',estado:'Atendida',comision_monto,metodo_pago:metodoPago});
-  await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
-  await loadReservas();await loadVisitas();renderReservas();renderDashboard();notify('Reserva pagada ✓');
-  cerrarSelectorPago(id);
+  const {error}=await sb.from('visitas').insert({
+    barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',
+    servicio:r.servicio||'',valor,fecha:r.fecha,hora:r.hora,
+    fuente:'Reserva',estado:'Atendida',comision_monto,metodo_pago:metodoPago,
+    precio_lista:d?.precio_lista??null,
+    descuento_pct:d?.descuento_pct??null,
+    descuento_monto:d?.descuento_monto??null,
+    propina,
+    propina_pct:d?.propina_pct??null
+  });
+  // Si la visita no entró, la reserva NO se marca procesada. Antes el insert
+  // se hacía sin mirar el error y la reserva quedaba cerrada igual: el cobro
+  // desaparecía y no había forma de volver a intentarlo desde la app.
+  if(error){notify(error.message,'err');return false;}
+  const {error:updErr}=await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
+  if(updErr){notify('Se registró el cobro, pero la reserva quedó sin marcar: '+updErr.message,'warn');}
+  await loadReservas();await loadVisitas();renderReservas();renderDashboard();
+  notify(propina>0?`Cobro registrado ✓ (propina ${fmt(propina)})`:'Cobro registrado ✓');
   closeM('m-reserva');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
+  return true;
+}
+
+// ─── COBRO CON DESGLOSE (precio, descuento, propina) ─────────────────────
+// `valor` NO cambia de significado: es lo cobrado por el SERVICIO, bruto (con
+// IVA incluido), ya descontado y SIN propina. La propina va en su columna
+// porque adentro de `valor` inflaría el IVA débito —IVA sobre plata que no es
+// venta— y entraría al reparto de comisión sin que nadie lo decidiera.
+// Ver migration_precio_descuento_propina.sql.
+const DESCUENTO_TRAMOS=[0,10,15,20];
+const PROPINA_TRAMOS=[0,5,10,15,20];
+let COBRO_CTX=null;
+
+// Misma precedencia que resolveServicioInfo(): id primero, nombre después.
+// El tercer intento normalizado es nuevo: la capitalización de este sistema no
+// es confiable, y un servicio renombrado hacía que el cobro cerrara en $0 con
+// solo un console.warn que nadie ve. Buscar de más es seguro acá porque el
+// dueño ve el precio y lo confirma antes de cobrar.
+function resolveServicioPrecio(servicioRaw){
+  if(!servicioRaw) return {sv:null,como:null};
+  let sv=S.servicios.find(x=>x.id===servicioRaw);
+  if(sv) return {sv,como:'id'};
+  sv=S.servicios.find(x=>x.nombre===servicioRaw);
+  if(sv) return {sv,como:'nombre'};
+  const norm=String(servicioRaw).trim().toLowerCase();
+  sv=S.servicios.find(x=>String(x.nombre).trim().toLowerCase()===norm);
+  return sv?{sv,como:'normalizado'}:{sv:null,como:null};
+}
+
+function abrirCobro(id){
+  const r=S.reservas.find(x=>x.id===id); if(!r)return;
+  if(r.procesado){notify('Esta reserva ya fue cobrada','warn');return;}
+  const {sv,como}=resolveServicioPrecio(r.servicio);
+  const lista=sv?.precio||0;
+  COBRO_CTX={reservaId:id,lista,descPct:null,propinaPct:null};
+  openM('m-cobro');
+
+  document.getElementById('cob-resumen').innerHTML=
+    `<strong>${escHtml(r.nombre_cliente||'')}</strong> · ${escHtml(resolveServicioInfo(r.servicio).nombre)}<br>`+
+    `${r.fecha} ${fmtHora(r.hora)} · ${escHtml(r.barbero_nombre||'—')}`;
+
+  const aviso=document.getElementById('cob-aviso-precio');
+  if(!sv){
+    aviso.style.display='';
+    aviso.innerHTML='No encontré <strong>'+escHtml(r.servicio||'(sin servicio)')+'</strong> en tu lista de servicios, así que no hay precio de lista. Escribe abajo el precio que cobraste.';
+  } else if(como==='normalizado'){
+    aviso.style.display='';
+    aviso.innerHTML='El servicio matcheó ignorando mayúsculas y espacios (<strong>'+escHtml(sv.nombre)+'</strong>). Revisa que el precio sea el correcto.';
+  } else aviso.style.display='none';
+
+  document.getElementById('cob-lista').value=sv?fmt(lista):'—';
+  document.getElementById('cob-desc-pct').value='';
+  document.getElementById('cob-final').value=lista||'';
+  document.getElementById('cob-propina').value='';
+  document.getElementById('cob-desc-btns').innerHTML=DESCUENTO_TRAMOS.map(p=>
+    `<button type="button" class="btn btn-ghost btn-sm" onclick="cobroDescuento(${p})">${p===0?'Sin dcto.':p+'%'}</button>`).join('');
+  document.getElementById('cob-prop-btns').innerHTML=PROPINA_TRAMOS.map(p=>
+    `<button type="button" class="btn btn-ghost btn-sm" onclick="cobroPropina(${p})">${p===0?'Sin propina':p+'%'}</button>`).join('');
+  sel('cob-metodo',METODOS_PAGO.map(m=>({v:m,t:m})));
+  cobroRecalcular();
+}
+
+function cobroDescuento(pct){
+  document.getElementById('cob-desc-pct').value=pct>0?pct:'';
+  cobroDescuentoEditado();
+}
+// El % ESCRIBE el precio final. A partir de ahí el que manda es el precio.
+function cobroDescuentoEditado(){
+  if(!COBRO_CTX)return;
+  const pct=parseFloat(document.getElementById('cob-desc-pct').value)||0;
+  COBRO_CTX.descPct=pct>0?pct:null;
+  document.getElementById('cob-final').value=Math.max(0,COBRO_CTX.lista-Math.round(COBRO_CTX.lista*pct/100));
+  cobroRecalcular();
+}
+// Editar el precio a mano descarta el %: guardarlo haría que el porcentaje y
+// el monto se contradigan, y ya no se sabría cuál de los dos es la verdad.
+function cobroPrecioEditado(){
+  if(!COBRO_CTX)return;
+  COBRO_CTX.descPct=null;
+  document.getElementById('cob-desc-pct').value='';
+  cobroRecalcular();
+}
+// La propina se calcula sobre el precio FINAL, no sobre el de lista.
+function cobroPropina(pct){
+  if(!COBRO_CTX)return;
+  const base=parseFloat(document.getElementById('cob-final').value)||0;
+  COBRO_CTX.propinaPct=pct>0?pct:null;
+  document.getElementById('cob-propina').value=pct>0?Math.round(base*pct/100):'';
+  cobroRecalcular();
+}
+function cobroPropinaEditada(){
+  if(!COBRO_CTX)return;
+  COBRO_CTX.propinaPct=null;
+  cobroRecalcular();
+}
+
+function cobroRecalcular(){
+  if(!COBRO_CTX)return;
+  const valor=Math.max(0,Math.round(parseFloat(document.getElementById('cob-final').value)||0));
+  const propina=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
+  const desc=Math.max(0,COBRO_CTX.lista-valor);
+  document.getElementById('cob-desc-monto').textContent=desc>0?'−'+fmt(desc):'';
+  document.getElementById('cob-total').textContent=fmt(valor+propina);
+  document.getElementById('cob-desglose').innerHTML=
+    `Servicio ${fmt(valor)} · IVA incluido ${fmt(ivaDe(valor))} · neto ${fmt(netoDe(valor))}`+
+    (propina>0?`<br>Propina ${fmt(propina)} — entera al profesional, sin IVA ni comisión`:'');
+}
+
+async function confirmarCobro(){
+  if(!COBRO_CTX)return;
+  const valor=Math.max(0,Math.round(parseFloat(document.getElementById('cob-final').value)||0));
+  const propina=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
+  if(valor<=0&&!confirm('El precio final es $0. ¿Registrar el cobro igual?'))return;
+  const lista=COBRO_CTX.lista||0;
+  const btn=document.getElementById('cob-btn');
+  btn.disabled=true;btn.textContent='Registrando...';
+  const ok=await procesarReserva(COBRO_CTX.reservaId,document.getElementById('cob-metodo').value,{
+    // Sin precio de lista (servicio no encontrado) no se inventa una foto de
+    // precio: queda null, que es lo que significa "no había referencia".
+    precio_lista: lista>0?lista:null,
+    descuento_pct: COBRO_CTX.descPct,
+    // max(0, …) porque cobrar POR ENCIMA del precio de lista es legítimo y no
+    // es un descuento negativo — el check de la base rechaza los negativos.
+    descuento_monto: lista>0?Math.max(0,lista-valor):null,
+    valor,
+    propina,
+    propina_pct: COBRO_CTX.propinaPct
+  });
+  btn.disabled=false;btn.textContent='Registrar cobro';
+  if(ok){COBRO_CTX=null;closeM('m-cobro');}
 }
 
 async function canjearVIP(id){
@@ -3532,16 +3737,11 @@ function renderVisitas(){
   }).join('');
 }
 
+// El selector inline de método de pago —cuatro botones que cobraban al PRIMER
+// clic, sin confirmación y sin poder tocar el monto— lo reemplazó el modal
+// m-cobro. Cobrar es irreversible y no puede colgar de un clic accidental en
+// una tabla. METODOS_PAGO sobrevive porque ahora llena el select del modal.
 const METODOS_PAGO=['Efectivo','Transferencia','Débito','Crédito'];
-let PAGO_ABIERTO_RESERVA=null;
-
-function togglePagoReserva(id){
-  PAGO_ABIERTO_RESERVA=PAGO_ABIERTO_RESERVA===id?null:id;
-  renderReservas();
-}
-function cerrarSelectorPago(id){
-  if(PAGO_ABIERTO_RESERVA===id)PAGO_ABIERTO_RESERVA=null;
-}
 
 function renderReservas(){
   const tb=document.getElementById('t-reservas');
@@ -3554,10 +3754,7 @@ function renderReservas(){
     <td><span class="badge b-green">${r.estado}</span></td>
     <td>${r.procesado?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
     <td style="white-space:nowrap">
-      ${!r.procesado?(PAGO_ABIERTO_RESERVA===r.id
-        ?METODOS_PAGO.map(m=>`<button class="btn btn-primary btn-sm" onclick="procesarReserva('${r.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoReserva('${r.id}')">×</button>`
-        :`<button class="btn btn-ghost btn-sm" onclick="togglePagoReserva('${r.id}')">Pagar</button>`
-      ):''}
+      ${!r.procesado?`<button class="btn btn-ghost btn-sm" onclick="abrirCobro('${r.id}')">Cobrar</button>`:''}
       <button class="btn-wa btn-sm" onclick="enviarConfirm('${r.id}')">📱</button>
       <button class="btn btn-danger btn-sm" onclick="eliminar('reservas','${r.id}',loadReservas,renderReservas)">×</button>
     </td></tr>`).join('');
@@ -3726,8 +3923,11 @@ function renderCostos(){
   const byB=agregarComisionesPorProfesional(S.visitas.filter(v=>v.fecha?.startsWith(mes2)));
   document.getElementById('t-comisiones').innerHTML=Object.entries(byB).map(([b,d])=>{
     const com=Math.round(d.comision);
-    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td></tr>`;
-  }).join('')||'<tr><td colspan="6" class="empty">Sin ventas este mes.</td></tr>';
+    const prop=Math.round(d.propinas||0);
+    // "Para negocio" no resta la propina porque nunca la sumó: `ventas` es la
+    // suma de `valor`, que no la incluye. La propina es plata de paso.
+    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td></tr>`;
+  }).join('')||'<tr><td colspan="8" class="empty">Sin ventas este mes.</td></tr>';
 }
 
 function renderProfesionals(){
@@ -4076,16 +4276,6 @@ function abrirEditarReserva(id){
   document.getElementById('r-btn-pagar').style.display=r.procesado?'none':'';
 }
 
-function togglePagoModal(){
-  const procesado=document.getElementById('r-procesado').value==='1';
-  if(procesado)return;
-  const normal=document.getElementById('rm-footer-normal');
-  const pago=document.getElementById('rm-footer-pago');
-  const abierto=pago.style.display!=='none';
-  normal.style.display=abierto?'flex':'none';
-  pago.style.display=abierto?'none':'flex';
-}
-
 function abrirEditarCita(id){
   const v=S.visitas.find(x=>x.id===id); if(!v)return;
   openM('m-cita');
@@ -4281,9 +4471,10 @@ function renderReporteProfesional(){
 
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
+    const prop=Math.round(d.propinas||0);
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
-    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td><td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
-  }).join('')||'<tr><td colspan="7" class="empty">Sin datos en este rango</td></tr>';
+    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td><td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
+  }).join('')||'<tr><td colspan="9" class="empty">Sin datos en este rango</td></tr>';
 
   // Totales por método de pago, mismo rango ya filtrado que el resto de esta pestaña.
   const byPago={};
@@ -4413,7 +4604,8 @@ function exportarExcel(tipo){
     const byP=agregarComisionesPorProfesional(citas);
     const resumen=Object.entries(byP).map(([p,d])=>{
       const com=Math.round(d.comision);
-      return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':d.pct,'Comisión $':com,'Para negocio':d.ventas-com};
+      const prop=Math.round(d.propinas||0);
+      return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':d.pct,'Comisión $':com,'Propinas':prop,'Total a pagarle':com+prop,'Para negocio':d.ventas-com};
     });
     const desglose=[];
     Object.entries(byP).forEach(([p,d])=>{
