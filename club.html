@@ -278,6 +278,25 @@ const R_HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00'
 function rTimeToMin(t){ if(!t)return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
 function rMinToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
 
+// Gemelas de ANTICIPACION_MIN y ahoraEnChile() en reservar.html — ver ahí el
+// detalle de por qué la hora se ancla a Chile y no al reloj del dispositivo.
+// Si se toca una, hay que tocar la otra.
+const R_ANTICIPACION_MIN = 30;
+
+function rAhoraEnChile(){
+  try{
+    const p = {};
+    new Intl.DateTimeFormat('en-CA',{
+      timeZone:'America/Santiago', hourCycle:'h23',
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+    }).formatToParts(new Date()).forEach(x=>{ p[x.type]=x.value; });
+    return { fecha:`${p.year}-${p.month}-${p.day}`, minutos:(Number(p.hour)%24)*60+Number(p.minute) };
+  }catch(e){
+    const d = new Date();
+    return { fecha:rFmtDateLocal(d), minutos:d.getHours()*60+d.getMinutes() };
+  }
+}
+
 // Gemela de slotsParaDia() en reservar.html — ver ahí el detalle del criterio
 // de exclusión de la colación. Si se toca una, hay que tocar la otra.
 function rSlotsParaDia(diaSemana){
@@ -394,7 +413,7 @@ function rSelProfesional(id){
 
 function rRenderCalendario(){
   const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const hoyStr = rAhoraEnChile().fecha;
   document.getElementById('r-cal-mes-label').textContent = meses[rCalMes.getMonth()]+' '+rCalMes.getFullYear();
   const primerDia = new Date(rCalMes.getFullYear(),rCalMes.getMonth(),1);
   const ultimoDia = new Date(rCalMes.getFullYear(),rCalMes.getMonth()+1,0);
@@ -407,9 +426,9 @@ function rRenderCalendario(){
   for(let d=1;d<=ultimoDia.getDate();d++){
     const fecha = new Date(rCalMes.getFullYear(),rCalMes.getMonth(),d);
     const fechaStr = rFmtDateLocal(fecha);
-    const past = fecha < hoy;
+    const past = fechaStr < hoyStr;
     const sel = RSEL.fecha===fechaStr;
-    const hoyClass = fechaStr===rFmtDateLocal(hoy)?'today':'';
+    const hoyClass = fechaStr===hoyStr?'today':'';
     cal.innerHTML+=`<div class="cal-day ${past?'past':'available'} ${sel?'selected':''} ${hoyClass}" ${!past?`onclick="rSelFecha('${fechaStr}')"`:''}">${d}</div>`;
   }
 }
@@ -438,7 +457,12 @@ async function rSelFecha(fecha){
 function rRenderHorarios(){
   const d = new Date(RSEL.fecha+'T12:00:00');
   const diaSemana = d.getDay();
-  const slots = rSlotsParaDia(diaSemana);
+  // Mismo criterio que renderHorarios() en reservar.html: si el día es hoy, se
+  // descartan las horas pasadas y las que caen dentro de la anticipación mínima.
+  const ahora = rAhoraEnChile();
+  const esHoy = RSEL.fecha === ahora.fecha;
+  const desdeMin = ahora.minutos + R_ANTICIPACION_MIN;
+  const slots = rSlotsParaDia(diaSemana).filter(h => !esHoy || rTimeToMin(h) >= desdeMin);
   document.getElementById('r-lista-horarios').innerHTML = slots.map(h=>{
     const ocupadoPorReserva = RB.reservasOcupadas.some(r=>{
       if(RSEL.profesional && r.barbero_nombre!==RSEL.profesional.nombre) return false;
@@ -450,7 +474,7 @@ function rRenderHorarios(){
     const ocupado = ocupadoPorReserva || bloqueado;
     const sel = h===RSEL.hora;
     return`<button class="horario-btn ${sel?'selected':''}" ${ocupado?'disabled':''} onclick="rSelHora('${h}',event)">${h}</button>`;
-  }).join('') || '<div class="no-horarios">No hay horarios disponibles.</div>';
+  }).join('') || `<div class="no-horarios">${esHoy?'Ya no quedan horarios disponibles para hoy. Elige otro día.':'No hay horarios disponibles.'}</div>`;
 }
 
 function rSelHora(h,ev){

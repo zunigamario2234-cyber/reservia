@@ -255,6 +255,36 @@ const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','
 function timeToMin(t){ if(!t)return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
 function minToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
 
+// Anticipación mínima para tomar una hora de hoy: no se ofrece nada que empiece
+// dentro de los próximos 30 minutos, para que al negocio no le caiga una reserva
+// encima de la hora.
+const ANTICIPACION_MIN = 30;
+
+// "Ahora" según el reloj de Chile, no el del dispositivo. Un cliente de viaje —o
+// con el huso mal configurado— veía la grilla de SU zona: se le escondían horas
+// libres, o peor, se le seguían ofreciendo horas ya pasadas. Intl resuelve el
+// cambio de horario chileno solo; hardcodear -04/-03 se rompe dos veces al año.
+// Devuelve la fecha 'YYYY-MM-DD' y los minutos desde medianoche, las dos cosas
+// en la misma zona, para que el calendario y la grilla nunca se contradigan
+// cerca de medianoche.
+// Esto solo tapa la grilla: el reloj del dispositivo puede estar corrido igual,
+// por eso crear_reserva_publica también rechaza fecha/hora pasada del lado del
+// servidor (ver migration_hora_pasada.sql). El fallback local es para no romper
+// la página entera si Intl fallara.
+function ahoraEnChile(){
+  try{
+    const p = {};
+    new Intl.DateTimeFormat('en-CA',{
+      timeZone:'America/Santiago', hourCycle:'h23',
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+    }).formatToParts(new Date()).forEach(x=>{ p[x.type]=x.value; });
+    return { fecha:`${p.year}-${p.month}-${p.day}`, minutos:(Number(p.hour)%24)*60+Number(p.minute) };
+  }catch(e){
+    const d = new Date();
+    return { fecha:fmtDateLocal(d), minutos:d.getHours()*60+d.getMinutes() };
+  }
+}
+
 // Slots de 30 min para un día de la semana según horario_negocio. Si el
 // negocio no configuró ese día (tabla vacía o falta esa fila puntual), se
 // usa HORARIOS_BASE como antes — para no dejar sin horarios a negocios que
@@ -524,7 +554,7 @@ function renderPerfilProfesional(prof){
 
 function renderCalendario(){
   const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const hoyStr = ahoraEnChile().fecha;
   document.getElementById('cal-mes-label').textContent = meses[calMes.getMonth()]+' '+calMes.getFullYear();
   const primerDia = new Date(calMes.getFullYear(),calMes.getMonth(),1);
   const ultimoDia = new Date(calMes.getFullYear(),calMes.getMonth()+1,0);
@@ -537,9 +567,9 @@ function renderCalendario(){
   for(let d=1;d<=ultimoDia.getDate();d++){
     const fecha = new Date(calMes.getFullYear(),calMes.getMonth(),d);
     const fechaStr = fmtDateLocal(fecha);
-    const past = fecha < hoy;
+    const past = fechaStr < hoyStr;
     const sel = SEL.fecha===fechaStr;
-    const hoyClass = fechaStr===fmtDateLocal(hoy)?'today':'';
+    const hoyClass = fechaStr===hoyStr?'today':'';
     cal.innerHTML+=`<div class="cal-day ${past?'past':'available'} ${sel?'selected':''} ${hoyClass}" ${!past?`onclick="selFecha('${fechaStr}')"`:''}">${d}</div>`;
   }
 }
@@ -571,7 +601,13 @@ async function selFecha(fecha){
 function renderHorarios(){
   const d = new Date(SEL.fecha+'T12:00:00');
   const diaSemana = d.getDay();
-  const slots = slotsParaDia(diaSemana);
+  // Si el día elegido es hoy, se descartan las horas que ya pasaron y las que
+  // caen dentro de la anticipación mínima. Se filtran en vez de deshabilitarse:
+  // a las 22:00 la grilla mostraba 18 botones muertos.
+  const ahora = ahoraEnChile();
+  const esHoy = SEL.fecha === ahora.fecha;
+  const desdeMin = ahora.minutos + ANTICIPACION_MIN;
+  const slots = slotsParaDia(diaSemana).filter(h => !esHoy || timeToMin(h) >= desdeMin);
   document.getElementById('lista-horarios').innerHTML = slots.map(h=>{
     const ocupadoPorReserva = B.reservasOcupadas.some(r=>{
       if(SEL.profesional && r.barbero_nombre!==SEL.profesional.nombre) return false;
@@ -588,7 +624,7 @@ function renderHorarios(){
     const ocupado = ocupadoPorReserva || bloqueado;
     const sel = h===SEL.hora;
     return`<button class="horario-btn ${sel?'selected':''}" ${ocupado?'disabled':''} onclick="selHora('${h}')">${h}</button>`;
-  }).join('') || '<div class="no-horarios">No hay horarios disponibles.</div>';
+  }).join('') || `<div class="no-horarios">${esHoy?'Ya no quedan horarios disponibles para hoy. Elige otro día.':'No hay horarios disponibles.'}</div>`;
 }
 
 function selHora(h){

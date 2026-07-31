@@ -115,6 +115,40 @@ function lecturasDeTabla(js){
   return out;
 }
 
+// Saca el código de una función por nombre, cerrando las llaves de verdad.
+// Se usa para EJECUTAR la función real del archivo, no para mirarla como texto:
+// el manejo de zona horaria es justo lo que un regex da por bueno y produccion
+// desmiente.
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// Corre la función de "ahora" del archivo real contra un instante fijo,
+// sustituyendo el reloj. Sin esto solo se puede comprobar la hora actual, que
+// es distinta en cada corrida y nunca cae en los casos que importan.
+function ahoraCon(fuente, nombre, isoUtc){
+  var Real = window.Date;
+  var Falso = function(){ return new Real(isoUtc); };
+  Falso.prototype = Real.prototype;
+  var f = new Function('Date', 'fmtDateLocal', 'rFmtDateLocal',
+                       fuente + '\nreturn ' + nombre + ';')
+          (Falso, function(){ return 'LOCAL'; }, function(){ return 'LOCAL'; });
+  return f();
+}
+
+// Config por archivo: las dos páginas son gemelas pero con nombres distintos.
+var NOMBRES = {
+  'reservar.html': { ahora:'ahoraEnChile',  anticip:'ANTICIPACION_MIN',   slots:'slotsParaDia'  },
+  'club.html':     { ahora:'rAhoraEnChile', anticip:'R_ANTICIPACION_MIN', slots:'rSlotsParaDia' }
+};
+
 function correr(src){
   ARCHIVOS.forEach(function(f){
     titulo(f);
@@ -170,6 +204,73 @@ function correr(src){
     //    grilla vacía con "Continuar" apagado para siempre.
     check('explica la lista vacía en vez de dejarla muda',
           /profesionales disponibles por ahora/.test(html), true);
+
+    // 7. Horas ya pasadas. A las 22:00 la grilla seguía ofreciendo las 10:00 del
+    //    mismo día: nada en el flujo comparaba contra la hora actual, solo el
+    //    calendario tachaba días enteros.
+    var N = NOMBRES[f];
+    var fnAhora = extraerFuncion(js, N.ahora);
+    check('define ' + N.ahora + '()', fnAhora !== '', true);
+
+    //    Anclada a Chile, no al reloj del dispositivo: un cliente de viaje veía
+    //    la grilla de SU zona. Se comprueba con instantes fijos, que es donde
+    //    esto se rompe de verdad.
+    if(fnAhora){
+      //    Invierno chileno = UTC-4.
+      var inv = ahoraCon(fnAhora, N.ahora, '2026-07-30T12:00:00Z');
+      check('invierno: 12:00 UTC son las 08:00 en Chile', inv.minutos, 8*60);
+      check('invierno: la fecha es la chilena', inv.fecha, '2026-07-30');
+
+      //    Verano chileno = UTC-3. Hardcodear el offset se rompe acá.
+      var ver = ahoraCon(fnAhora, N.ahora, '2026-01-15T12:00:00Z');
+      check('verano: 12:00 UTC son las 09:00 en Chile (DST)', ver.minutos, 9*60);
+
+      //    Medianoche: hour12:false devuelve "24" en algunos motores, y 24*60
+      //    dejaría el día entero fuera de la grilla. hourCycle:'h23' lo evita.
+      var med = ahoraCon(fnAhora, N.ahora, '2026-07-30T04:00:00Z');
+      check('medianoche en Chile da 0 minutos, no 1440', med.minutos, 0);
+
+      //    Fecha distinta a la de UTC: si la grilla y el calendario no usan la
+      //    misma fuente, acá se contradicen.
+      var cruce = ahoraCon(fnAhora, N.ahora, '2026-07-30T02:00:00Z');
+      check('antes de medianoche UTC la fecha chilena es la anterior',
+            cruce.fecha + ' ' + cruce.minutos, '2026-07-29 1320');
+
+      //    No cae al reloj local salvo que Intl falle de verdad.
+      check('no cae al reloj local', inv.fecha === 'LOCAL', false);
+    }
+
+    //    OJO — este check de texto es LOAD-BEARING, no decorativo.
+    //    Los de arriba corren la función real, pero si el equipo que corre el
+    //    test está en Chile (UTC-4), "hora local" y "hora de Chile" dan el mismo
+    //    número y TODOS pasan igual aunque se haya borrado el ancla de zona.
+    //    Se comprobó: quitando timeZone:'America/Santiago' los 6 checks de
+    //    comportamiento seguían en verde. Y no se puede forzar otra zona al
+    //    runner — Chrome en Windows ignora la variable TZ (sigue resolviendo
+    //    America/Santiago). Así que esto es lo único que ve la regresión que
+    //    importa: la que solo se manifiesta en el celular de un cliente que no
+    //    está en Chile.
+    check('ancla la hora a America/Santiago, no al dispositivo',
+          /timeZone\s*:\s*'America\/Santiago'/.test(js), true);
+    check('usa hourCycle h23 (h12/hour12 devuelve 24 a medianoche)',
+          /hourCycle\s*:\s*'h23'/.test(js), true);
+
+    //    La anticipación mínima acordada, igual en las dos páginas.
+    var anticip = new RegExp('(?:const|let|var)\\s+' + N.anticip + '\\s*=\\s*(\\d+)').exec(js);
+    check('define ' + N.anticip, anticip !== null, true);
+    check('la anticipación mínima es de 30 min', anticip && anticip[1], '30');
+
+    //    Y que el filtro esté efectivamente aplicado sobre los slots del día:
+    //    tener la función de "ahora" sin usarla es el fallo silencioso obvio.
+    var filtro = new RegExp(N.slots + '\\([^)]*\\)\\s*\\.filter\\(').test(js);
+    check('filtra los slots del día por la hora actual', filtro, true);
+    check('el filtro solo aplica al día de hoy', /esHoy/.test(js), true);
+
+    //    El calendario tiene que usar la MISMA fuente de "hoy" que la grilla.
+    //    Antes usaba new Date() local: cerca de medianoche se contradecían.
+    check('el calendario ya no compara contra el reloj local',
+          /const past = fecha < hoy/.test(js), false);
+    check('el calendario usa la fecha chilena', /fechaStr < hoyStr/.test(js), true);
   });
 
   pintar();
