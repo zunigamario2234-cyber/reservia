@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — modales apilados</title>
+
+<!--
+  Red de seguridad para openM()/closeM() de app.html cuando hay DOS modales
+  abiertos a la vez.
+
+  POR QUÉ EXISTE
+  La foto de profesional no se podía cargar. El recorte SÍ ocurría, pero
+  quedaba invisible: todos los .overlay comparten z-index:200, y con el
+  z-index empatado el navegador desempata por orden del DOM. Como m-recortar
+  está declarado ARRIBA de m-profesional en app.html, el modal de editar
+  profesional se pintaba ENCIMA del recorte, tapándolo con su fondo oscuro y
+  su blur. Parecía que el botón no hacía nada.
+
+  Es un bug caro de encontrar y barato de reintroducir: no hay error en la
+  consola, no falla ninguna llamada, y desde el código las dos funciones se
+  ven bien. Solo se ve mirando la pantalla, y solo si abres el recorte desde
+  adentro de otro modal — que hoy es un único camino en toda la app (la foto
+  de profesional; logo y portada se recortan desde la página de Configuración,
+  sin modal padre, y por eso esos dos nunca fallaron).
+
+  QUÉ COMPRUEBA
+  Corre las funciones REALES extraídas de app.html contra elementos REALES,
+  con el CSS REAL de .overlay también sacado de app.html. Quién queda encima
+  no se deduce leyendo el z-index: se le pregunta al navegador con
+  elementFromPoint(), que es la misma respuesta que recibe el clic del dueño.
+
+  ⚠ OJO CON EL FALSO VERDE
+  Un test que solo abriera los dos modales y comprobara que "no explota"
+  pasaría igual con el bug puesto. Por eso la sección 6 es LOAD-BEARING: monta
+  el caso SIN el arreglo (dos overlays con el z-index empatado, en el mismo
+  orden de DOM que app.html) y exige que el test lo vea fallar. Si esa sección
+  se pone verde por el lado equivocado, el resto del archivo no está probando
+  nada.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md — con Chrome abierto hay una trampa que devuelve salida vacía
+  y parece que pasó.
+
+  Tiene que quedar en la misma carpeta que los HTML: las rutas son relativas.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — modales apilados</h1>
+<p>Verifica que un modal abierto desde otro modal quede <b>encima</b> y no
+tapado, usando las funciones y el CSS reales de <code>app.html</code>.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelo y sigo:</p>
+  <input type="file" id="archivo" accept=".html">
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<!-- Acá se montan los overlays de prueba, en el mismo orden que app.html. -->
+<div id="banco"></div>
+
+<script>
+'use strict';
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function inlineStyles(html){
+  var re = /<style[^>]*>([\s\S]*?)<\/style>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ out.push(m[1]); }
+  return out.join('\n');
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+// Una regla CSS completa. El selector se ancla para que '.overlay' no matchee
+// dentro de '.loading-overlay' ni de '.overlay.open'.
+function extraerRegla(css, sel){
+  var esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  var m = css.match(new RegExp('(?:^|[}\\s;])(' + esc + '\\{[^}]*\\})'));
+  return m ? m[1] : '';
+}
+function ziDe(regla){
+  var m = regla.match(/z-index\s*:\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : NaN;
+}
+
+// ── Quién está pintado encima, según el navegador ────────────────────────
+// No se modela la regla de CSS a mano: se pregunta qué elemento recibiría el
+// clic en un punto que TODOS los overlays cubren (position:fixed; inset:0).
+// La esquina superior izquierda sirve porque el .modal va centrado, así que
+// ahí solo está el fondo del overlay.
+function encima(){
+  var el = document.elementFromPoint(5, 5);
+  if(!el) return '(nada)';
+  var ov = el.closest ? el.closest('.overlay') : null;
+  return ov ? ov.id : '(no-overlay:' + el.tagName.toLowerCase() + ')';
+}
+function ziInline(id){ return document.getElementById(id).style.zIndex; }
+function abierto(id){ return document.getElementById(id).classList.contains('open'); }
+
+// Monta overlays vacíos con los ids reales, EN EL MISMO ORDEN que app.html
+// (m-recortar antes que m-profesional). Ese orden es justamente el que causaba
+// el bug, así que el test tiene que reproducirlo para probar algo.
+function montar(ids){
+  var banco = document.getElementById('banco');
+  banco.innerHTML = '';
+  ids.forEach(function(id){
+    var d = document.createElement('div');
+    d.className = 'overlay';
+    d.id = id;
+    d.innerHTML = '<div class="modal">' + id + '</div>';
+    banco.appendChild(d);
+  });
+}
+
+function correr(html){
+  // ── 0. Extraer el código y el CSS reales ────────────────────────────────
+  titulo('extracción desde app.html');
+  var js  = inlineScripts(html).join('\n');
+  var css = inlineStyles(html);
+
+  var rOverlay = extraerRegla(css, '.overlay');
+  var rOpen    = extraerRegla(css, '.overlay.open');
+  var rNotif   = extraerRegla(css, '.notif');
+  check('encuentra la regla .overlay',      rOverlay !== '', true);
+  check('encuentra la regla .overlay.open', rOpen    !== '', true);
+  check('.overlay define un z-index base',  !isNaN(ziDe(rOverlay)), true);
+
+  // Las declaraciones de estado de la pila viven fuera de las funciones.
+  var decls = (js.match(/^[ \t]*(?:const|let)[ \t]+MODAL_[^\n]*$/gm) || []).join('\n');
+  var fOpen  = extraerFuncion(js, 'openM');
+  var fClose = extraerFuncion(js, 'closeM');
+  check('define el estado de la pila (MODAL_*)', decls !== '', true);
+  check('define openM()',  fOpen  !== '', true);
+  check('define closeM()', fClose !== '', true);
+  if(!decls || !fOpen || !fClose){ pintar(); return; }
+
+  // El CSS real, aplicado acá. Si mañana .overlay cambia en app.html, este
+  // test se entera solo.
+  var st = document.createElement('style');
+  st.textContent = rOverlay + '\n' + rOpen;
+  document.head.appendChild(st);
+
+  // initModal() hace cosas de la app (llena selects, pega en Supabase); acá
+  // solo importa el apilamiento, así que va un doble que no hace nada.
+  var M = new Function('initModal',
+    decls + '\n' + fOpen + '\n' + fClose + '\n' +
+    'return {openM:openM, closeM:closeM,' +
+    ' stack:function(){return MODAL_STACK.slice()},' +
+    ' tope:function(){return MODAL_Z_TOPE},' +
+    ' base:function(){return MODAL_Z_BASE}};'
+  )(function(){});
+
+  montar(['m-recortar', 'm-profesional', 'm-servicio']);
+
+  // ── 1. Un modal solo ────────────────────────────────────────────────────
+  titulo('un modal solo');
+  M.openM('m-profesional');
+  check('queda visible y recibe el clic', encima(), 'm-profesional');
+  check('arranca en el z-index base', ziInline('m-profesional'), String(M.base()));
+
+  // ── 2. EL BUG: el recorte abierto desde el modal de profesional ─────────
+  titulo('recorte abierto DESDE el modal de profesional');
+  M.openM('m-recortar');
+  check('el recorte queda ENCIMA, no tapado', encima(), 'm-recortar');
+  check('el de abajo sigue abierto (se ve atenuado detrás)', abierto('m-profesional'), true);
+  check('el de arriba tiene z-index mayor',
+        parseInt(ziInline('m-recortar'), 10) > parseInt(ziInline('m-profesional'), 10), true);
+
+  // ── 3. Cerrar el de arriba devuelve el foco al de abajo ──────────────────
+  titulo('cerrar el recorte');
+  M.closeM('m-recortar');
+  check('vuelve a mandar el modal de profesional', encima(), 'm-profesional');
+  check('el recorte suelta su z-index', ziInline('m-recortar'), '');
+  check('el recorte queda cerrado', abierto('m-recortar'), false);
+
+  // ── 4. Volver a recortar (elegir otra foto sin cerrar el formulario) ─────
+  titulo('recortar una segunda vez');
+  M.openM('m-recortar');
+  check('sigue quedando encima al reabrirlo', encima(), 'm-recortar');
+
+  // ── 5. Cerrar el de abajo primero ───────────────────────────────────────
+  // Caso raro pero real: si el z-index saliera del largo de la pila, acá se
+  // generaría un empate con el modal que quedó abierto y volvería el bug.
+  titulo('cerrar primero el de abajo');
+  M.closeM('m-profesional');
+  M.openM('m-servicio');
+  check('el nuevo queda encima del que seguía abierto', encima(), 'm-servicio');
+  check('sin empate de z-index',
+        ziInline('m-servicio') !== ziInline('m-recortar'), true);
+
+  // ── 6. Con todo cerrado el tope vuelve a la base ────────────────────────
+  titulo('con todo cerrado');
+  M.closeM('m-servicio');
+  M.closeM('m-recortar');
+  check('la pila queda vacía', M.stack().length, 0);
+  check('el tope vuelve a la base', M.tope(), M.base());
+  check('ningún overlay queda con z-index pegado',
+        ziInline('m-recortar') + ziInline('m-profesional') + ziInline('m-servicio'), '');
+
+  // ── 7. Abrir dos veces el mismo modal ───────────────────────────────────
+  titulo('abrir dos veces el mismo modal');
+  M.openM('m-profesional');
+  M.openM('m-profesional');
+  check('no se duplica en la pila', M.stack().length, 1);
+  check('no se va trepando de z-index', ziInline('m-profesional'), String(M.base()));
+  M.closeM('m-profesional');
+
+  // ── 8. La pila no puede tapar avisos ni el loading ──────────────────────
+  // .notif y .loading-overlay están en 999 y tienen que seguir arriba de todo.
+  titulo('no invade el z-index de los avisos');
+  M.openM('m-profesional'); M.openM('m-recortar'); M.openM('m-servicio');
+  check('el tope del apilamiento queda debajo de .notif',
+        M.tope() < ziDe(rNotif), true);
+  M.closeM('m-servicio'); M.closeM('m-recortar'); M.closeM('m-profesional');
+
+  // ── 9. CONTROL DE MUTACIÓN (load-bearing, ver la nota de arriba) ────────
+  // Sin el arreglo, los dos overlays quedan con el mismo z-index y desempata
+  // el orden del DOM. Se monta ese caso a mano y se exige que el test lo vea
+  // fallar: si esto diera "el recorte está encima", el archivo entero estaría
+  // midiendo aire.
+  titulo('control — el test detecta el bug sin el arreglo');
+  montar(['m-recortar', 'm-profesional']);
+  document.getElementById('m-recortar').classList.add('open');
+  document.getElementById('m-profesional').classList.add('open');
+  check('con z-index empatado gana el último del DOM y tapa el recorte',
+        encima(), 'm-profesional');
+  check('y m-recortar sigue declarado ANTES que m-profesional en app.html',
+        html.indexOf('id="m-recortar"') < html.indexOf('id="m-profesional"'), true);
+
+  document.getElementById('banco').innerHTML = '';
+  pintar();
+}
+
+fetch('app.html').then(function(r){
+  if(!r.ok) throw new Error('app.html respondió HTTP ' + r.status);
+  return r.text();
+}).then(correr).catch(function(){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando app.html… (el navegador no me deja leerlo solo)';
+  document.getElementById('archivo').addEventListener('change', function(e){
+    var f = e.target.files[0];
+    if(!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){ correr(String(fr.result)); };
+    fr.readAsText(f);
+  });
+});
+</script>
+</html>

@@ -1396,8 +1396,31 @@ async function copiarAlPortapapeles(texto){
 }
 function copiarLinkReservas(){ copiarAlPortapapeles(document.getElementById('cfg-link-reservas').value); }
 function copiarLinkProfesional(id){ copiarAlPortapapeles(location.origin+'/reservar.html?id='+S.barberia.id+'&profesional='+id); }
-function openM(id){ document.getElementById(id).classList.add('open'); initModal(id); }
-function closeM(id){ document.getElementById(id).classList.remove('open'); }
+// Todos los .overlay comparten z-index:200, así que con dos modales abiertos
+// desempataba el orden del DOM: el recorte de foto (m-recortar, arriba en el
+// archivo) quedaba TAPADO por el modal que lo abrió (m-profesional, más abajo).
+// La pila le da a cada modal que se abre encima un z-index mayor que el del
+// anterior. El tope solo sube mientras quede alguno abierto y vuelve a la base
+// al cerrarse el último, para no acercarse nunca al z-index de .notif (999).
+const MODAL_Z_BASE=200, MODAL_Z_PASO=10;
+let MODAL_STACK=[], MODAL_Z_TOPE=MODAL_Z_BASE;
+function openM(id){
+  const el=document.getElementById(id); if(!el)return;
+  if(!MODAL_STACK.includes(id)){
+    if(MODAL_STACK.length) MODAL_Z_TOPE+=MODAL_Z_PASO;
+    MODAL_STACK.push(id);
+    el.style.zIndex=MODAL_Z_TOPE;
+  }
+  el.classList.add('open');
+  initModal(id);
+}
+function closeM(id){
+  const el=document.getElementById(id); if(!el)return;
+  el.classList.remove('open');
+  el.style.zIndex='';
+  MODAL_STACK=MODAL_STACK.filter(m=>m!==id);
+  if(!MODAL_STACK.length) MODAL_Z_TOPE=MODAL_Z_BASE;
+}
 function nav(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
