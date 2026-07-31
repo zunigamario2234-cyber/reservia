@@ -52,6 +52,11 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
 .btn-sm{width:auto;padding:8px 12px;font-size:12px}
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px}
 .alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
+.alert-ok{background:#0f2a1a;border:0.5px solid #5cd685;color:#5cd685;line-height:1.5}
+.link-btn{background:none;border:none;color:#7c6af7;font-size:12px;cursor:pointer;font-family:inherit;padding:10px 0 0;width:100%;text-align:center}
+.link-btn:hover{text-decoration:underline}
+.link-btn:disabled{opacity:0.5;cursor:not-allowed}
+.ayuda{font-size:12px;color:#777;line-height:1.6;margin-bottom:14px}
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;border-top-color:#7c6af7;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .cita-item{border:0.5px solid #1a1a1a;border-radius:10px;padding:14px;margin-bottom:10px}
@@ -98,9 +103,27 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
     <div class="card">
       <div class="card-title">Iniciar sesión</div>
       <div id="li-alert" class="alert alert-err" style="display:none"></div>
+      <div id="li-ok" class="alert alert-ok" style="display:none"></div>
       <div class="form-group"><label>Correo</label><input type="email" id="li-email" placeholder="tu@correo.com"></div>
       <div class="form-group"><label>Contraseña</label><input type="password" id="li-pass" placeholder="••••••••"></div>
       <button class="btn btn-primary" id="btn-login" onclick="login()">Entrar</button>
+      <button class="link-btn" id="btn-olvide" onclick="pedirRecuperacion()">¿Olvidaste tu contraseña?</button>
+    </div>
+  </div>
+
+  <!-- Pantalla para elegir contraseña. Se muestra solo cuando se llegó desde un
+       enlace de correo (recovery / magic link / invitación), nunca por
+       navegación normal. -->
+  <div id="recuperar-view" style="display:none">
+    <div class="card">
+      <div class="card-title">Elige tu contraseña</div>
+      <div id="rc-alert" class="alert alert-err" style="display:none"></div>
+      <p class="ayuda">Este enlace sirve una sola vez. Define tu contraseña ahora
+      y entras directo a tu agenda; la próxima vez ya puedes usarla para
+      iniciar sesión.</p>
+      <div class="form-group"><label>Contraseña nueva</label><input type="password" id="rc-pass" placeholder="Al menos 8 caracteres"></div>
+      <div class="form-group"><label>Repítela</label><input type="password" id="rc-pass2" placeholder="••••••••"></div>
+      <button class="btn btn-primary" id="btn-guardar-pass" onclick="guardarPassword()">Guardar y entrar</button>
     </div>
   </div>
 
@@ -175,6 +198,27 @@ if (typeof SUPABASE_URL === 'undefined') {
   throw new Error('supabase-config.js no cargó');
 }
 
+// El enlace de correo (recuperar contraseña, magic link, invitación) llega con
+// los tokens en el HASH: #access_token=...&type=recovery. El cliente corre en
+// flowType 'implicit' con detectSessionInUrl activado —los valores por defecto,
+// verificados, no supuestos—, así que apenas se crea empieza a consumir ese
+// hash, arma una sesión válida y BORRA el hash de la URL.
+//
+// Por eso esto va ANTES de createClient() y es síncrono: después ya no hay hash
+// que leer. Si se mueve debajo, la pantalla de contraseña deja de aparecer y no
+// falla de forma ruidosa — el profesional simplemente entra a la agenda sin
+// haber elegido contraseña, que es exactamente el problema que esto viene a
+// resolver.
+const HASH_ENLACE = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+const TIPO_ENLACE = HASH_ENLACE.get('type');
+// Los tres significan lo mismo para nosotros: llegaste por correo y todavía no
+// tienes contraseña propia. Hoy el dueño invita creando la cuenta con una
+// contraseña que viaja por WhatsApp (ver app.html), así que 'invite' no se usa;
+// se contempla igual para que un cambio allá no deje esta pantalla muerta.
+const ES_ENLACE_CORREO = TIPO_ENLACE === 'recovery' || TIPO_ENLACE === 'magiclink' || TIPO_ENLACE === 'invite';
+// Supabase devuelve el enlace vencido o ya usado por el mismo hash, no por HTTP.
+const ERROR_ENLACE = HASH_ENLACE.get('error_description') || HASH_ENLACE.get('error');
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let PERFIL = null;
@@ -200,6 +244,56 @@ function hoyStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMo
 function mostrarLoginError(msg){
   const el=document.getElementById('li-alert');
   el.textContent=msg; el.style.display='';
+  document.getElementById('li-ok').style.display='none';
+}
+
+// Dispara el correo con el enlace para elegir contraseña. Reemplaza al parche
+// de entrar al dashboard de Supabase a generar un magic link a mano.
+async function pedirRecuperacion(){
+  const email=document.getElementById('li-email').value.trim();
+  if(!email){ mostrarLoginError('Escribe tu correo arriba y vuelve a apretar acá.'); return; }
+  const btn=document.getElementById('btn-olvide');
+  btn.disabled=true; btn.textContent='Enviando...';
+  // redirectTo tiene que estar en Authentication → URL Configuration → Redirect
+  // URLs del proyecto. Si no está, el correo igual llega pero el enlace apunta a
+  // la Site URL, que es donde venía el localhost:3000 del default.
+  const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+'/mi-agenda.html'});
+  btn.disabled=false; btn.textContent='¿Olvidaste tu contraseña?';
+  if(error){ mostrarLoginError('No se pudo enviar el correo: '+error.message); return; }
+  // La respuesta es la misma exista o no la cuenta. Decir "ese correo no está
+  // registrado" le confirmaría a cualquiera qué correos tienen cuenta acá.
+  const ok=document.getElementById('li-ok');
+  ok.textContent='Si ese correo tiene una cuenta, le acaba de llegar un enlace para elegir una contraseña nueva. Revisa también el correo no deseado.';
+  ok.style.display='';
+  document.getElementById('li-alert').style.display='none';
+}
+
+async function guardarPassword(){
+  const p1=document.getElementById('rc-pass').value;
+  const p2=document.getElementById('rc-pass2').value;
+  const al=document.getElementById('rc-alert');
+  al.style.display='none';
+  // El mínimo de 6 lo impone Supabase; acá se pide 8 y se avisa antes de ir al
+  // servidor, para no gastar el enlace en un error evitable.
+  if(p1.length<8){ al.textContent='La contraseña necesita al menos 8 caracteres.'; al.style.display=''; return; }
+  if(p1!==p2){ al.textContent='Las dos contraseñas no coinciden.'; al.style.display=''; return; }
+  const btn=document.getElementById('btn-guardar-pass');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Guardando...';
+  const {error}=await sb.auth.updateUser({password:p1});
+  if(error){
+    al.textContent='No se pudo guardar la contraseña: '+error.message;
+    al.style.display='';
+    btn.disabled=false; btn.textContent='Guardar y entrar';
+    return;
+  }
+  // El enlace ya dejó la sesión abierta, así que no hace falta pedir el correo
+  // otra vez. Se vuelve a mostrar el login por debajo porque afterLogin() es
+  // quien decide: si la cuenta no es de un profesional o fue desactivada, hace
+  // signOut y escribe el motivo ahí.
+  document.getElementById('recuperar-view').style.display='none';
+  document.getElementById('login-view').style.display='';
+  await afterLogin();
+  btn.disabled=false; btn.textContent='Guardar y entrar';
 }
 
 async function login(){
@@ -550,9 +644,40 @@ function renderComisionResumen(filas,desde,hasta){
 // ─── Init ───
 
 async function init(){
+  // Enlace vencido o ya usado: Supabase lo informa por el hash, no por HTTP.
+  if(ERROR_ENLACE){
+    limpiarHash();
+    mostrarLoginError('Ese enlace ya no sirve ('+ERROR_ENLACE+'). Pide uno nuevo con "¿Olvidaste tu contraseña?".');
+    return;
+  }
+
+  if(ES_ENLACE_CORREO){
+    // Se espera a getSession() ANTES de mostrar el formulario: resuelve recién
+    // cuando el SDK terminó de consumir el hash, y updateUser() necesita esa
+    // sesión. Sin esta espera, un profesional rápido puede apretar "Guardar"
+    // antes de que exista y comerse un error inexplicable.
+    const {data:{session}}=await sb.auth.getSession();
+    limpiarHash();
+    if(!session){
+      mostrarLoginError('Ese enlace venció o ya se usó. Pide uno nuevo con "¿Olvidaste tu contraseña?".');
+      return;
+    }
+    document.getElementById('login-view').style.display='none';
+    document.getElementById('recuperar-view').style.display='';
+    return;
+  }
+
   const {data:{session}}=await sb.auth.getSession();
   if(session) await afterLogin();
 }
+
+// Saca los tokens de la barra de direcciones una vez usados, para que no queden
+// en el historial ni se filtren si el profesional comparte la URL o le sacan una
+// foto a la pantalla.
+function limpiarHash(){
+  history.replaceState(null,'',window.location.pathname+window.location.search);
+}
+
 init();
 
 // PWA: registra el service worker acotado a esta página exacta (scope
