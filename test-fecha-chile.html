@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — "hoy" en hora de Chile</title>
+
+<!--
+  Red de seguridad para el cálculo de "ahora" / "hoy", que está TRIPLICADO:
+    - ahoraEnChile()  en reservar.html
+    - rAhoraEnChile() en club.html
+    - ahoraEnChile()  en app.html
+  Nada en el código obliga a que las tres copias coincidan. Este test lo
+  obliga, igual que test-comollegar.html hace con la URL de Maps. Ya nos pasó
+  con slotsParaDia/rSlotsParaDia: dos copias que se separan sin que nadie se
+  entere.
+
+  POR QUÉ EXISTE
+  Dos bugs distintos, los dos de fecha, los dos invisibles desde el escritorio
+  de quien programa:
+
+  1. Las páginas públicas ofrecían horas ya pasadas porque nada comparaba
+     contra la hora actual. Al arreglarlo, la hora se ancló a America/Santiago
+     en vez del huso del dispositivo: un cliente de viaje veía la grilla de SU
+     zona.
+
+  2. app.html calculaba "hoy" con new Date().toISOString(), que devuelve la
+     fecha en UTC. Como Chile es UTC-4, a partir de las 20:00 hora local el
+     toISOString ya está en el día siguiente: la agenda del dueño saltaba a
+     mañana y se veía vacía TODAS LAS NOCHES. Es el bug más fácil de
+     reintroducir de los dos, porque toISOString().split('T')[0] parece la
+     forma obvia y correcta de sacar una fecha.
+
+  QUÉ COMPRUEBA
+  Corre las funciones REALES de los tres archivos contra instantes fijos,
+  sustituyendo el reloj. Sin eso solo se puede comprobar la hora actual, que
+  cambia en cada corrida y nunca cae en los casos que importan (verano,
+  medianoche, cruce de fecha).
+
+  ⚠ OJO CON EL FALSO VERDE
+  Si el equipo que corre el test está en Chile (UTC-4), "hora local" y "hora
+  de Chile" dan el mismo número, así que los checks de comportamiento pasan
+  IGUAL aunque se haya borrado el ancla de zona. Está verificado: quitando
+  timeZone:'America/Santiago' seguían todos en verde. Y no se puede forzar
+  otra zona al runner, porque Chrome en Windows ignora la variable TZ (sigue
+  resolviendo America/Santiago). Por eso los checks de texto de la sección 2
+  son LOAD-BEARING, no decorativos: son lo único que ve la regresión que solo
+  se manifiesta en el celular de un cliente que no está en Chile.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md — con Chrome abierto hay una trampa que devuelve salida vacía
+  y parece que pasó.
+
+  Tiene que quedar en la misma carpeta que los HTML: las rutas son relativas.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — "hoy" en hora de Chile</h1>
+<p>Verifica las tres copias del cálculo de fecha/hora actual y que no vuelva
+<code>toISOString()</code> como forma de sacar el día.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['reservar.html','club.html','app.html'];
+
+// Cómo se llama la función en cada archivo.
+var FN = { 'reservar.html':'ahoraEnChile', 'club.html':'rAhoraEnChile', 'app.html':'ahoraEnChile' };
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+// Los comentarios de estos archivos EXPLICAN el bug, así que nombran
+// toISOString justo donde se busca que no esté. Sin sacarlos, el check daría
+// falso positivo contra la propia documentación.
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// Corre la función real con el reloj sustituido por un instante fijo.
+// fmtDateLocal/rFmtDateLocal se inyectan devolviendo 'LOCAL' para poder
+// distinguir el camino normal del fallback del catch.
+function ahoraCon(fuente, nombre, isoUtc){
+  var Real = window.Date;
+  var Falso = function(){ return new Real(isoUtc); };
+  Falso.prototype = Real.prototype;
+  return new Function('Date','fmtDateLocal','rFmtDateLocal', fuente + '\nreturn ' + nombre + ';')
+         (Falso, function(){ return 'LOCAL'; }, function(){ return 'LOCAL'; })();
+}
+
+// Instantes elegidos por lo que rompen, no al azar.
+var CASOS = [
+  // Invierno chileno: UTC-4.
+  { iso:'2026-07-30T12:00:00Z', fecha:'2026-07-30', minutos:8*60,
+    nombre:'invierno — 12:00 UTC son las 08:00 en Chile' },
+  // Verano chileno: UTC-3. Hardcodear el offset se rompe justo acá.
+  { iso:'2026-01-15T12:00:00Z', fecha:'2026-01-15', minutos:9*60,
+    nombre:'verano — 12:00 UTC son las 09:00 en Chile (DST)' },
+  // Medianoche: hour12:false devuelve "24" en algunos motores, y 24*60 dejaría
+  // el día entero fuera de la grilla.
+  { iso:'2026-07-30T04:00:00Z', fecha:'2026-07-30', minutos:0,
+    nombre:'medianoche en Chile da 0 minutos, no 1440' },
+  // Cruce de fecha: es de noche en Chile pero ya es "mañana" en UTC. Este es
+  // exactamente el caso que rompía la agenda de app.html todas las noches.
+  { iso:'2026-07-31T02:00:00Z', fecha:'2026-07-30', minutos:22*60,
+    nombre:'22:00 en Chile sigue siendo el día 30, aunque en UTC ya sea el 31' }
+];
+
+function correr(src){
+  var resultados = {};
+
+  // ── 1. Cada copia, contra instantes fijos ──────────────────────────────
+  ARCHIVOS.forEach(function(f){
+    titulo(f);
+    var js = sinComentarios(inlineScripts(src[f]).join('\n'));
+    var nombre = FN[f];
+    var fuente = extraerFuncion(js, nombre);
+    check('define ' + nombre + '()', fuente !== '', true);
+    if(!fuente) return;
+
+    resultados[f] = {};
+    CASOS.forEach(function(c){
+      var r;
+      try { r = ahoraCon(fuente, nombre, c.iso); }
+      catch(e){ r = { fecha:'ERROR:'+e.message, minutos:-1 }; }
+      resultados[f][c.iso] = r;
+      check(c.nombre, r.fecha + ' ' + r.minutos, c.fecha + ' ' + c.minutos);
+    });
+
+    check('no cae al reloj local del dispositivo',
+          resultados[f][CASOS[0].iso].fecha === 'LOCAL', false);
+
+    // ── 2. Checks de texto LOAD-BEARING (ver la nota de arriba) ──────────
+    check('ancla la hora a America/Santiago',
+          /timeZone\s*:\s*'America\/Santiago'/.test(js), true);
+    check('usa hourCycle h23 (hour12:false devuelve 24 a medianoche)',
+          /hourCycle\s*:\s*'h23'/.test(js), true);
+  });
+
+  // ── 3. Que las tres copias no se hayan separado ────────────────────────
+  titulo('las tres copias coinciden');
+  CASOS.forEach(function(c){
+    var vals = ARCHIVOS.map(function(f){
+      var r = resultados[f] && resultados[f][c.iso];
+      return r ? r.fecha + ' ' + r.minutos : 'FALTA';
+    });
+    check('mismo resultado en los tres archivos — ' + c.iso,
+          vals[0] === vals[1] && vals[1] === vals[2], true);
+  });
+
+  // ── 4. Que no vuelva toISOString como forma de sacar el día ────────────
+  titulo('app.html — no vuelve el "hoy" en UTC');
+  var appJs = sinComentarios(inlineScripts(src['app.html']).join('\n'));
+
+  // El bug exacto: la fecha de HOY sacada de UTC.
+  check('no usa new Date().toISOString() para sacar la fecha',
+        /new\s+Date\(\s*\)\s*\.toISOString\(\)/.test(appJs), false);
+  // Y la variante sobre un Date cualquiera, que tiene el mismo defecto: para
+  // eso está fmtDateLocal().
+  check('no usa .toISOString().split para sacar la fecha',
+        /\.toISOString\(\)\s*\.split\(/.test(appJs), false);
+  check('no usa .toISOString().slice para sacar la fecha',
+        /\.toISOString\(\)\s*\.slice\(/.test(appJs), false);
+
+  // Los puntos concretos que se rompían, uno por uno.
+  check('la agenda arranca en el hoy chileno',
+        /ag-fecha'\)\.value\s*=\s*ahoraEnChile\(\)\.fecha/.test(appJs), true);
+  check('el mes en curso sale de la fecha chilena',
+        /function mesActual\(\)\{\s*return ahoraEnChile\(\)\.fecha\.slice\(0,7\);\s*\}/.test(appJs), true);
+  check('la línea de "ahora" usa la misma fuente que la fecha',
+        /fecha\s*===\s*ahora\.fecha/.test(appJs), true);
+  check('sigue existiendo fmtDateLocal para formatear un Date cualquiera',
+        /function fmtDateLocal\(/.test(appJs), true);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  correr(src);
+}).catch(function(){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (el navegador no me deja leerlos solo)';
+  document.getElementById('archivo').addEventListener('change', function(e){
+    var files = Array.prototype.slice.call(e.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
+</html>

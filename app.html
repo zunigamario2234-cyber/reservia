@@ -1506,7 +1506,41 @@ function buildMsg(evento, vars={}){
   Object.entries(all).forEach(([k,v])=>{ m=m.replace(new RegExp('{'+k+'}','g'),v||''); });
   return m;
 }
-function mesActual(){ return new Date().toISOString().slice(0,7); }
+// "Ahora" según el reloj de Chile. Gemela de la de reservar.html/club.html —
+// ver ahí el detalle de por qué se ancla la zona con Intl en vez de hardcodear
+// el offset.
+//
+// Acá el problema era distinto y peor: se usaba new Date().toISOString(), que
+// devuelve la fecha en UTC. Como Chile es UTC-4, a partir de las 20:00 hora
+// local el toISOString ya está en el día siguiente, así que la agenda saltaba a
+// mañana —y el dueño veía el día vacío— todas las noches.
+//
+// El negocio corre en hora de Chile y la columna `fecha` guarda fechas de pared
+// chilenas, así que "hoy" tiene que ser el hoy de Chile aunque el dueño abra el
+// panel desde otro país. Por eso se ancla la zona y no basta con la hora local
+// del dispositivo.
+//
+// Devuelve la fecha 'YYYY-MM-DD' y los minutos desde medianoche, las dos de la
+// misma fuente. Para convertir un Date cualquiera a texto está fmtDateLocal();
+// esta es solo para "ahora".
+function ahoraEnChile(){
+  try{
+    const p = {};
+    new Intl.DateTimeFormat('en-CA',{
+      timeZone:'America/Santiago', hourCycle:'h23',
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+    }).formatToParts(new Date()).forEach(x=>{ p[x.type]=x.value; });
+    return { fecha:`${p.year}-${p.month}-${p.day}`, minutos:(Number(p.hour)%24)*60+Number(p.minute) };
+  }catch(e){
+    const d = new Date();
+    return { fecha:fmtDateLocal(d), minutos:d.getHours()*60+d.getMinutes() };
+  }
+}
+
+// El mes en curso, 'YYYY-MM'. Alimenta el IVA, las comisiones y las tarjetas de
+// profesional: con toISOString, el último día del mes después de las 20:00
+// saltaba al mes siguiente y los tres mostraban el período equivocado.
+function mesActual(){ return ahoraEnChile().fecha.slice(0,7); }
 
 let MODO_CLIENTE_RESERVA='existente';
 function setModoClienteReserva(modo){
@@ -1517,7 +1551,7 @@ function setModoClienteReserva(modo){
   document.getElementById('rm-tab-nuevo').className='btn btn-sm '+(modo==='nuevo'?'btn-primary':'btn-ghost');
 }
 function initModal(id){
-  const hoy=new Date().toISOString().split('T')[0];
+  const hoy=ahoraEnChile().fecha;
   if(id==='m-cita'){
     document.getElementById('v-id').value='';
     document.getElementById('m-cita-title').textContent='Registrar cita';
@@ -1930,7 +1964,7 @@ async function guardarCita(){
       const nivelObj=nivelesOrdenados().find(x=>x.nombre===ahora);
       const ben=nivelObj?.beneficio||'';
       const expires=new Date(); expires.setDate(expires.getDate()+30);
-      await sb.from('vip_historial').insert({barberia_id:S.barberia.id,cliente_id:cid,nivel:ahora,beneficio:ben,fecha_ganado:fecha,fecha_expira:expires.toISOString().split('T')[0]});
+      await sb.from('vip_historial').insert({barberia_id:S.barberia.id,cliente_id:cid,nivel:ahora,beneficio:ben,fecha_ganado:fecha,fecha_expira:fmtDateLocal(expires)});
       await loadVIP();
       notify('🏆 '+cl?.nombre+' alcanzó nivel '+ahora+'!','warn');
       if(cl&&nivelObj){const msg=buildMsg('Club nivel '+nivelObj.orden,{nombre:cl.nombre,link_club:linkClub(cl.id)});if(msg)abrirWA(cl.whatsapp,msg);}
@@ -2853,7 +2887,7 @@ async function procesarReserva(id,metodoPago){
 }
 
 async function canjearVIP(id){
-  await sb.from('vip_historial').update({canjeado:true,fecha_canje:new Date().toISOString().split('T')[0]}).eq('id',id);
+  await sb.from('vip_historial').update({canjeado:true,fecha_canje:ahoraEnChile().fecha}).eq('id',id);
   await loadVIP();renderVIP();notify('Beneficio marcado como canjeado ✓');
 }
 
@@ -3759,13 +3793,15 @@ function agMobilePage(dir){
 
 function agendaDia(delta){
   const inp=document.getElementById('ag-fecha');
-  const cur=inp.value?new Date(inp.value+'T12:00:00'):new Date();
+  // El mediodía evita que el Date se corra de día al parsear. Sin fecha en el
+  // input se arranca del hoy chileno, no del hoy del dispositivo.
+  const cur=new Date((inp.value||ahoraEnChile().fecha)+'T12:00:00');
   cur.setDate(cur.getDate()+delta);
-  inp.value=cur.toISOString().split('T')[0];
+  inp.value=fmtDateLocal(cur);
   renderAgenda();
 }
 function agendaHoy(){
-  document.getElementById('ag-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('ag-fecha').value=ahoraEnChile().fecha;
   renderAgenda();
 }
 
@@ -3795,7 +3831,7 @@ function estadoColor(estado){
 }
 
 function renderAgenda(){
-  const fecha=document.getElementById('ag-fecha').value||new Date().toISOString().split('T')[0];
+  const fecha=document.getElementById('ag-fecha').value||ahoraEnChile().fecha;
   document.getElementById('ag-fecha').value=fecha;
   const bf=document.getElementById('ag-profesional').value;
   const selP=document.getElementById('ag-profesional');
@@ -3841,11 +3877,12 @@ function renderAgenda(){
 
   const gutter=`<div class="cal-gutter" style="height:${gridH}px">${horas.map(hr=>`<div class="cal-hourlabel" style="top:${(hr-AG_START_HOUR)*60*AG_PX_MIN}px">${String(hr).padStart(2,'0')}:00</div>`).join('')}</div>`;
 
-  const hoyStr=new Date().toISOString().split('T')[0];
+  // La fecha y los minutos salen de la misma fuente. Antes la fecha era UTC y
+  // los minutos locales: además de correrse de día, se contradecían entre sí.
+  const ahora=ahoraEnChile();
   let nowLine='';
-  if(fecha===hoyStr){
-    const now=new Date();
-    const mins=now.getHours()*60+now.getMinutes();
+  if(fecha===ahora.fecha){
+    const mins=ahora.minutos;
     if(mins>=AG_START_HOUR*60&&mins<=AG_END_HOUR*60) nowLine=`<div class="cal-now" style="top:${(mins-AG_START_HOUR*60)*AG_PX_MIN}px"></div>`;
   }
 
@@ -4307,7 +4344,7 @@ function exportarExcel(tipo){
       const iv=Math.round((v.valor||0)*((S.barberia?.iva_pct||19)/100));
       return{Fecha:v.fecha,Cliente:cl?cl.nombre+' '+(cl.apellido||''):'—',Servicio:v.servicio||'—',Profesional:v.barbero_nombre||'—','Valor neto':v.valor||0,'IVA':iv,'Total con IVA':(v.valor||0)+iv,'Método pago':v.metodo_pago||'—'};
     });
-    nombre='citas_'+new Date().toISOString().slice(0,10);
+    nombre='citas_'+ahoraEnChile().fecha;
   }
   else if(tipo==='profesional'){
     const desde=document.getElementById('rep-prof-desde')?.value||'';
@@ -4339,7 +4376,7 @@ function exportarExcel(tipo){
       const total=citas.reduce((s,v)=>s+(v.valor||0),0);
       return{Nombre:c.nombre+' '+(c.apellido||''),WhatsApp:c.whatsapp||'',Email:c.email||'','Total citas':citas.length,'Valor histórico':total,'Ticket promedio':citas.length?Math.round(total/citas.length):0,...(VIP_HABILITADO?{'Nivel VIP':getNivel(citas.length)}:{}),Estado:getEstado(c.id),'Fecha registro':c.fecha_registro||''};
     });
-    nombre='clientes_'+new Date().toISOString().slice(0,10);
+    nombre='clientes_'+ahoraEnChile().fecha;
   }
   else if(tipo==='servicios'){
     const mes=document.getElementById('rep-mes-srv')?.value||'';
