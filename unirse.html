@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unirme al Club VIP</title>
+<!-- SIN manifest dinámico, a diferencia de reservar.html y club.html. Esta
+     página se usa UNA vez, escaneando un QR en el local: si alguien la
+     agregara a inicio, el start_url la dejaría clavada en el formulario de
+     alta para siempre, que no es nada que quiera volver a abrir. El destino
+     que sí conviene guardar es club.html, y a esa se llega al terminar. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+.portada-wrap{width:100%;max-height:200px;overflow:hidden;background:#0d0e18}
+.portada-wrap img{width:100%;height:200px;object-fit:cover;display:block}
+@media(max-width:480px){.portada-wrap img{height:120px}}
+.header{padding:24px;text-align:center}
+.header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
+.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
+.header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
+.container{max-width:480px;margin:0 auto;padding:0 16px 40px}
+.card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
+.hero{text-align:center;padding:28px 22px}
+.hero-badge{font-size:48px;margin-bottom:10px}
+.hero-titulo{font-size:19px;font-weight:700;color:#fff;margin-bottom:8px}
+.hero-sub{font-size:13px;color:#888;line-height:1.6}
+label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+input{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:11px 12px;font-size:16px;width:100%;transition:border-color 0.15s;font-family:inherit}
+input:focus{outline:none;border-color:#7c6af7}
+.form-group{margin-bottom:14px}
+.wsp-row{display:flex;align-items:stretch;gap:0}
+.wsp-prefijo{display:flex;align-items:center;padding:0 12px;background:#12131f;border:0.5px solid #252525;border-right:none;border-radius:8px 0 0 8px;font-size:14px;color:#777;flex-shrink:0}
+.wsp-row input{border-radius:0 8px 8px 0}
+.ayuda{font-size:11px;color:#555;margin-top:5px;line-height:1.5}
+.ayuda b{color:#7c6af7;font-weight:600}
+.btn{width:100%;padding:13px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
+.btn-primary{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,#6b59e6,#4a7cde)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.btn-wa{display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;margin-top:12px}
+.btn-wa:hover{background:#003318}
+.alert{padding:11px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;line-height:1.5}
+.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
+.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+.aviso-screen{text-align:center;padding:32px 20px}
+.aviso-icon{font-size:52px;margin-bottom:14px}
+.aviso-titulo{font-size:19px;font-weight:600;color:#fff;margin-bottom:10px}
+.aviso-sub{font-size:13px;color:#888;line-height:1.7}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:360px){.container{padding:0 12px 32px}.card{padding:16px}}
+</style>
+</head>
+<body>
+
+<div class="portada-wrap" id="portada-wrap" style="display:none"><img id="portada-img" alt=""></div>
+<div class="header">
+  <div class="header-title-row">
+    <img id="header-logo-img" class="header-logo-img" style="display:none" alt="">
+    <h1 id="h-nombre">Club VIP</h1>
+  </div>
+</div>
+
+<div class="container">
+  <div id="contenido">
+    <div class="msg-full">Cargando…</div>
+  </div>
+</div>
+
+<script>
+// Las credenciales las define supabase-config.js, cargado en el <head>. Misma
+// guarda que reservar.html y club.html: sin esto la página queda viva pero
+// inservible —entera en pantalla, congelada en "Cargando…", con el botón
+// fallando en silencio— y quien escaneó el QR creería que el negocio no
+// atiende. Se corta acá y se avisa.
+if (typeof SUPABASE_URL === 'undefined') {
+  console.error('supabase-config.js no cargó: SUPABASE_URL y SUPABASE_KEY no están definidas. Revisa que el archivo se esté sirviendo (200) junto a esta página.');
+  document.body.innerHTML = '<div style="font-family:system-ui,-apple-system,sans-serif;color:#e8e6e0;background:#08090d;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;text-align:center;line-height:1.6">No pudimos cargar la página. Intenta de nuevo en unos minutos.</div>';
+  throw new Error('supabase-config.js no cargó');
+}
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const params = new URLSearchParams(window.location.search);
+const BARBERIA_ID = params.get('id');
+const TOKEN = params.get('k');
+
+let BARBERIA = null;
+
+// ─── WhatsApp ───────────────────────────────────────────────────────────────
+// Gemela de la normalización de unirse_club_publico() en
+// migration_club_alta_directa.sql. Si se toca una, hay que tocar la otra.
+//
+// Devuelve los 9 dígitos del móvil chileno, o '' si lo escrito no es uno.
+// Acepta los cuatro formatos que la gente escribe sin pensar:
+//   '+56 9 8754 2136' · '56987542136' · '987542136' · '8754 2136'
+//
+// Los 8 dígitos sueltos se completan con el 9 adelante porque el prefijo va
+// impreso al lado del campo: quien ve "+56 9" escribe solo lo que falta.
+//
+// NO adivina cuando el número no calza. Un fijo ('22 345 6789' -> 223456789)
+// tiene 9 dígitos pero no empieza en 9, así que se rechaza en vez de
+// "arreglarlo": inventarle un 9 adelante lo convertiría en el móvil de otra
+// persona, y el alta quedaría con un número que no es de nadie.
+function normWspCl(raw){
+  var d = String(raw == null ? '' : raw).replace(/\D/g,'');
+  if(d.length > 9) d = d.slice(-9);
+  if(d.length === 8) d = '9' + d;
+  return (d.length === 9 && d.charAt(0) === '9') ? d : '';
+}
+
+// Formato en que se muestra de vuelta, igual al que guarda la RPC.
+function fmtWspCl(norm){
+  if(norm.length !== 9) return '';
+  return '+56 ' + norm.charAt(0) + ' ' + norm.substr(1,4) + ' ' + norm.substr(5,4);
+}
+
+// ─── Decisión de destino ────────────────────────────────────────────────────
+// Pura y aparte a propósito, igual que decidirEmailFicha() en app.html: es la
+// regla que duele si se rompe, y así se puede probar sin tocar la base.
+//
+// 'club'  = alta nueva, se puede abrir su Club VIP recién creado.
+// 'aviso' = ya existía; NO se abre nada, se le explica cómo pedir su link.
+// 'error' = respuesta que no calza con ninguno de los dos.
+//
+// POR QUÉ 'existente' NUNCA ABRE EL CLUB, aunque venga un cliente_id: si
+// escribir un teléfono abriera la ficha de quien ya existe, conocer el número
+// de alguien daría acceso a su nombre, su nivel y sus códigos de canje.
+// La RPC ya devuelve cliente_id en null en ese caso — este segundo cierre
+// existe para que la protección no dependa de que el servidor se porte bien.
+function decidirDestino(estado, clienteId){
+  if(estado === 'existente') return 'aviso';
+  if(estado === 'nuevo' && clienteId) return 'club';
+  return 'error';
+}
+
+function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
+
+function mostrarError(msg){
+  document.getElementById('contenido').innerHTML = `<div class="msg-full">${msg}</div>`;
+}
+
+function pintarFormulario(){
+  document.getElementById('contenido').innerHTML = `
+    <div class="card hero">
+      <div class="hero-badge">🎟</div>
+      <div class="hero-titulo">Únete a nuestro Club VIP</div>
+      <div class="hero-sub">Suma visitas, desbloquea beneficios y accede a las alianzas del negocio.</div>
+    </div>
+    <div class="card">
+      <div id="alert-form" style="display:none" class="alert alert-err"></div>
+      <div class="form-group">
+        <label>Tu nombre *</label>
+        <input type="text" id="f-nombre" placeholder="Juan Pérez" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label>Tu WhatsApp *</label>
+        <div class="wsp-row">
+          <span class="wsp-prefijo">+56 9</span>
+          <input type="tel" id="f-wsp" placeholder="8754 2136" autocomplete="tel" inputmode="numeric">
+        </div>
+        <div class="ayuda" id="f-wsp-ayuda">Solo los 8 dígitos que siguen al 9.</div>
+      </div>
+      <div class="form-group">
+        <label>Tu cumpleaños (opcional)</label>
+        <input type="date" id="f-cumple">
+        <div class="ayuda">Lo usamos para saludarte y darte un beneficio en tu mes.</div>
+      </div>
+      <button class="btn btn-primary" id="btn-unirme" onclick="unirme()">Unirme al Club VIP</button>
+    </div>`;
+
+  // Eco en vivo del número normalizado: la persona confirma que es el suyo
+  // antes de enviar, en vez de descubrir el error cuando ya quedó guardado.
+  document.getElementById('f-wsp').addEventListener('input', function(){
+    const norm = normWspCl(this.value);
+    const ayuda = document.getElementById('f-wsp-ayuda');
+    if(!this.value.trim()){
+      ayuda.innerHTML = 'Solo los 8 dígitos que siguen al 9.';
+    }else if(norm){
+      ayuda.innerHTML = 'Guardaremos <b>' + fmtWspCl(norm) + '</b>';
+    }else{
+      ayuda.innerHTML = 'Ese número no parece un celular chileno.';
+    }
+  });
+}
+
+function pintarAviso(nombre){
+  const wsp = BARBERIA && BARBERIA.whatsapp;
+  document.getElementById('contenido').innerHTML = `
+    <div class="card">
+      <div class="aviso-screen">
+        <div class="aviso-icon">👋</div>
+        <div class="aviso-titulo">¡Ya eres parte del Club!</div>
+        <div class="aviso-sub">
+          Ese WhatsApp ya está registrado en ${BARBERIA.nombre}.<br><br>
+          Por tu seguridad no abrimos tu Club VIP desde acá: pídele el link al
+          negocio y guárdalo en tu teléfono.
+        </div>
+        ${wsp?`<button class="btn btn-wa" id="btn-pedir-link" style="max-width:280px;margin-left:auto;margin-right:auto">📱 Pedir mi link por WhatsApp</button>`:''}
+      </div>
+    </div>`;
+  if(wsp){
+    document.getElementById('btn-pedir-link').addEventListener('click', function(){
+      // Lo manda la persona desde SU WhatsApp al del negocio. De paso el dueño
+      // ve desde qué número llegó, así que puede comprobar que es quien dice
+      // antes de mandarle el link.
+      abrirWA(wsp, `Hola! Soy ${nombre}. Ya soy parte del Club VIP de ${BARBERIA.nombre} y quiero el link para ver mis beneficios.`);
+    });
+  }
+}
+
+async function unirme(){
+  const btn = document.getElementById('btn-unirme');
+  const al = document.getElementById('alert-form');
+  al.style.display = 'none';
+
+  const nombre = document.getElementById('f-nombre').value.trim();
+  const wspNorm = normWspCl(document.getElementById('f-wsp').value);
+  const cumple = document.getElementById('f-cumple').value || null;
+
+  if(!nombre){ al.textContent='Escribe tu nombre.'; al.style.display=''; return; }
+  if(!wspNorm){ al.textContent='Revisa tu WhatsApp: son 8 dígitos después del 9.'; al.style.display=''; return; }
+
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Uniéndote…';
+  try{
+    // Se manda el número YA normalizado, no el texto crudo: así el cliente y
+    // el servidor coinciden en qué número se está pidiendo. La RPC lo
+    // normaliza igual de nuevo — esta no es la validación, es la primera de
+    // dos.
+    const {data,error} = await sb.rpc('unirse_club_publico',{
+      p_barberia_id: BARBERIA_ID,
+      p_token: TOKEN,
+      p_nombre: nombre,
+      p_whatsapp: wspNorm,
+      p_cumpleanos: cumple
+    });
+    if(error) throw error;
+    // returns table(...) llega como arreglo de filas.
+    const fila = Array.isArray(data) ? data[0] : data;
+    const destino = decidirDestino(fila && fila.estado, fila && fila.cliente_id);
+
+    if(destino === 'club'){
+      location.href = 'club.html?id='+encodeURIComponent(BARBERIA_ID)+'&cliente='+encodeURIComponent(fila.cliente_id);
+      return;
+    }
+    if(destino === 'aviso'){ pintarAviso(nombre); return; }
+    throw new Error('No pudimos completar tu inscripción. Intenta de nuevo.');
+  }catch(e){
+    al.textContent = e.message || 'No pudimos completar tu inscripción.';
+    al.style.display = '';
+    btn.disabled = false; btn.textContent = 'Unirme al Club VIP';
+  }
+}
+
+async function init(){
+  if(!BARBERIA_ID || !TOKEN){ mostrarError('Este link no es válido. Escanea el código QR del local.'); return; }
+
+  // Select acotado, mismo criterio que club.html: se piden las columnas que se
+  // usan y ninguna más. Este select es lo que hay que imitar, no select('*').
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url').eq('id',BARBERIA_ID).single();
+  if(!barb){ mostrarError('No encontramos este negocio.'); return; }
+  BARBERIA = barb;
+
+  document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
+  document.title = 'Unirme al Club VIP — ' + barb.nombre;
+  if(barb.foto_portada){
+    document.getElementById('portada-img').src = barb.foto_portada;
+    document.getElementById('portada-wrap').style.display = '';
+  }
+  if(barb.logo_url){
+    document.getElementById('header-logo-img').src = barb.logo_url;
+    document.getElementById('header-logo-img').style.display = '';
+  }
+
+  // El token NO se valida acá contra la base: validarlo en el navegador
+  // obligaría a exponer club_tokens públicamente, que es justo lo que la RLS
+  // cerrada evita. Lo valida la RPC al enviar el formulario.
+  pintarFormulario();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -721,6 +721,15 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <tbody id="t-alianzas"></tbody></table></div></div>
   </div>
   <div id="cfg-vip" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Link para unirse al Club VIP</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Conviértelo en código QR e imprímelo para el local. Quien lo escanee puede unirse al club sin reservar una cita.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="cfg-link-club-qr" type="text" readonly style="flex:1;min-width:200px" placeholder="Cargando…">
+        <button class="btn btn-primary" onclick="copiarLinkClubQR()">📋 Copiar link</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Este link lleva un código propio de tu negocio: es para el cartel del local, no para publicarlo en redes.</div>
+    </div>
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Configurá los niveles de tu Club VIP — cuántas visitas hacen falta para cada uno, cómo se llaman, y su beneficio. Necesitás al menos un nivel siempre.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-nivel')">+ Nivel</button></div>
     <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Visitas mínimas</th><th>Beneficio</th><th></th></tr></thead>
@@ -1441,6 +1450,28 @@ async function copiarAlPortapapeles(texto){
 }
 function copiarLinkReservas(){ copiarAlPortapapeles(document.getElementById('cfg-link-reservas').value); }
 function copiarLinkProfesional(id){ copiarAlPortapapeles(location.origin+'/reservar.html?id='+S.barberia.id+'&profesional='+id); }
+// ═══ LINK DEL QR PARA UNIRSE AL CLUB VIP ═══
+// El token NO sale de S.barberia: vive en club_tokens, una tabla aparte con RLS
+// cerrada, justamente porque barberias tiene select público (using(true)) y RLS
+// no filtra columnas — un token guardado ahí sería legible por cualquiera con
+// la anon key. Lo entrega obtener_club_token(), que hace get-or-create y exige
+// rol dueño.
+function linkUnirseClub(token){ return S.barberia?.id&&token?(location.origin+'/unirse.html?id='+S.barberia.id+'&k='+token):''; }
+function copiarLinkClubQR(){
+  const v=document.getElementById('cfg-link-club-qr').value;
+  if(!v){ notify('El link todavía no está listo. Recarga la página.','err'); return; }
+  copiarAlPortapapeles(v);
+}
+async function cargarLinkClubQR(){
+  const inp=document.getElementById('cfg-link-club-qr');
+  if(!inp)return;
+  const {data:token,error}=await sb.rpc('obtener_club_token');
+  // Que falle es esperable si quien mira no es el dueño. Se explica en el
+  // propio campo en vez de tirar un error rojo que esa persona no puede
+  // resolver — y el link queda vacío, así que copiarLinkClubQR() no manda nada.
+  if(error||!token){ inp.value=''; inp.placeholder='Solo el dueño puede ver este link'; return; }
+  inp.value=linkUnirseClub(token);
+}
 // Todos los .overlay comparten z-index:200, así que con dos modales abiertos
 // desempataba el orden del DOM: el recorte de foto (m-recortar, arriba en el
 // archivo) quedaba TAPADO por el modal que lo abrió (m-profesional, más abajo).
@@ -1590,6 +1621,23 @@ function badgeNivel(nv){
 }
 function abrirWA(wsp,msg){ const n=wsp.replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
 function linkClub(clienteId){ return S.barberia?.id&&clienteId?(location.origin+'/club.html?id='+S.barberia.id+'&cliente='+clienteId):''; }
+// Le manda al cliente SU link personal del Club VIP por WhatsApp.
+//
+// POR QUÉ EXISTE. unirse.html, cuando el WhatsApp escaneando el QR ya está
+// registrado, NO abre el club de esa persona: si lo hiciera, conocer un
+// teléfono daría acceso a su nombre, su nivel y sus códigos de canje. En vez
+// de eso la manda a pedirle el link al negocio. Sin este botón ese aviso
+// apuntaría a algo que el dueño no tiene cómo hacer — hasta ahora el link solo
+// salía en el mensaje automático de subida de nivel.
+//
+// De paso, el pedido le llega al dueño DESDE el WhatsApp de la persona, así
+// que puede comprobar que es quien dice antes de apretar acá.
+function enviarLinkClub(id){
+  const c=S.clientes.find(x=>x.id===id); if(!c)return;
+  const link=linkClub(id);
+  if(!link){ notify('No se pudo armar el link del club.','err'); return; }
+  abrirWA(c.whatsapp,`Hola ${c.nombre}! Este es tu Club VIP de ${S.barberia.nombre}: ${link}`);
+}
 function linkAliado(alianzaId){ return S.barberia?.id&&alianzaId?(location.origin+'/aliado.html?id='+S.barberia.id+'&alianza='+alianzaId):''; }
 function buildMsg(evento, vars={}){
   const t=S.plantillas.find(p=>p.evento===evento&&p.activo);
@@ -3448,6 +3496,7 @@ function renderClientes(){
       <td data-label="" style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="verCliente('${c.id}')">Ver</button>
         <button class="btn btn-ghost btn-sm" onclick="editarCliente('${c.id}')">Editar</button>
+        <button class="btn btn-ghost btn-sm vip-only" onclick="enviarLinkClub('${c.id}')" title="Enviarle su link del Club VIP por WhatsApp">🎟</button>
         <button class="btn btn-danger btn-sm" onclick="eliminarClientes(['${c.id}'])" title="Eliminar cliente">×</button>
       </td></tr>`;
   }).join('');
@@ -3986,6 +4035,10 @@ function renderConfig(){
     document.getElementById('cfg-modo-comision').value=S.barberia.modo_comision||'total';
     actualizarEjemploComision();
     document.getElementById('cfg-link-reservas').value=location.origin+'/reservar.html?id='+S.barberia.id;
+    // Sin await a propósito: pide el token por RPC y rellena el campo cuando
+    // llega. Esperarlo dejaría el resto de la configuración en blanco mientras
+    // tanto, y el link del QR no es lo primero que se viene a mirar acá.
+    cargarLinkClubQR();
   }
   renderHorarioNegocio();
   renderBloqueos();

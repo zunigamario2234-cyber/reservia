@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — unirse.html (alta directa al Club VIP)</title>
+
+<!--
+  Test del alta directa al Club VIP: unirse.html + migration_club_alta_directa.sql.
+
+  POR QUÉ EXISTE
+  Esta es la primera página pública que ESCRIBE en la tabla clientes sin que
+  medie una reserva. Dos cosas se rompen en silencio si nadie las vigila:
+
+   1. La protección de privacidad. Se decidió que un WhatsApp ya registrado
+      NO abre el Club VIP de esa persona, porque eso convertiría "conocer un
+      teléfono" en "ver su nombre, su nivel y sus códigos de canje". Esa regla
+      vive en decidirDestino(), y un cambio de una línea la desactiva sin que
+      nada se vea distinto en pantalla.
+
+   2. La normalización del WhatsApp. normWspCl() en unirse.html y la
+      normalización de unirse_club_publico() en la migración son GEMELAS. Si
+      uno de los dos cambia de criterio, el alta empieza a crear fichas
+      duplicadas de la misma persona — y eso no se nota hasta que alguien
+      revisa la lista de clientes meses después.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES: los baja con fetch y corre las funciones de verdad
+  extraídas del archivo, no copias. No abre Supabase ni crea nada.
+
+  Tiene que quedar en la misma carpeta que unirse.html y que la migración: las
+  rutas son relativas, igual que en producción.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md — con Chrome abierto hay una trampa que devuelve salida vacía
+  y parece que pasó.
+
+  PRUEBA DE MUTACIÓN (un test que nunca falla no prueba nada)
+  Cada una de estas ediciones tiene que poner el test en rojo. Si alguna deja
+  todo en verde, el test está mintiendo:
+   a) En decidirDestino(), cambiar la primera línea por
+      `if(estado === 'existente' && !clienteId) return 'aviso';`
+      -> tiene que fallar "'existente' con id igual NO abre el club".
+   b) En normWspCl(), borrar la línea `if(d.length === 8) d = '9' + d;`
+      -> tiene que fallar el caso de los 8 dígitos sueltos.
+   c) En normWspCl(), cambiar el guardia final por `return d;`
+      -> tienen que fallar los casos de fijo y de basura.
+   d) En fmtWspCl(), cambiar '+56 ' por '+569 '
+      -> tiene que fallar el cruce con el formato canónico del SQL.
+   e) En la migración, cambiar `length(v_norm) <> 9` por `< 9`
+      -> tiene que fallar "la RPC exige exactamente 9 dígitos".
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — unirse.html (alta directa al Club VIP)</h1>
+<p>Corre las funciones reales de <code>unirse.html</code> y las cruza contra
+<code>migration_club_alta_directa.sql</code>, para que el navegador y la base no
+se desincronicen sin que nadie se entere.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['unirse.html','migration_club_alta_directa.sql','app.html'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+// Los comentarios del archivo explican la regla que se está probando, así que
+// nombran justo lo que se busca. Sin sacarlos, los checks de texto darían
+// falso positivo contra la propia documentación.
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+function sinComentariosSql(sql){
+  return sql.replace(/^\s*--.*$/gm, '');
+}
+
+// <script> inline, sin los que traen src.
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+
+// Saca el código de una función por nombre, cerrando las llaves de verdad.
+// Se usa para EJECUTAR la función real del archivo, no para mirarla como texto.
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// Reconstruye las funciones puras del archivo en un entorno aislado. Son puras
+// (no tocan DOM ni red), así que corren tal cual.
+function armarPuras(js, nombres){
+  var fuentes = [];
+  for(var i = 0; i < nombres.length; i++){
+    var f = extraerFuncion(js, nombres[i]);
+    if(f === '') return null;
+    fuentes.push(f);
+  }
+  try {
+    return new Function(fuentes.join('\n') + '\nreturn [' + nombres.join(',') + '];')();
+  } catch(e){ return null; }
+}
+
+// Objeto de argumentos de cada .rpc('nombre',{...}), cerrando llaves de verdad.
+function argsDeRpc(js){
+  var re = /\.rpc\('([a-z_]+)'\s*,\s*\{/g, m, out = [];
+  while((m = re.exec(js)) !== null){
+    var i = re.lastIndex - 1, prof = 0, fin = -1;
+    for(var k = i; k < js.length; k++){
+      if(js[k] === '{') prof++;
+      else if(js[k] === '}'){ prof--; if(prof === 0){ fin = k; break; } }
+    }
+    out.push({ nombre: m[1], args: fin === -1 ? '' : js.slice(i, fin + 1) });
+  }
+  return out;
+}
+
+// Lecturas de tabla. sb.storage.from() no cuenta: no es una tabla.
+function lecturasDeTabla(js){
+  var re = /(?:^|[^.\w])(?:sb|supabase)\.from\('([a-z_]+)'\)([^\n]*)/gm, m, out = [];
+  while((m = re.exec(js)) !== null){ out.push({ tabla: m[1], resto: m[2] }); }
+  return out;
+}
+
+function correr(src){
+  var html = src['unirse.html'];
+  var sql  = src['migration_club_alta_directa.sql'];
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('unirse.html — la página compila y está cableada');
+
+  var scripts = inlineScripts(html);
+  check('tiene exactamente un <script> inline', scripts.length, 1);
+
+  var js = scripts.join('\n');
+  var compila = true;
+  try { new Function(js); } catch(e){ compila = false; lineas.push('      │   ' + e.message); }
+  check('el <script> inline compila', compila, true);
+
+  var limpio = sinComentarios(js);
+
+  check('corta si supabase-config.js no cargó',
+        /typeof SUPABASE_URL === 'undefined'/.test(limpio), true);
+
+  // Sin manifest dinámico a propósito: es una página de un solo uso y
+  // "Agregar a inicio" la dejaría clavada en el formulario.
+  check('no arma manifest dinámico',
+        /configurarManifestDinamico|dynamic-manifest/.test(limpio), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('unirse.html — la RPC se llama con el scoping completo');
+
+  var rpcs = argsDeRpc(limpio);
+  var alta = rpcs.filter(function(r){ return r.nombre === 'unirse_club_publico'; });
+  check('llama unirse_club_publico una sola vez', alta.length, 1);
+  check('manda p_barberia_id', alta.length === 1 && /p_barberia_id/.test(alta[0].args), true);
+  check('manda p_token',       alta.length === 1 && /p_token/.test(alta[0].args), true);
+  check('manda p_nombre',      alta.length === 1 && /p_nombre/.test(alta[0].args), true);
+  check('manda p_whatsapp',    alta.length === 1 && /p_whatsapp/.test(alta[0].args), true);
+  check('manda p_cumpleanos',  alta.length === 1 && /p_cumpleanos/.test(alta[0].args), true);
+
+  // El número viaja ya normalizado, no el texto crudo del input: si se mandara
+  // el crudo, el navegador y la base podrían estar hablando de números
+  // distintos cuando el input trae basura.
+  check('manda el whatsapp ya normalizado',
+        alta.length === 1 && /p_whatsapp:\s*wspNorm/.test(alta[0].args), true);
+
+  var tablas = lecturasDeTabla(limpio);
+  var deClientes = tablas.filter(function(t){ return t.tabla === 'clientes'; });
+  check('NO toca la tabla clientes directamente (va por la RPC)', deClientes.length, 0);
+
+  var deBarberias = tablas.filter(function(t){ return t.tabla === 'barberias'; });
+  check('lee barberias una sola vez', deBarberias.length, 1);
+  check('con select acotado, no select(*)',
+        deBarberias.length === 1 && /select\('\*'\)/.test(deBarberias[0].resto), false);
+  check('scopeada por id del negocio',
+        deBarberias.length === 1 && /\.eq\('id'/.test(deBarberias[0].resto), true);
+
+  // club_tokens nunca se lee desde el navegador: su RLS está cerrada y
+  // validar el token en el cliente obligaría a abrirla.
+  check('NO lee club_tokens desde el navegador',
+        tablas.filter(function(t){ return t.tabla === 'club_tokens'; }).length, 0);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('decidirDestino() — la protección de privacidad');
+
+  var puras = armarPuras(js, ['decidirDestino','normWspCl','fmtWspCl']);
+  if(!puras){
+    check('se pueden extraer las funciones puras del archivo', false, true);
+    pintar();
+    return;
+  }
+  var decidirDestino = puras[0], normWspCl = puras[1], fmtWspCl = puras[2];
+
+  check('alta nueva con id abre el club',
+        decidirDestino('nuevo','11111111-1111-1111-1111-111111111111'), 'club');
+  check("'existente' sin id muestra el aviso",
+        decidirDestino('existente', null), 'aviso');
+
+  // EL CHECK QUE MÁS IMPORTA. La RPC ya devuelve null en este caso, pero si
+  // algún día devolviera el id, la página NO tiene que abrir el club igual.
+  check("'existente' con id igual NO abre el club",
+        decidirDestino('existente','11111111-1111-1111-1111-111111111111'), 'aviso');
+
+  check("'nuevo' sin id no abre nada", decidirDestino('nuevo', null), 'error');
+  check('respuesta vacía no abre nada', decidirDestino(null, null), 'error');
+  check('estado desconocido no abre nada',
+        decidirDestino('otra_cosa','11111111-1111-1111-1111-111111111111'), 'error');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('normWspCl() — los formatos que la gente escribe');
+
+  check("'+56 9 8754 2136'", normWspCl('+56 9 8754 2136'), '987542136');
+  check("'+56987542136'",    normWspCl('+56987542136'),    '987542136');
+  check("'56987542136'",     normWspCl('56987542136'),     '987542136');
+  check("'987542136'",       normWspCl('987542136'),       '987542136');
+  check("'9 8754 2136'",     normWspCl('9 8754 2136'),     '987542136');
+  check("'8754 2136' (sin el 9, que va impreso al lado)",
+        normWspCl('8754 2136'), '987542136');
+  check("'87542136'",        normWspCl('87542136'),        '987542136');
+
+  // No adivina: un fijo tiene 9 dígitos pero no empieza en 9, y ponerle un 9
+  // adelante lo convertiría en el móvil de otra persona.
+  check("fijo '22 345 6789' se rechaza", normWspCl('22 345 6789'), '');
+  check("'223456789' se rechaza",        normWspCl('223456789'),   '');
+  check('vacío se rechaza',              normWspCl(''),            '');
+  check('null se rechaza',               normWspCl(null),          '');
+  check("'123' se rechaza",              normWspCl('123'),         '');
+  check("'abc' se rechaza",              normWspCl('abc'),         '');
+
+  check("fmtWspCl devuelve el formato canónico",
+        fmtWspCl('987542136'), '+56 9 8754 2136');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('migración — invariantes de la RPC');
+
+  var sqlLimpio = sinComentariosSql(sql);
+
+  // Trampa documentada del SQL Editor de Supabase: begin;/commit; combinado
+  // con dollar-quoting falla en silencio devolviendo éxito.
+  check('la migración NO trae begin;/commit; (define funciones)',
+        /^\s*(begin|commit)\s*;/im.test(sqlLimpio), false);
+
+  check('unirse_club_publico es security definer',
+        /create or replace function unirse_club_publico[\s\S]*?security definer/i.test(sqlLimpio), true);
+  check('unirse_club_publico fija search_path',
+        /create or replace function unirse_club_publico[\s\S]*?set search_path = public/i.test(sqlLimpio), true);
+  check('obtener_club_token es security definer',
+        /create or replace function obtener_club_token[\s\S]*?security definer/i.test(sqlLimpio), true);
+  check('obtener_club_token exige rol dueno',
+        /obtener_club_token[\s\S]*?auth_rol\(\) is distinct from 'dueno'/i.test(sqlLimpio), true);
+
+  check('la RPC pública exige token además del barberia_id',
+        /p_barberia_id uuid,\s*p_token text/i.test(sqlLimpio), true);
+  check('la RPC exige exactamente 9 dígitos',
+        /length\(v_norm\)\s*<>\s*9/i.test(sqlLimpio), true);
+  check('la RPC exige que empiece en 9',
+        /substr\(v_norm,\s*1,\s*1\)\s*<>\s*'9'/i.test(sqlLimpio), true);
+  check('la RPC devuelve null en el caso existente',
+        /return query select 'existente'::text,\s*null::uuid/i.test(sqlLimpio), true);
+  check('el cupo por hora está puesto en 20',
+        /c_cupo_hora constant int := 20/i.test(sqlLimpio), true);
+  check('el cupo cuenta solo las altas del QR',
+        /canal = 'Club QR'[\s\S]*?created_at > now\(\) - interval '1 hour'/i.test(sqlLimpio), true);
+  check('el alta se guarda con canal Club QR',
+        /'Club QR', current_date/i.test(sqlLimpio), true);
+
+  // El índice NO debe ser único: las otras puertas de alta siguen con match
+  // exacto y pueden crear un duplicado legítimo, que un índice único haría
+  // fallar con un error opaco.
+  check('el índice de whatsapp_norm no es único',
+        /create unique index[^;]*whatsapp_norm/i.test(sqlLimpio), false);
+
+  // No se toca el dedup existente. Si esta migración empezara a redefinir
+  // buscar_o_crear_cliente_club, el match exacto de las otras puertas se
+  // estaría cambiando por la puerta de atrás.
+  check('la migración NO redefine buscar_o_crear_cliente_club',
+        /function buscar_o_crear_cliente_club/i.test(sqlLimpio), false);
+  check('la migración NO redefine crear_reserva_publica',
+        /function crear_reserva_publica/i.test(sqlLimpio), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('cruce navegador ↔ base — las gemelas no se desincronizaron');
+
+  // El formato canónico que arma la RPC en plpgsql tiene que ser exactamente
+  // el que fmtWspCl() le muestra a la persona antes de enviar. Si divergen,
+  // el eco en pantalla miente sobre lo que se va a guardar.
+  var mCanon = /v_canonico\s*:=\s*'([^']*)'\s*\|\|\s*substr\(v_norm,1,1\)\s*\|\|\s*'([^']*)'\s*\|\|\s*substr\(v_norm,2,4\)\s*\|\|\s*'([^']*)'\s*\|\|\s*substr\(v_norm,6,4\)/i.exec(sqlLimpio);
+  check('se puede leer el formato canónico del SQL', mCanon !== null, true);
+  if(mCanon){
+    var canonSql = mCanon[1] + '9' + mCanon[2] + '8754' + mCanon[3] + '2136';
+    check('el formato del SQL y el de fmtWspCl() coinciden',
+          canonSql, fmtWspCl('987542136'));
+  }
+
+  // Los dos normalizadores se quedan con los últimos 9 dígitos. Si el SQL
+  // cambiara ese criterio, unirse.html mandaría un número que la base
+  // interpretaría distinto.
+  check('el SQL normaliza por los últimos 9 dígitos',
+        /right\(regexp_replace\(coalesce\(p_whatsapp,''\),\s*'\\D',\s*'',\s*'g'\),\s*9\)/i.test(sqlLimpio), true);
+  check('la columna generada usa el mismo criterio',
+        /right\(regexp_replace\(coalesce\(whatsapp,''\),\s*'\\D',\s*'',\s*'g'\),\s*9\)/i.test(sqlLimpio), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('app.html — el lado del dueño');
+
+  var appJs = sinComentarios(inlineScripts(src['app.html']).join('\n'));
+
+  // El token se pide por RPC y no leyendo club_tokens: la RPC hace
+  // get-or-create, así que un negocio que nunca pidió su link igual lo obtiene.
+  // Una lectura directa devolvería vacío la primera vez y tentaría a abrir la
+  // política de la tabla para "arreglarlo".
+  check('pide el token por RPC',
+        /\.rpc\('obtener_club_token'/.test(appJs), true);
+  check('NO lee club_tokens directamente',
+        lecturasDeTabla(appJs).filter(function(t){ return t.tabla === 'club_tokens'; }).length, 0);
+
+  check('arma el link del QR contra unirse.html',
+        /unirse\.html\?id='\+S\.barberia\.id\+'&k='/.test(appJs), true);
+
+  // enviarLinkClub tiene que reusar linkClub() y no rearmar el URL a mano: si
+  // el formato del link del club cambia, tiene que cambiar en un solo lugar.
+  var fnEnviar = extraerFuncion(appJs, 'enviarLinkClub');
+  check('existe enviarLinkClub()', fnEnviar !== '', true);
+  check('enviarLinkClub reusa linkClub(), no rearma el URL',
+        /linkClub\(/.test(fnEnviar) && !/club\.html\?id=/.test(fnEnviar), true);
+  check('enviarLinkClub manda por WhatsApp del cliente',
+        /abrirWA\(c\.whatsapp/.test(fnEnviar), true);
+
+  // El botón vive en la fila de clientes. Sin él, el aviso de unirse.html
+  // ("pídele el link al negocio") apunta a algo que el dueño no puede hacer.
+  check('el botón está en la fila de clientes',
+        /onclick="enviarLinkClub\('\$\{c\.id\}'\)"/.test(src['app.html']), true);
+
+  pintar();
+}
+
+// Modo automático. Falla con file:// salvo que Chrome corra con
+// --allow-file-access-from-files, y ahí cae al selector de archivo.
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  correr(src);
+}).catch(function(){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (el navegador no me deja leerlos solo)';
+  document.getElementById('archivo').addEventListener('change', function(e){
+    var files = Array.prototype.slice.call(e.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
