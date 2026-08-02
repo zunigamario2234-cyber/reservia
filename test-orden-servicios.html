@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — orden manual de servicios</title>
+
+<!--
+  Test del orden manual de servicios: la columna "orden", las cuatro lecturas
+  que la usan, y moverServicio() en app.html.
+
+  POR QUÉ EXISTE
+  El orden de los servicios lo ven los clientes al reservar, y se rompe en
+  silencio de tres maneras distintas:
+
+   1. Que UNA de las cuatro lecturas se quede con el criterio viejo. Eran
+      cuatro archivos con dos criterios distintos (precio en las tres públicas,
+      alfabético en app.html); si una queda atrás, el dueño acomoda su lista y
+      el cliente sigue viendo otra cosa. Nadie se entera hasta que alguien
+      compara las dos pantallas.
+
+   2. Que "orden" se cuele en el payload del UPDATE del modal de servicio.
+      Ahí editarle el precio a un servicio lo movería de lugar, que es
+      exactamente lo que el dueño no espera.
+
+   3. Que moverServicio() escriba mal la secuencia. Guarda la lista completa
+      renumerada (no un swap de dos filas) justamente para que huecos, empates
+      y nulls viejos se corrijan solos — si eso se rompe, el desorden se
+      arrastra para siempre.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES. moverServicio() se ejecuta de verdad contra un sb falso
+  que captura los updates emitidos; el resto se verifica como texto. No abre
+  Supabase ni crea nada.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) En una de las 4 lecturas, volver a .order('precio') a secas
+      -> falla "<archivo> ordena por la columna orden".
+   b) En moverServicio, cambiar el filter por .filter(x=>true)
+      -> falla "subir B escribe exactamente 2 filas" y "no toca a C".
+   c) En moverServicio, borrar el guardia `if(i<0||j<0||j>=lista.length)return;`
+      -> falla "subir el primero no escribe nada" y "bajar el último...".
+   d) Meter orden en el payload compartido de guardarServicio()
+      -> falla "el payload compartido de servicios NO incluye orden".
+   e) En la migración, sacar el `where orden is null` del backfill
+      -> falla "el backfill es repetible".
+
+  Las cinco se corrieron y las cinco dieron rojo. Dos de ellas encontraron
+  agujeros REALES en este test, que hubo que tapar:
+
+   - (d) pasaba en verde. El check buscaba /const payload=\{[\s\S]*?\};/ sobre
+     el archivo entero, y hay DIEZ payloads en app.html: .exec devolvía el
+     primero, el de guardarCliente. Ahora se aísla guardarServicio() y su
+     literal se corta cerrando llaves (objetoLiteral).
+   - (c) no daba rojo sino que TUMBABA la suite: sin el guardia, moverServicio
+     tira, la excepción escapaba y el <pre> quedaba sin clase ok/fail —
+     indistinguible de "el test no corrió". Ahora las llamadas van envueltas y
+     la excepción se reporta como un fallo con nombre.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — orden manual de servicios</h1>
+<p>Verifica que las cuatro lecturas usen el mismo criterio y que
+<code>moverServicio()</code> guarde la secuencia correcta.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html','reservar.html','club.html','mi-agenda.html',
+                'migration_orden_servicios.sql'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// Saca un literal de objeto cerrando las llaves de verdad. Hace falta porque
+// en app.html hay DIEZ "const payload={...}" distintos y un regex no goloso
+// sobre el archivo entero devuelve el primero — el de guardarCliente — así que
+// el check terminaba mirando el payload equivocado y pasaba siempre.
+function objetoLiteral(js, decl){
+  var i = js.indexOf(decl);
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(ini, k + 1); }
+  }
+  return '';
+}
+
+// Lecturas de la tabla servicios, con todo lo encadenado en la misma línea.
+function lecturaServicios(js){
+  var re = /(?:sb|supabase)\.from\('servicios'\)([^\n]*)/g, m, out = [];
+  while((m = re.exec(js)) !== null) out.push(m[1]);
+  return out;
+}
+
+// Corre el moverServicio() REAL contra un sb falso que registra los updates.
+// La cadena imitada es .update({...}).eq('id',x).eq('barberia_id',y), y solo
+// el segundo .eq devuelve la promesa — así, si el scoping por negocio
+// desapareciera, la cadena nunca resolvería y el test se caería.
+function armarMover(appJs){
+  var fuente = extraerFuncion(appJs, 'moverServicio');
+  if(!fuente) return null;
+  return function(servicios, id, dir){
+    var updates = [];
+    var S = { servicios: servicios.slice(), barberia: { id: 'B1' } };
+    var sb = { from: function(){ return {
+      update: function(vals){
+        var rec = { orden: vals.orden };
+        var chain = { eq: function(col, val){
+          if(col === 'id') rec.id = val;
+          if(col === 'barberia_id'){ rec.scoped = true; updates.push(rec); return Promise.resolve({ error: null }); }
+          return chain;
+        } };
+        return chain;
+      }
+    }; } };
+    // extraerFuncion() busca "function moverServicio(", que matchea DENTRO de
+    // "async function moverServicio(" y deja el async afuera. Recompilarla así
+    // da SyntaxError, porque el cuerpo tiene await. Se le devuelve el async
+    // mirando el archivo, en vez de asumirlo.
+    var esAsync = /async\s+function\s+moverServicio\s*\(/.test(appJs);
+    var f = new Function('S','sb','notify','loadServicios','renderConfig',
+                         (esAsync ? 'async ' : '') + fuente + '\nreturn moverServicio;')
+            (S, sb, function(){}, function(){ return Promise.resolve(); }, function(){});
+    return f(id, dir).then(function(){ return updates; });
+  };
+}
+
+async function correr(src){
+  var appHtml = src['app.html'];
+  var appJs = sinComentarios(inlineScripts(appHtml).join('\n'));
+  var sql = sinComentariosSql(src['migration_orden_servicios.sql']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las cuatro lecturas usan el mismo criterio');
+
+  var PAGS = ['app.html','reservar.html','club.html','mi-agenda.html'];
+  PAGS.forEach(function(p){
+    var js = sinComentarios(inlineScripts(src[p]).join('\n'));
+    // En app.html hay varias sentencias sobre servicios (update, insert); la
+    // lectura es la que trae .select( y .order(.
+    var lecturas = lecturaServicios(js).filter(function(l){
+      return /\.select\(/.test(l) && /\.order\(/.test(l);
+    });
+    check(p + ' tiene una sola lectura ordenada de servicios', lecturas.length, 1);
+    if(lecturas.length !== 1) return;
+    check(p + ' ordena por la columna orden',
+          /\.order\('orden'/.test(lecturas[0]), true);
+    check(p + ' manda los nulls al final',
+          /nullsFirst\s*:\s*false/.test(lecturas[0]), true);
+    check(p + ' usa el precio de desempate',
+          /\.order\('precio'\)/.test(lecturas[0]), true);
+    // El criterio viejo de app.html era alfabético: si vuelve, el dueño ve
+    // una lista distinta a la de sus clientes otra vez.
+    check(p + ' ya no ordena por nombre',
+          /\.order\('nombre'\)/.test(lecturas[0]), false);
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el modal de servicio no mueve nada al editar');
+
+  // Todo esto se mira DENTRO de guardarServicio(), no sobre el archivo entero:
+  // hay diez payloads distintos en app.html y el primero es el de clientes.
+  var fnGuardar = extraerFuncion(appJs, 'guardarServicio');
+  check('se puede extraer guardarServicio()', fnGuardar !== '', true);
+  var payloadSrv = objetoLiteral(fnGuardar, 'const payload=');
+  check('se puede aislar el payload de servicios', payloadSrv !== '', true);
+
+  // orden solo puede aparecer en la rama del insert. Si estuviera en el
+  // payload compartido, un update de precio reordenaría la lista.
+  check('el payload compartido de servicios NO incluye orden',
+        /\borden\b/.test(payloadSrv), false);
+  check('el insert de servicios manda orden',
+        /\.insert\(\{\.\.\.payload,\s*orden:\s*maxOrden\s*\+\s*1\}\)/.test(fnGuardar), true);
+  check('el update de servicios manda el payload pelado',
+        /\.update\(payload\)\.eq\('id',id\)/.test(fnGuardar), true);
+  // Sobre el máximo y no sobre el largo: con un hueco, el largo repetiría un
+  // número que ya existe.
+  check('el orden del servicio nuevo sale del máximo, no del largo',
+        /reduce\(\(m,s\)=>Math\.max\(m,s\.orden\|\|0\),0\)/.test(fnGuardar), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('moverServicio() — se ejecuta de verdad');
+
+  var mover = armarMover(appJs);
+  if(!mover){
+    check('se puede extraer moverServicio() del archivo', false, true);
+    pintar();
+    return;
+  }
+
+  // moverServicio() puede TIRAR en vez de fallar (por ejemplo si se le saca el
+  // guardia de extremos: lista[-1] es undefined y el .map de después revienta).
+  // Sin esta envoltura, esa excepción se lleva puesta la suite completa y el
+  // resultado queda sin clase ok/fail — indistinguible de "el test no corrió",
+  // que es justo el falso verde que hay que evitar. Acá se convierte en un
+  // fallo con nombre.
+  async function updates(lista, id, dir){
+    try { return await mover(lista, id, dir); }
+    catch(e){ return { fallo: (e && e.message) ? e.message : String(e) }; }
+  }
+  function cuantos(u){ return u.fallo ? ('moverServicio() tiró: ' + u.fallo) : u.length; }
+  function ordenDe(u, id){
+    if(u.fallo) return 'moverServicio() tiró';
+    var f = u.filter(function(x){ return x.id === id; });
+    return f.length ? f[0].orden : 'no se escribió';
+  }
+
+  var lista = [{id:'A',orden:1},{id:'B',orden:2},{id:'C',orden:3}];
+
+  var u1 = await updates(lista, 'B', -1);
+  check('subir B escribe exactamente 2 filas', cuantos(u1), 2);
+  check('subir B deja a B en 1', ordenDe(u1,'B'), 1);
+  check('subir B deja a A en 2', ordenDe(u1,'A'), 2);
+  check('no toca a C',
+        u1.fallo ? 'moverServicio() tiró' : u1.filter(function(x){return x.id==='C';}).length, 0);
+  check('los updates van scopeados por negocio',
+        !u1.fallo && u1.every(function(x){ return x.scoped === true; }), true);
+
+  var u2 = await updates(lista, 'B', 1);
+  check('bajar B escribe exactamente 2 filas', cuantos(u2), 2);
+  check('bajar B deja a B en 3', ordenDe(u2,'B'), 3);
+
+  // Los extremos no hacen nada: sin el guardia, el swap daría vuelta la lista
+  // entera contra un índice fuera de rango.
+  var u3 = await updates(lista, 'A', -1);
+  check('subir el primero no escribe nada', cuantos(u3), 0);
+  var u4 = await updates(lista, 'C', 1);
+  check('bajar el último no escribe nada', cuantos(u4), 0);
+
+  // Auto-reparación: con empates y nulls viejos, el primer movimiento
+  // renumera todo en vez de arrastrar el desorden.
+  var rota = [{id:'A',orden:5},{id:'B',orden:5},{id:'C',orden:null}];
+  var u5 = await updates(rota, 'B', -1);
+  check('una lista con empates y nulls se renumera entera', cuantos(u5), 3);
+  check('  ...B queda 1', ordenDe(u5,'B'), 1);
+  check('  ...A queda 2', ordenDe(u5,'A'), 2);
+  check('  ...C queda 3', ordenDe(u5,'C'), 3);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('migración');
+
+  check('agrega la columna sin romper si ya existe',
+        /alter table servicios add column if not exists orden integer/i.test(sql), true);
+  check('rellena con el orden que ya se ve hoy (precio)',
+        /row_number\(\)\s*over\s*\(partition by barberia_id order by precio, nombre\)/i.test(sql), true);
+  // Sin esto, correrla de nuevo pisaría el orden que el dueño ya acomodó.
+  check('el backfill es repetible (where orden is null)',
+        /from servicios\s*\n?\s*where orden is null/i.test(sql), true);
+  // Acá begin/commit SÍ corresponde: no define funciones, y la columna sin su
+  // backfill es justo el estado que se quiere evitar.
+  check('va en transacción (no define funciones)',
+        /^\s*begin\s*;/im.test(sql) && /^\s*commit\s*;/im.test(sql), true);
+  check('la migración no define funciones',
+        /create or replace function/i.test(sql), false);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>

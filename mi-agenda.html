@@ -344,7 +344,9 @@ async function afterLogin(){
   }
   BARBERO=barbero;
 
-  const {data:sv}=await sb.from('servicios').select('*').eq('barberia_id',perfil.barberia_id).eq('activo',true).order('precio');
+  // Orden manual del dueño (Config → Servicios). Precio de desempate y nulls
+  // al final: gemela de la de reservar.html y club.html.
+  const {data:sv}=await sb.from('servicios').select('*').eq('barberia_id',perfil.barberia_id).eq('activo',true).order('orden',{nullsFirst:false}).order('precio');
   SERVICIOS=sv||[];
 
   // barberias_select_public es pública (using(true)) — mismo patrón que

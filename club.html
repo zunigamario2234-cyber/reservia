@@ -359,7 +359,9 @@ function cambiarTabTop(tab){
 
 async function initReservar(){
   const [{data:sv},{data:ba},{data:hn},{data:blq}] = await Promise.all([
-    sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('precio'),
+    // Orden manual del dueño (Config → Servicios). Precio de desempate y nulls
+    // al final: gemela de la de reservar.html y mi-agenda.html.
+    sb.from('servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('orden',{nullsFirst:false}).order('precio'),
     sb.from('barberos').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true).order('nombre'),
     sb.from('horario_negocio').select('*').eq('barberia_id',BARBERIA_ID),
     sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)

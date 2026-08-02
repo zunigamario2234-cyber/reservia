@@ -704,8 +704,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
   </div>
   <div id="cfg-srv" style="display:none">
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Con las flechas ↑↓ decides en qué orden ven tus clientes los servicios al reservar. El de más arriba aparece primero.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-servicio')">+ Servicio</button></div>
-    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th></th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Precio</th><th>Duración</th><th>Comisión %</th><th>Activo</th><th>Orden</th><th></th></tr></thead>
     <tbody id="t-servicios"></tbody></table></div></div>
   </div>
   <div id="cfg-blq" style="display:none">
@@ -1403,7 +1404,41 @@ async function loadAll(){
 async function loadClientes(){ const {data}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.clientes=data||[]; }
 async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; }
 async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
-async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.servicios=data||[]; }
+// ═══ ORDEN MANUAL DE SERVICIOS ═══
+// Sube o baja un servicio un lugar. El orden que se guarda es el de la lista
+// completa, no un swap de dos filas: así cualquier hueco, empate o null que
+// haya quedado de antes se corrige solo en el primer movimiento, en vez de
+// arrastrarse para siempre.
+//
+// Solo se escriben las filas cuyo número cambió — normalmente dos — así que en
+// el caso corriente esto son dos updates, no uno por servicio.
+async function moverServicio(id,dir){
+  const lista=S.servicios.slice();
+  const i=lista.findIndex(s=>s.id===id);
+  const j=i+dir;
+  if(i<0||j<0||j>=lista.length)return;
+  const tmp=lista[i]; lista[i]=lista[j]; lista[j]=tmp;
+  const cambios=lista
+    .map((s,idx)=>({id:s.id,orden:idx+1,antes:s.orden}))
+    .filter(x=>x.antes!==x.orden);
+  for(const c of cambios){
+    // .eq('barberia_id') además del id: mismo scoping completo que el resto de
+    // las escrituras, para no depender solo de que el id sea correcto.
+    const {error}=await sb.from('servicios').update({orden:c.orden})
+      .eq('id',c.id).eq('barberia_id',S.barberia.id);
+    if(error){notify(error.message,'err');await loadServicios();renderConfig();return;}
+  }
+  await loadServicios();
+  renderConfig();
+}
+
+// Ordena por la columna "orden" (la que el dueño acomoda con las flechas en
+// Config → Servicios), igual que reservar.html, club.html y mi-agenda.html.
+// Antes acá era alfabético y en las otras tres por precio: el dueño veía sus
+// servicios en un orden distinto al de sus clientes.
+// El precio queda de desempate y los nulls al final, para que una fila que se
+// cuele sin orden se vaya al fondo en vez de desordenar la lista entera.
+async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('orden',{nullsFirst:false}).order('precio'); S.servicios=data||[]; }
 async function loadBarberos(){ const {data}=await sb.from('barberos').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.barberos=data||[]; }
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
@@ -2603,7 +2638,14 @@ async function guardarServicio(){
   if(id){
     ({error}=await sb.from('servicios').update(payload).eq('id',id));
   } else {
-    const res=await sb.from('servicios').insert(payload).select().single();
+    // "orden" va SOLO en el insert, nunca en el payload compartido: si viajara
+    // también en el update, editarle el precio a un servicio lo movería de
+    // lugar en la lista del cliente.
+    // Un servicio nuevo entra al final. S.servicios ya viene ordenado, pero se
+    // toma el máximo y no el largo de la lista, que con un hueco daría un
+    // número repetido.
+    const maxOrden=S.servicios.reduce((m,s)=>Math.max(m,s.orden||0),0);
+    const res=await sb.from('servicios').insert({...payload,orden:maxOrden+1}).select().single();
     error=res.error;nuevoServicioId=res.data?.id;
   }
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
@@ -4043,13 +4085,20 @@ function renderConfig(){
   renderHorarioNegocio();
   renderBloqueos();
   renderNivelesVipConfig();
-  document.getElementById('t-servicios').innerHTML=S.servicios.map(s=>{
+  // El índice ES la posición que se ve: S.servicios ya viene ordenado por
+  // "orden" desde loadServicios(). Con eso se decide qué flecha va apagada en
+  // los extremos.
+  document.getElementById('t-servicios').innerHTML=S.servicios.map((s,i)=>{
     const avatar=s.foto_url
       ?`<img src="${s.foto_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
       :`<div style="width:32px;height:32px;border-radius:7px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:14px">✂️</div>`;
     return `<tr>
     <td class="td-avatar">${avatar}</td><td data-label="Nombre">${s.nombre}</td><td data-label="Precio">${fmt(s.precio)}</td><td data-label="Duración">${s.duracion_min} min</td>
     <td data-label="Comisión %">${s.comision_pct}%</td><td data-label="Activo">${s.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
+    <td data-label="Orden" style="white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" onclick="moverServicio('${s.id}',-1)" title="Subir" ${i===0?'disabled':''}>↑</button>
+      <button class="btn btn-ghost btn-sm" onclick="moverServicio('${s.id}',1)" title="Bajar" ${i===S.servicios.length-1?'disabled':''}>↓</button>
+    </td>
     <td data-label=""><button class="btn btn-ghost btn-sm" onclick="editarServicio('${s.id}')" title="Editar">✏️</button> <button class="btn btn-danger btn-sm" onclick="eliminar('servicios','${s.id}',loadServicios,renderConfig)">×</button></td>
   </tr>`;
   }).join('');
