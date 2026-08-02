@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — selector de período en Costos e IVA</title>
+
+<!--
+  Test del selector de mes de Costos e IVA en app.html: la variable COSTOS_MES,
+  las tres secciones que la leen, la aritmética de meses y el reset al entrar.
+
+  POR QUÉ EXISTE
+  El bug que motivó esto no se ve como un error: se ve como un cero. El módulo
+  de IVA llamaba a mesActual() por su cuenta mientras la tabla de gastos usaba
+  su propio desplegable, así que el dueño podía pararse en julio y leer
+  "IVA a pagar SII: $0" con el selector marcando julio en pantalla. Un negocio
+  con $412.000 de ventas ese mes veía todo en cero y podía concluir que el
+  sistema perdió los datos.
+
+  Se rompe en silencio de cuatro maneras:
+
+   1. Que UNA de las tres secciones (Gastos, IVA, Comisiones) vuelva a llamar
+      mesActual() en vez de leer COSTOS_MES. Es el bug original y no tira
+      ningún error: solo muestra otro mes que el que dice el encabezado.
+
+   2. Que el rango navegable mire solo los costos, como hacía el desplegable
+      viejo. Un negocio que factura y no carga gastos se queda sin meses a los
+      que moverse — con ventas reales en la base e inalcanzables desde la UI.
+
+   3. Que el tope de arriba no contemple mesActual(). El mes en curso puede
+      estar vacío (es justo el caso que disparó todo) y es la vista por
+      defecto: si el máximo sale solo de los datos, la pantalla arranca en un
+      mes al que las flechas no la dejan volver.
+
+   4. Que entrar a la pantalla NO resetee el período. Un IVA pegado en el mes
+      de la visita anterior es la clase de error que termina en una
+      declaración al SII del mes equivocado.
+
+  QUÉ COMPRUEBA
+  El ARCHIVO REAL. sumarMes(), ultimoDiaMes(), rangoMesesCostos(),
+  moverMesCostos() y entrarCostos() se ejecutan de verdad, recompiladas desde
+  app.html y compartiendo un COSTOS_MES igual que en producción; el cableado
+  del DOM y de renderCostos() se verifica como texto. No abre Supabase.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) En renderCostos, volver el IVA a `const mes=mesActual();`
+      -> falla "renderCostos no vuelve a pedir el mes por su cuenta" y
+         "el IVA lee el mes compartido".
+   b) En rangoMesesCostos, borrar el forEach de S.visitas
+      -> falla "el mínimo mira las visitas, no solo los costos".
+   c) En rangoMesesCostos, arrancar el reduce del máximo en '' en vez de hoy
+      -> falla "el máximo nunca baja del mes en curso".
+   d) En moverMesCostos, borrar el `if(nuevo<r.min||nuevo>r.max)return;`
+      -> falla "no se puede pasar del mes más nuevo" y "...ni del más viejo".
+   e) En el mapa de nav(), volver a `costos:renderCostos`
+      -> falla "entrar a Costos pasa por entrarCostos".
+   f) En entrarCostos, sacar la asignación a mesActual()
+      -> falla "entrar resetea el período al mes en curso".
+   g) Devolverle al selector la clase filtros-bar
+      -> falla "no reusa filtros-bar, que la apilaría en mobile".
+
+  Las siete se corrieron y las siete dieron rojo.
+
+  El check (g) no salió de la imaginación: el control se escribió primero con
+  .filtros-bar y en 375px quedaba en tres filas, con cada flecha ocupando el
+  ancho completo de la pantalla. Se descubrió midiendo el layout real en el
+  navegador, no leyendo el código — por eso quedó cubierto.
+
+  DOS TRAMPAS QUE ESTE TEST YA TIENE TAPADAS (documentadas en
+  test-orden-servicios.html, valen igual acá):
+
+   - Regex que agarra la ocurrencia equivocada: app.html tiene VARIAS llamadas
+     a mesActual() repartidas, así que los checks de (a) no miran el archivo
+     entero sino el cuerpo aislado de renderCostos() vía extraerFuncion().
+     Sobre el archivo completo, la mutación (a) pasaba en verde.
+   - Excepción sin guardia que tumba la suite: si una función recompilada tira
+     (por ejemplo tras una mutación que rompe la sintaxis), la excepción
+     dejaba el <pre> sin clase ok/fail, indistinguible de "no corrió". Todas
+     las ejecuciones van envueltas en intentar() y fallan con nombre.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — selector de período en Costos e IVA</h1>
+<p>Verifica que Gastos, IVA y Comisiones lean el mismo mes, que las flechas
+respeten el histórico real y que entrar a la pantalla vuelva al mes en curso.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+// Corre algo que puede tirar y devuelve un centinela en vez de tumbar la suite.
+// Sin esto, una mutación que rompa la sintaxis deja el <pre> sin clase ok/fail,
+// que es indistinguible de que el test no haya corrido: falso verde.
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// Recompila el módulo de período tal como vive en app.html: las cuatro
+// funciones COMPARTIENDO un mismo COSTOS_MES, que es lo que se quiere probar.
+// Compilarlas sueltas no serviría: el bug de (d) y (f) está justamente en cómo
+// se toca ese estado compartido. renderCostos se inyecta como espía para poder
+// contar si el movimiento realmente repintó.
+function armarModulo(js, S, hoy, mesInicial){
+  // MESES_ES es una const global de la que cuelga nombreMesLargo(): sin
+  // arrastrarla, la función recompilada tira "MESES_ES is not defined". Se
+  // toma del archivo real y no se copia acá, así el test también se entera si
+  // alguien le cambia los nombres o la borra.
+  var mMeses = /const\s+MESES_ES\s*=\s*\[[^\]]*\]\s*;/.exec(js);
+  var fuente = (mMeses ? mMeses[0] + '\n' : '') +
+               ['sumarMes','ultimoDiaMes','nombreMesLargo','rangoMesesCostos',
+                'moverMesCostos','entrarCostos']
+               .map(function(n){ return extraerFuncion(js, n); }).join('\n');
+  if(fuente.indexOf('function moverMesCostos') === -1) return null;
+  var repintes = { n: 0 };
+  var mod = new Function('S','mesActual','renderCostos','MES_INI',
+    'let COSTOS_MES=MES_INI;\n' + fuente +
+    '\nreturn {mover:moverMesCostos, entrar:entrarCostos, sumar:sumarMes,' +
+    ' ultimoDia:ultimoDiaMes, nombre:nombreMesLargo, rango:rangoMesesCostos,' +
+    ' mes:function(){return COSTOS_MES;}};'
+  )(S, function(){ return hoy; }, function(){ repintes.n++; }, mesInicial);
+  mod.repintes = repintes;
+  return mod;
+}
+
+async function correr(src){
+  var appHtml = src['app.html'];
+  var appJs = sinComentarios(inlineScripts(appHtml).join('\n'));
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las tres secciones leen el mismo mes');
+
+  var rc = extraerFuncion(appJs, 'renderCostos');
+  check('renderCostos existe', rc.length > 0, true);
+
+  // El check mira el CUERPO AISLADO de renderCostos, no el archivo: app.html
+  // tiene otras llamadas legítimas a mesActual() (la inicialización de
+  // COSTOS_MES, entrarCostos, renderProfesionals) y sobre el texto completo
+  // esta comprobación pasaría siempre.
+  check('renderCostos no vuelve a pedir el mes por su cuenta',
+        /mesActual\(\)/.test(rc), false);
+  check('renderCostos parte del mes compartido',
+        /const\s+mf\s*=\s*COSTOS_MES\s*;/.test(rc), true);
+  check('los gastos filtran por el mes compartido',
+        /S\.costos\.filter\(\s*c\s*=>\s*c\.fecha\?\.startsWith\(mf\)\s*\)/.test(rc), true);
+  check('el IVA lee el mes compartido',
+        /const\s+mes\s*=\s*mf\s*;/.test(rc), true);
+  check('las comisiones leen el mes compartido',
+        /const\s+mes2\s*=\s*mf\s*;/.test(rc), true);
+
+  // El desplegable viejo tenía "Todos", que el IVA no puede honrar: un IVA
+  // acumulado de todo el histórico no se declara en ningún lado.
+  check('no quedó rastro del desplegable viejo',
+        appHtml.indexOf('f-mes-co') === -1, true);
+
+  // El selector tiene que estar FUERA del bloque de pestañas para mandar sobre
+  // las tres. Si quedara adentro de una, vuelve el problema original.
+  var pCostos = appHtml.slice(appHtml.indexOf('<div id="p-costos"'),
+                              appHtml.indexOf('<!-- BARBEROS -->'));
+  check('el selector está antes de las pestañas',
+        pCostos.indexOf('co-mes-label') < pCostos.indexOf('<div class="tabs">'), true);
+  check('el selector no vive dentro de la pestaña de gastos',
+        pCostos.indexOf('co-mes-label') < pCostos.indexOf('id="tc-gastos"'), true);
+
+  // Layout: .filtros-bar se apila en columna y estira sus botones al 100% en
+  // mobile. Con esa clase, el control quedaba en TRES filas y las dos flechas
+  // ocupaban el ancho completo de la pantalla — inusable justo en el
+  // dispositivo desde el que el dueño administra. Tiene que ser .mes-nav.
+  var barraMes = /<div class="([^"]*)"[^>]*>\s*<button[^>]*id="co-mes-prev"/.exec(pCostos);
+  check('la barra del selector tiene su propia clase', barraMes !== null, true);
+  check('  ...y no reusa filtros-bar, que la apilaría en mobile',
+        barraMes ? barraMes[1].indexOf('filtros-bar') === -1 : false, true);
+  check('  ...es mes-nav', barraMes ? barraMes[1].indexOf('mes-nav') !== -1 : false, true);
+  check('existe la regla CSS de mes-nav', /\.mes-nav\{[^}]*display:flex/.test(appHtml), true);
+  // 44px de ancho es el mínimo cómodo para tocar con el pulgar.
+  check('las flechas tienen tamaño táctil',
+        /\.mes-nav \.mes-flecha\{[^}]*min-width:44px/.test(appHtml), true);
+  check('la flecha deshabilitada se ve apagada',
+        /\.mes-nav \.mes-flecha:disabled\{[^}]*opacity/.test(appHtml), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('aritmética de meses');
+
+  var mod = armarModulo(appJs, {visitas:[],costos:[]}, '2026-08', '2026-08');
+  check('el módulo de período se pudo recompilar', mod !== null, true);
+  if(!mod){ pintar(); return; }
+
+  // Sobre texto y no sobre Date: pasar por Date para sumar un mes es lo que
+  // hacía saltar de período en las noches.
+  check('sumar cruza el fin de año', intentar(function(){ return mod.sumar('2026-12', 1); }), '2027-01');
+  check('restar cruza el fin de año', intentar(function(){ return mod.sumar('2026-01', -1); }), '2025-12');
+  check('sumar dentro del año', intentar(function(){ return mod.sumar('2026-07', 1); }), '2026-08');
+  check('el mes queda con dos dígitos', intentar(function(){ return mod.sumar('2026-08', 1); }), '2026-09');
+
+  check('último día de un mes de 31', intentar(function(){ return mod.ultimoDia('2026-07'); }), '2026-07-31');
+  check('último día de un mes de 30', intentar(function(){ return mod.ultimoDia('2026-04'); }), '2026-04-30');
+  check('último día de febrero común', intentar(function(){ return mod.ultimoDia('2026-02'); }), '2026-02-28');
+  check('último día de febrero bisiesto', intentar(function(){ return mod.ultimoDia('2028-02'); }), '2028-02-29');
+
+  check('el nombre del mes va en español', intentar(function(){ return mod.nombre('2026-08'); }), 'agosto 2026');
+  check('el nombre del primer mes', intentar(function(){ return mod.nombre('2026-01'); }), 'enero 2026');
+  check('el nombre del último mes', intentar(function(){ return mod.nombre('2026-12'); }), 'diciembre 2026');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('hasta dónde llegan las flechas');
+
+  // El caso que rompía el desplegable viejo: ventas sí, gastos no.
+  var soloVentas = armarModulo(appJs,
+    { visitas:[{fecha:'2025-10-14'},{fecha:'2026-07-02'}], costos:[] }, '2026-08', '2026-08');
+  check('el mínimo mira las visitas, no solo los costos',
+        intentar(function(){ return soloVentas.rango().min; }), '2025-10');
+
+  var soloGastos = armarModulo(appJs,
+    { visitas:[], costos:[{fecha:'2026-03-09'}] }, '2026-08', '2026-08');
+  check('el mínimo también mira los costos',
+        intentar(function(){ return soloGastos.rango().min; }), '2026-03');
+
+  var mixto = armarModulo(appJs,
+    { visitas:[{fecha:'2026-05-01'}], costos:[{fecha:'2026-02-20'}] }, '2026-08', '2026-08');
+  check('con datos en ambas, gana el más viejo de los dos',
+        intentar(function(){ return mixto.rango().min; }), '2026-02');
+
+  // El mes en curso puede estar vacío y es la vista por defecto: si el máximo
+  // saliera solo de los datos, la pantalla arrancaría fuera de su propio rango.
+  check('el máximo nunca baja del mes en curso',
+        intentar(function(){ return mixto.rango().max; }), '2026-08');
+  check('...aunque el mes en curso no tenga ni una fila',
+        intentar(function(){ return soloVentas.rango().max; }), '2026-08');
+
+  // Un gasto cargado con fecha futura no debe quedar inalcanzable.
+  var futuro = armarModulo(appJs,
+    { visitas:[], costos:[{fecha:'2026-11-30'}] }, '2026-08', '2026-08');
+  check('el máximo sube si hay datos más adelante',
+        intentar(function(){ return futuro.rango().max; }), '2026-11');
+
+  var vacio = armarModulo(appJs, { visitas:[], costos:[] }, '2026-08', '2026-08');
+  check('sin datos, el rango es solo el mes en curso',
+        intentar(function(){ var r = vacio.rango(); return r.min + '|' + r.max; }), '2026-08|2026-08');
+
+  // Filas sin fecha no deben ensuciar el rango ni tirar.
+  var sucio = armarModulo(appJs,
+    { visitas:[{fecha:null},{fecha:'2026-06-01'}], costos:[{}] }, '2026-08', '2026-08');
+  check('las filas sin fecha se ignoran',
+        intentar(function(){ return sucio.rango().min; }), '2026-06');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('mover el período');
+
+  var nav = armarModulo(appJs,
+    { visitas:[{fecha:'2026-06-10'}], costos:[] }, '2026-08', '2026-08');
+
+  check('retroceder un mes funciona',
+        intentar(function(){ nav.mover(-1); return nav.mes(); }), '2026-07');
+  check('  ...y repinta la pantalla', nav.repintes.n, 1);
+  check('retroceder hasta el borde funciona',
+        intentar(function(){ nav.mover(-1); return nav.mes(); }), '2026-06');
+
+  // El guardia de los extremos: sin él, las flechas se van a meses vacíos y el
+  // $0 vuelve a ser ambiguo entre "sin datos" y "módulo roto".
+  check('no se puede pasar del mes más viejo',
+        intentar(function(){ nav.mover(-1); return nav.mes(); }), '2026-06');
+  var antes = nav.repintes.n;
+  nav.mover(-1);
+  check('  ...y un movimiento bloqueado no repinta', nav.repintes.n, antes);
+
+  var tope = armarModulo(appJs,
+    { visitas:[{fecha:'2026-06-10'}], costos:[] }, '2026-08', '2026-08');
+  check('no se puede pasar del mes más nuevo',
+        intentar(function(){ tope.mover(1); return tope.mes(); }), '2026-08');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('reset al entrar, y lo que NO resetea');
+
+  check('entrar a Costos pasa por entrarCostos',
+        /costos\s*:\s*entrarCostos\b/.test(appJs), true);
+  check('  ...y ya no por renderCostos directo',
+        /costos\s*:\s*renderCostos\b/.test(appJs), false);
+
+  var vuelta = armarModulo(appJs, { visitas:[{fecha:'2026-01-05'}], costos:[] },
+                           '2026-08', '2026-02');
+  check('entrar resetea el período al mes en curso',
+        intentar(function(){ vuelta.entrar(); return vuelta.mes(); }), '2026-08');
+
+  // Guardar un gasto NO debe sacarte del mes que estabas mirando: llama a
+  // renderCostos() y no a entrarCostos().
+  var guardar = appJs.slice(appJs.indexOf("from('costos').insert"),
+                            appJs.indexOf("from('costos').insert") + 400);
+  check('guardar un gasto repinta sin resetear el mes',
+        /renderCostos\(\)/.test(guardar) && !/entrarCostos\(\)/.test(guardar), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('puente hacia el reporte por profesional');
+
+  var puente = extraerFuncion(appJs, 'verComisionesEnReportes');
+  check('la función existe', puente.length > 0, true);
+  check('lleva el mes elegido como rango de fechas',
+        /rep-prof-desde'\)\.value\s*=\s*desde/.test(puente) &&
+        /rep-prof-hasta'\)\.value\s*=\s*hasta/.test(puente), true);
+  check('el rango arranca el día 1 del mes',
+        /COSTOS_MES\s*\+\s*'-01'/.test(puente), true);
+  check('el rango termina el último día real del mes',
+        /ultimoDiaMes\(COSTOS_MES\)/.test(puente), true);
+  // Por posición se rompe en silencio el día que se agregue una pestaña antes.
+  check('la pestaña se alcanza por id y no por posición',
+        /getElementById\('rep-tab-profesional'\)/.test(puente) &&
+        !/nth-child/.test(puente), true);
+  check('la pestaña destino tiene ese id en el HTML',
+        /id="rep-tab-profesional"/.test(appHtml), true);
+  check('vuelve a renderizar el reporte con el rango puesto',
+        /renderReporteProfesional\(\)/.test(puente), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el anclaje a hora de Chile sigue en pie');
+
+  // El selector se apoya en mesActual(), que es el único punto anclado a
+  // America/Santiago. Si alguien lo reemplaza por new Date() vuelve el bug de
+  // las noches, ahora sobre la declaración de IVA.
+  check('mesActual sigue saliendo de la fecha chilena',
+        /function mesActual\(\)\{\s*return ahoraEnChile\(\)\.fecha\.slice\(0,7\);\s*\}/.test(appJs), true);
+  check('COSTOS_MES arranca en mesActual()',
+        /let\s+COSTOS_MES\s*=\s*mesActual\(\)\s*;/.test(appJs), true);
+  var ec = extraerFuncion(appJs, 'entrarCostos');
+  check('entrarCostos resetea usando mesActual()',
+        /COSTOS_MES\s*=\s*mesActual\(\)/.test(ec), true);
+  // El módulo nuevo no debe introducir la conversión que ya rompió la agenda.
+  check('el módulo de período no usa toISOString',
+        /toISOString/.test(extraerFuncion(appJs, 'rangoMesesCostos') +
+                           extraerFuncion(appJs, 'sumarMes') +
+                           extraerFuncion(appJs, 'ultimoDiaMes')), false);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>

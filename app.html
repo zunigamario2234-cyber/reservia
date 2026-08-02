@@ -58,6 +58,15 @@ nav{flex:1;padding:8px 0;overflow-y:auto}
 .btn-sm{padding:4px 10px;font-size:11px}
 .btn-wa{background:#002210;color:#25d366;border:0.5px solid #25d366;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:all 0.15s}
 .btn-wa:hover{background:#142b14}
+/* Navegador de mes de Costos e IVA. Clase propia y NO .filtros-bar: esa se
+   apila en columna y estira sus botones al 100% en mobile, que está bien para
+   una barra de búsqueda pero deja este control en tres filas, con dos flechas
+   del ancho de la pantalla. Acá las flechas van fijas, el mes ocupa el resto y
+   se mantiene en una sola línea en cualquier ancho. */
+.mes-nav{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+.mes-nav .mes-flecha{flex:0 0 auto;min-width:44px;min-height:36px;justify-content:center;font-size:17px;line-height:1}
+.mes-nav .mes-flecha:disabled{opacity:.35;cursor:default}
+.mes-nav .mes-label{flex:1 1 auto;text-align:center;font-weight:600;font-size:14px;color:var(--text)}
 .content{padding:24px;flex:1}
 .page{display:none}.page.active{display:block}
 /* Grid layouts */
@@ -579,6 +588,14 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <!-- COSTOS E IVA -->
 <div id="p-costos" class="page">
+  <!-- El selector va ARRIBA de las pestañas a propósito: manda sobre las tres.
+       Antes vivía dentro de Gastos y solo filtraba esa tabla, así que el IVA
+       seguía mostrando el mes en curso mientras en pantalla se leía otro mes. -->
+  <div class="mes-nav">
+    <button class="btn btn-ghost mes-flecha" id="co-mes-prev" onclick="moverMesCostos(-1)" title="Mes anterior" aria-label="Mes anterior">‹</button>
+    <div class="mes-label" id="co-mes-label">—</div>
+    <button class="btn btn-ghost mes-flecha" id="co-mes-next" onclick="moverMesCostos(1)" title="Mes siguiente" aria-label="Mes siguiente">›</button>
+  </div>
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'tc-gastos')">Gastos</div>
     <div class="tab" onclick="switchTab(this,'tc-iva')">Resumen IVA</div>
@@ -587,7 +604,6 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div id="tc-gastos">
     <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px">
       <button class="btn btn-primary" onclick="openM('m-costo')">+ Gasto</button>
-      <select id="f-mes-co" onchange="renderCostos()" style="max-width:180px"><option value="">Todos</option></select>
     </div>
     <div class="g3" style="margin-bottom:14px">
       <div class="mc"><div class="mc-label">Costos fijos</div><div class="mc-val" id="co-fijo">$0</div></div>
@@ -606,7 +622,10 @@ input[readonly]{background:#111;color:#666;cursor:default}
   </div>
   <div id="tc-com" style="display:none">
     <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
-    <tbody id="t-comisiones"></tbody></table></div></div>
+    <tbody id="t-comisiones"></tbody></table></div>
+    <div style="margin-top:12px">
+      <button class="btn btn-ghost btn-sm" onclick="verComisionesEnReportes()" title="Abre el reporte por profesional con este mismo mes cargado">📊 Ver análisis completo por profesional</button>
+    </div></div>
   </div>
 </div>
 
@@ -768,7 +787,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <div id="p-reportes" class="page">
   <div class="tabs">
     <div class="tab active" onclick="switchTab(this,'rep-resumen')">📊 Resumen</div>
-    <div class="tab" onclick="switchTab(this,'rep-profesional');renderReporteProfesional()">👤 Por profesional</div>
+    <div class="tab" id="rep-tab-profesional" onclick="switchTab(this,'rep-profesional');renderReporteProfesional()">👤 Por profesional</div>
     <div class="tab" onclick="switchTab(this,'rep-cliente')">🙋 Por cliente</div>
     <div class="tab" onclick="switchTab(this,'rep-servicios')">✂ Por servicio</div>
   </div>
@@ -1540,7 +1559,9 @@ function nav(page){
   if(ni)ni.classList.add('active');
   const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
   document.getElementById('page-title').textContent=titles[page]||page;
-  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,costos:renderCostos,profesionals:renderProfesionals,config:renderConfig};
+  // costos entra por entrarCostos y no por renderCostos: resetea el período al
+  // mes en curso cada vez que se abre la pantalla.
+  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
   if(renders[page])renders[page]();
 }
 function switchTab(el,tid){
@@ -3979,11 +4000,91 @@ function renderInventario(){
   }).join('');
 }
 
+// ─── PERÍODO DE COSTOS E IVA ───
+//
+// El mes elegido vive en una variable y no en el DOM porque renderCostos()
+// pinta Gastos, IVA y Comisiones de una sola pasada: las tres tienen que leer
+// la misma fuente. El desplegable anterior solo filtraba la tabla de gastos y
+// se poblaba únicamente con los meses que tenían gastos cargados, así que un
+// negocio con ventas y sin gastos no tenía a dónde moverse.
+//
+// Arranca en el mes en curso; mesActual() sigue siendo la única fuente del
+// anclaje a hora de Chile.
+let COSTOS_MES=mesActual();
+
+const MESES_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function nombreMesLargo(mes){
+  const m=Number(mes.slice(5,7));
+  return (MESES_ES[m-1]||'?')+' '+mes.slice(0,4);
+}
+
+// Aritmética de meses sobre el texto 'YYYY-MM'. Pasar por Date para sumar un
+// mes es justo lo que hacía saltar de período en las noches, y acá no hace
+// ninguna falta: son dos números.
+function sumarMes(mes,delta){
+  const y=Number(mes.slice(0,4)), m=Number(mes.slice(5,7));
+  const t=y*12+(m-1)+delta;
+  return Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0');
+}
+
+function ultimoDiaMes(mes){
+  const y=Number(mes.slice(0,4)), m=Number(mes.slice(5,7));
+  // Día 0 del mes siguiente = último día de este. Se construye y se lee con
+  // componentes locales, sin pasar por UTC, así que no hay corrimiento de zona.
+  // El prefijo sale del texto original, no del Date, para que no pueda
+  // corromperse el año ni el mes.
+  return mes+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0');
+}
+
+// Hasta dónde llegan las flechas. El mínimo mira visitas Y costos: con solo los
+// costos, el negocio que factura sin cargar gastos se quedaba sin meses.
+// El máximo nunca baja del mes en curso, que es la vista por defecto y puede
+// estar vacío — ese es exactamente el caso que motivó todo esto.
+function rangoMesesCostos(){
+  const ms=[];
+  S.visitas.forEach(v=>{ if(v.fecha) ms.push(v.fecha.slice(0,7)); });
+  S.costos.forEach(c=>{ if(c.fecha) ms.push(c.fecha.slice(0,7)); });
+  const hoy=mesActual();
+  return {
+    min:ms.reduce((a,m)=>m<a?m:a,hoy),
+    max:ms.reduce((a,m)=>m>a?m:a,hoy)
+  };
+}
+
+function moverMesCostos(delta){
+  const r=rangoMesesCostos();
+  const nuevo=sumarMes(COSTOS_MES,delta);
+  if(nuevo<r.min||nuevo>r.max)return;
+  COSTOS_MES=nuevo;
+  renderCostos();
+}
+
+// Entrar a la pestaña siempre vuelve al mes en curso. Un período pegado de la
+// visita anterior es la clase de error que termina en una declaración de IVA
+// del mes equivocado; volver a donde estabas cuesta un clic. Guardar un gasto
+// llama a renderCostos() directo, así que ahí sí se conserva el mes elegido.
+function entrarCostos(){ COSTOS_MES=mesActual(); renderCostos(); }
+
+// Salta al reporte por profesional con el mismo mes ya cargado en el rango.
+// La pestaña se alcanza por id y no por posición: un nth-child se rompe en
+// silencio el día que se agregue una pestaña antes.
+function verComisionesEnReportes(){
+  const desde=COSTOS_MES+'-01', hasta=ultimoDiaMes(COSTOS_MES);
+  nav('reportes');
+  const tab=document.getElementById('rep-tab-profesional');
+  if(tab)switchTab(tab,'rep-profesional');
+  document.getElementById('rep-prof-desde').value=desde;
+  document.getElementById('rep-prof-hasta').value=hasta;
+  renderReporteProfesional();
+}
+
 function renderCostos(){
-  const mf=document.getElementById('f-mes-co').value;
-  const meses=[...new Set(S.costos.map(c=>c.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
-  document.getElementById('f-mes-co').innerHTML='<option value="">Todos</option>'+meses.map(m=>`<option value="${m}"${m===mf?' selected':''}>${m}</option>`).join('');
-  const list=S.costos.filter(c=>!mf||c.fecha?.startsWith(mf));
+  const mf=COSTOS_MES;
+  const rango=rangoMesesCostos();
+  document.getElementById('co-mes-label').textContent=nombreMesLargo(mf);
+  document.getElementById('co-mes-prev').disabled=sumarMes(mf,-1)<rango.min;
+  document.getElementById('co-mes-next').disabled=sumarMes(mf,1)>rango.max;
+  const list=S.costos.filter(c=>c.fecha?.startsWith(mf));
   const fijo=list.filter(c=>c.tipo==='fijo').reduce((s,c)=>s+(c.total||0),0);
   const varbl=list.filter(c=>c.tipo==='variable').reduce((s,c)=>s+(c.total||0),0);
   document.getElementById('co-fijo').textContent=fmt(fijo);
@@ -3996,8 +4097,9 @@ function renderCostos(){
     <td data-label="IVA" class="gold">${fmt(c.iva)}</td><td data-label="Total" style="font-weight:600">${fmt(c.total)}</td>
     <td data-label=""><button class="btn btn-danger btn-sm" onclick="eliminar('costos','${c.id}',loadCostos,renderCostos)">×</button></td>
   </tr>`).join('');
-  // IVA
-  const mes=mesActual();
+  // IVA — lee el mismo mes que la tabla de arriba. Antes llamaba a mesActual()
+  // por su cuenta: con el selector marcando julio, esto seguía mostrando agosto.
+  const mes=mf;
   const vMes=S.visitas.filter(v=>v.fecha?.startsWith(mes));
   // Suma primero y redondea una sola vez al final, igual que antes: si se
   // redondeara por visita los totales no cuadrarían con lo ya declarado.
@@ -4009,8 +4111,8 @@ function renderCostos(){
   document.getElementById('iva-ventas').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Ventas cobradas</span><span>${fmt(vBruto)}</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA débito</span><span class="gold">${fmt(ivaV)}</span></div>`;
   document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${cMes.filter(c=>c.iva>0).length} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
-  // Comisiones
-  const mes2=mesActual();
+  // Comisiones — mismo mes que el resto de la pantalla, por lo mismo.
+  const mes2=mf;
   const byB=agregarComisionesPorProfesional(S.visitas.filter(v=>v.fecha?.startsWith(mes2)));
   document.getElementById('t-comisiones').innerHTML=Object.entries(byB).map(([b,d])=>{
     const com=Math.round(d.comision);
@@ -4018,7 +4120,7 @@ function renderCostos(){
     // "Para negocio" no resta la propina porque nunca la sumó: `ventas` es la
     // suma de `valor`, que no la incluye. La propina es plata de paso.
     return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td></tr>`;
-  }).join('')||'<tr><td colspan="8" class="empty">Sin ventas este mes.</td></tr>';
+  }).join('')||`<tr><td colspan="8" class="empty">Sin ventas en ${nombreMesLargo(mf)}.</td></tr>`;
 }
 
 function renderProfesionals(){
