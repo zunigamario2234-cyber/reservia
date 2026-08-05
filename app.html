@@ -1116,7 +1116,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="fg"><label>Tipo</label><select id="co-tipo"><option value="fijo">🔒 Fijo</option><option value="variable">📊 Variable</option></select></div>
       <div class="fg"><label>Categoría</label><select id="co-cat"><option>Arriendo</option><option>Servicios básicos</option><option>Productos</option><option>Sueldos</option><option>Marketing</option><option>Equipamiento</option><option>Otro</option></select></div>
     </div>
-    <div class="fr"><div class="fg"><label>Monto neto ($) *</label><input id="co-monto" type="number" placeholder="0" oninput="calcIvaCo()"></div><div class="fg"><label>¿Lleva IVA?</label><select id="co-iva-opt" onchange="calcIvaCo()"><option value="si">Sí (19%)</option><option value="no">No</option></select></div></div>
+    <div class="fr"><div class="fg"><label>Monto neto ($) *</label><input id="co-monto" type="number" placeholder="0" oninput="calcIvaCo()"></div><div class="fg"><label>¿Lleva IVA?</label><select id="co-iva-opt" onchange="calcIvaCo()"><option value="si" id="co-iva-si">Sí</option><option value="no">No</option></select></div></div>
     <div class="fr"><div class="fg"><label>IVA calculado</label><input id="co-iva-val" readonly></div><div class="fg"><label>Total</label><input id="co-total-val" readonly style="color:#d4a853"></div></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCosto()">Guardar</button>
@@ -1610,6 +1610,14 @@ function ivaPctNegocio(){ return S.barberia?.iva_pct||19; }
 function ivaDe(bruto){ const p=ivaPctNegocio(); return Math.round((bruto||0)*p/(100+p)); }
 function netoDe(bruto){ return (bruto||0)-ivaDe(bruto); }
 
+// Los GASTOS van al revés que las ventas y por eso tienen su propia función.
+// Una factura de compra trae el neto y el IVA se SUMA encima; un precio de
+// servicio ya viene con el IVA adentro y hay que EXTRAERLO. Sobre $100.000 la
+// diferencia no es cosmética: 19.000 sumando contra 15.966 extrayendo.
+// Reemplazar esto por ivaDe() porque "también es IVA" subdeclara el crédito
+// fiscal — es la misma clase de error que sobredeclaraba el débito antes.
+function ivaSobreNeto(neto){ return Math.round((neto||0)*ivaPctNegocio()/100); }
+
 function calcularComision(valor,pct){
   const v=valor||0, p=pct||0;
   let base=v;
@@ -1811,7 +1819,13 @@ function initModal(id){
     document.getElementById('imp-resultado').innerHTML='';
     impIrPaso(1);
   }
-  if(id==='m-costo') document.getElementById('co-fecha').value=hoy;
+  // El "(19%)" del selector estaba escrito a mano en el HTML y mentía apenas
+  // el negocio configuraba otro iva_pct. Se arma al abrir el modal para que
+  // siga al valor de Configuración sin que haya que acordarse de dos lugares.
+  if(id==='m-costo'){
+    document.getElementById('co-fecha').value=hoy;
+    document.getElementById('co-iva-si').textContent='Sí ('+ivaPctNegocio()+'%)';
+  }
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
@@ -1847,7 +1861,7 @@ function autoValor(){
 // Desglosa lo que paga el cliente. Antes sumaba 19% por fuera y con el
 // porcentaje hardcodeado, así que mostraba un total que nadie iba a cobrar.
 function calcIvaV(){ const b=parseFloat(document.getElementById('v-valor').value)||0; document.getElementById('v-iva-calc').value=fmt(ivaDe(b)); document.getElementById('v-neto-calc').value=fmt(netoDe(b)); }
-function calcIvaCo(){ const n=parseFloat(document.getElementById('co-monto').value)||0; const conIva=document.getElementById('co-iva-opt').value==='si'; const iva=conIva?Math.round(n*0.19):0; document.getElementById('co-iva-val').value=fmt(iva); document.getElementById('co-total-val').value=fmt(n+iva); }
+function calcIvaCo(){ const n=parseFloat(document.getElementById('co-monto').value)||0; const conIva=document.getElementById('co-iva-opt').value==='si'; const iva=conIva?ivaSobreNeto(n):0; document.getElementById('co-iva-val').value=fmt(iva); document.getElementById('co-total-val').value=fmt(n+iva); }
 
 // ─── GUARDAR ───
 async function guardarCliente(){
@@ -2328,7 +2342,9 @@ async function guardarCosto(){
   const f=document.getElementById('co-fecha').value;
   if(!d||!f){notify('Descripción y fecha obligatorias','warn');return;}
   const conIva=document.getElementById('co-iva-opt').value==='si';
-  const iva=conIva?Math.round(m*0.19):0;
+  // Mismo cálculo que el preview del modal, para que lo que se guarda sea
+  // exactamente lo que el dueño vio antes de apretar Guardar.
+  const iva=conIva?ivaSobreNeto(m):0;
   const {error}=await sb.from('costos').insert({barberia_id:S.barberia.id,fecha:f,descripcion:d,tipo:document.getElementById('co-tipo').value,categoria:document.getElementById('co-cat').value,monto_neto:m,iva,total:m+iva});
   if(error){notify(error.message,'err');return;}
   await loadCostos();closeM('m-costo');notify('Gasto registrado ✓');renderCostos();renderDashboard();

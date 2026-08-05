@@ -27,6 +27,20 @@
   iva_pct configurado del negocio, así que un negocio con otro porcentaje veía
   cifras que no eran suyas.
 
+  EL OTRO LADO: LOS GASTOS (agregado al cerrar esa deuda)
+  Los gastos hacen la operación inversa y por eso tienen su propia función,
+  ivaSobreNeto(): una factura de compra trae el NETO y el IVA se suma encima.
+  Las dos operaciones se dicen igual en castellano —"calcular el IVA"— y dan
+  números del mismo orden, así que confundirlas es fácil: sobre $100.000 son
+  19.000 sumando contra 15.966 extrayendo. Unificarlas en ivaDe() "porque es
+  lo mismo" subdeclara el crédito fiscal. La sección 6b existe para que ese
+  atajo no pase en verde.
+
+  El módulo de gastos era además el último rincón con el 0.19 escrito a mano
+  (en el preview del modal y en el guardado, más un "Sí (19%)" en el HTML).
+  Por eso el barrido de la sección 6 ya no tiene la exención que tenía para
+  costos: ahora no debe quedar ningún 0.19 en todo el archivo.
+
   QUÉ COMPRUEBA
   Corre las funciones REALES extraídas de app.html contra montos elegidos por
   lo que rompen, y revisa que ninguna pantalla haya vuelto a calcular el IVA
@@ -186,17 +200,63 @@ function correr(html){
   check('el modal de registrar cita desglosa en vez de sumar',
         /v-neto-calc'\)\.value=fmt\(netoDe\(/.test(js), true);
 
-  // Todo 0.19 que quede tiene que ser de COSTOS, que es otro caso: ahí el
-  // dueño escribe el monto NETO y el sistema le suma el IVA, y la tabla
-  // guarda monto_neto/iva/total por separado.
-  var sueltos = js.split('\n').filter(function(l){
-    return l.indexOf('0.19') !== -1 && !/conIva|co-iva|co-monto/.test(l);
-  });
-  check('no queda ningún 0.19 fuera de costos', sueltos.join(' | '), '');
+  // Antes acá había una exención para COSTOS, que era el último rincón con el
+  // 0.19 escrito a mano. Ya no queda ninguno: los gastos pasaron a
+  // ivaSobreNeto() y la exención se cerró, así que ahora el barrido es total.
+  var sueltos = js.split('\n').filter(function(l){ return l.indexOf('0.19') !== -1; });
+  check('no queda ningún 0.19 en todo el archivo', sueltos.join(' | '), '');
 
   // La forma vieja: porcentaje sobre 100 aplicado a un monto de venta.
   check('no vuelve la división por 100 sobre el valor',
         /valor\|\|0\)\s*\*\s*\(\(?S\.barberia\?\.iva_pct/.test(js), false);
+
+  // ── 6b. Los GASTOS van al revés, y también respetan el pct ──────────────
+  // El otro lado de la misma moneda. Una factura de compra trae el NETO y el
+  // IVA se suma encima; un precio de servicio ya lo trae adentro y hay que
+  // extraerlo. Las dos operaciones se llaman "calcular el IVA" y dan números
+  // parecidos, así que la confusión es fácil y cara: sobre $100.000 son 19.000
+  // sumando contra 15.966 extrayendo. Si alguien "unifica" los dos casos en
+  // ivaDe() porque total es lo mismo, el crédito fiscal queda subdeclarado.
+  titulo('gastos: el IVA se suma sobre el neto, no se extrae');
+
+  var fSobre = extraerFuncion(js, 'ivaSobreNeto');
+  check('define ivaSobreNeto()', fSobre !== '', true);
+  function gastosCon(pct){
+    return new Function('S', fuente + '\n' + fSobre +
+                        '\nreturn {sum:ivaSobreNeto, ext:ivaDe};')
+           ({ barberia: { iva_pct: pct } });
+  }
+  var G = gastosCon(19);
+  check('IVA de 100.000 neto al 19%', G.sum(100000), 19000);
+  check('IVA de 18.600 neto al 19%',  G.sum(18600),  3534);
+  // Este es EL check que separa las dos operaciones.
+  check('NO es el mismo número que extraer (15.966)',
+        G.sum(100000) === G.ext(100000), false);
+  check('el total le queda al dueño como neto + IVA',
+        100000 + G.sum(100000), 119000);
+
+  // Acá muere el 0.19 hardcodeado del módulo de gastos.
+  var G10 = gastosCon(10);
+  check('IVA de 100.000 neto al 10%', G10.sum(100000), 10000);
+  check('el mismo neto da distinto que al 19%',
+        G10.sum(100000) === G.sum(100000), false);
+  check('sin barbería cargada cae a 19',
+        new Function('S', fuente + '\n' + fSobre + '\nreturn ivaSobreNeto;')({})(100000), 19000);
+  check('monto vacío no rompe', G.sum(null), 0);
+
+  // Y los dos puntos de uso: el preview del modal y lo que se guarda en la
+  // base tienen que coincidir, si no el dueño ve un número y se archiva otro.
+  var calc  = extraerFuncion(js, 'calcIvaCo');
+  var guard = extraerFuncion(js, 'guardarCosto');
+  check('el preview del modal usa ivaSobreNeto', /ivaSobreNeto\(n\)/.test(calc), true);
+  check('  ...y no el extractor de ventas', /ivaDe\(/.test(calc), false);
+  check('el guardado usa ivaSobreNeto', /ivaSobreNeto\(m\)/.test(guard), true);
+  check('  ...y no el extractor de ventas', /ivaDe\(/.test(guard), false);
+
+  // El rótulo del selector también mentía: decía "(19%)" escrito a mano.
+  check('el selector ya no trae el 19% escrito a mano', /Sí \(19%\)/.test(html), false);
+  check('el % del selector se arma con ivaPctNegocio()',
+        /co-iva-si'\)\.textContent=[^;]*ivaPctNegocio\(\)/.test(js), true);
 
   // ── 7. calcularComision NO se tocó ──────────────────────────────────────
   // Ya interpretaba bruto bien, y trabaja con la base sin redondear: pasarla
