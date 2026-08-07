@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — botón manual de Bienvenida</title>
+
+<!--
+  Test del botón "Bienvenida" en la ficha del cliente (verCliente() en app.html)
+  y, de paso, del contrato entre esos botones y las plantillas seed.
+
+  POR QUÉ EXISTE
+  Hasta ahora "Bienvenida" era la única plantilla sin forma de dispararse a
+  mano: salía sola en guardarCliente(), rama insert, y en ningún otro lado. Las
+  fichas que nacen en la base (reservar.html, unirse.html y mi-agenda.html, vía
+  buscar_o_crear_cliente_club / unirse_club_publico) nunca pasan por buildMsg(),
+  así que esas personas no la recibían nunca. El botón es la cobertura decidida
+  para la puerta del Club QR.
+
+  Y se rompe en SILENCIO de tres maneras, todas sin dejar rastro en consola:
+
+   1. Que el `ev` del botón no calce exacto con el nombre del evento de la
+      plantilla. buildMsg() hace find(...) y devuelve null si no encuentra;
+      verCliente() mapea null a cadena vacía. Resultado: el botón no se dibuja.
+      No hay error, no hay hueco visible — la fila de botones simplemente tiene
+      uno menos, y nadie sabe cuál falta.
+
+   2. Que una variable de la plantilla no llegue a buildMsg(). Ahí NO se cae
+      nada: el placeholder viaja LITERAL hasta el WhatsApp del cliente. Ya pasó
+      de verdad — {negocio} y {link} son alias que existen en buildMsg() sólo
+      porque las plantillas seed de Bienvenida y Recuperar inactivo los usaban
+      y nunca se reemplazaban (ver el comentario en app.html). Este botón vuelve
+      a exponer justo esa plantilla, así que el alias queda fijado acá.
+
+   3. Que agregar el botón rompa el envío automático del alta manual, que sigue
+      siendo el camino principal.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES, y EJECUTANDO. buildMsg() se extrae de app.html y se
+  corre de verdad contra el literal de plantillas seed de ingresar.html, con un
+  S falso. El array de botones también se ejecuta, no se lee con regex: así el
+  test ve exactamente los mismos objetos que ve la UI. No abre Supabase.
+
+  OJO CON EL ALCANCE: las plantillas de un negocio ya creado viven en la base,
+  no en el seed. El seed es el contrato para los negocios NUEVOS y es lo único
+  versionado, así que es contra eso que se puede probar. Si alguien renombra un
+  evento en la base a mano, esto no lo ve.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) Borrar la entrada {l:'Bienvenida',...} del array msgs de verCliente()
+      -> 1 rojo: "la ficha ofrece un botón de Bienvenida".
+   b) Escribir mal el evento: ev:'Bienvenidas'
+      -> 3 rojos: "la ficha ofrece un botón de Bienvenida",
+         "cada botón de la ficha encuentra su plantilla — Bienvenidas" y
+         "Bienvenidas no deja variables sin resolver".
+   c) Sacar el alias `negocio:` del objeto all de buildMsg()
+      -> 2 rojos: "Bienvenida no deja variables sin resolver" y
+         "Bienvenida resuelve {negocio} con el nombre del negocio".
+   d) Sacar el alias `link:` del mismo objeto
+      -> 3 rojos: los dos de Bienvenida y, de arrastre, "Recuperar inactivo no
+         deja variables sin resolver" — esa plantilla seed también usa {link}.
+   e) En verCliente(), dejar la entrada de Bienvenida con v:{}
+      -> 1 rojo: "Bienvenida no deja variables sin resolver" (queda {nombre}).
+   f) Cambiar la línea de guardarCliente() por const msg=null
+      -> 2 rojos: "guardarCliente() sigue llamando a buildMsg('Bienvenida')" y
+         el de la rama, que con la llamada ausente tampoco puede ubicarla
+         después del insert.
+
+  Las seis se corrieron y las seis dieron rojo.
+
+  LO QUE ENCONTRÓ DE VERDAD, antes de las mutaciones: la primera corrida de la
+  suite entera falló en el montaje, no en lo que se quería probar. extraerFuncion()
+  —copiada del gemelo de test-orden-servicios.html— busca el primer '{' después
+  del nombre para abrir el cuerpo, y buildMsg(evento, vars={}) tiene un parámetro
+  POR DEFECTO: abría y cerraba en el '{}' de la firma y devolvía media línea de
+  función. El new Function() reventaba con "Unexpected token 'return'". Ver el
+  comentario del extractor acá abajo para cómo quedó resuelto y por qué acá no
+  sirve contar llaves. Vale la pena saberlo si se copia ese extractor a un test
+  nuevo: cualquier función con parámetro por defecto lo engaña igual.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — botón manual de Bienvenida</h1>
+<p>Ejecuta <code>buildMsg()</code> de app.html contra las plantillas seed de
+ingresar.html y verifica que cada botón de la ficha encuentre su plantilla y no
+deje variables sin resolver.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html','ingresar.html'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (real === esperado);
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + esperado);
+    lineas.push('      │   obtenido: ' + real);
+  }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+
+// Corta desde la declaración de una función hasta la próxima declaración en
+// columna 0.
+//
+// NO cuenta llaves a propósito, aunque es lo que hace el extractor gemelo de
+// test-orden-servicios.html. Acá eso no sirve, por dos motivos distintos y los
+// dos presentes en app.html:
+//
+//  - buildMsg(evento, vars={}) tiene un parámetro POR DEFECTO. El primer '{'
+//    después del nombre es el de `vars={}`, no el del cuerpo: el contador abre
+//    y cierra ahí mismo y devuelve "function buildMsg(evento, vars={}" como si
+//    fuera la función entera. Es lo que pasaba en la primera versión de este
+//    test — el new Function() reventaba con "Unexpected token 'return'".
+//  - verCliente() está lleno de template literals con ${...}; sus llaves son
+//    de código pero viven dentro de una cadena, así que cualquier contador
+//    tiene que saber de cadenas para no descuadrarse.
+//
+// En app.html las funciones se declaran todas pegadas al margen, así que
+// cortar en la siguiente declaración es fiable y no depende de la sintaxis
+// interna. Se lleva de arrastre los comentarios que haya entremedio, que son
+// inofensivos: van en líneas propias y terminan en el salto.
+function extraerFuncion(js, nombre){
+  var re = new RegExp('^(?:async\\s+)?function\\s+' + nombre + '\\s*\\(', 'm');
+  var m = re.exec(js);
+  if(!m) return '';
+  var sig = /^(?:async\s+)?function\s+\w+\s*\(/gm;
+  sig.lastIndex = m.index + m[0].length;
+  var sm = sig.exec(js);
+  return js.slice(m.index, sm ? sm.index : js.length);
+}
+
+// Corta un literal (array u objeto) cerrando los delimitadores de verdad, no
+// con un regex no goloso: en app.html hay decenas de literales parecidos y el
+// primer match casi nunca es el que se busca.
+function literalDesde(js, decl, abre, cierra){
+  var i = js.indexOf(decl);
+  if(i === -1) return '';
+  var ini = js.indexOf(abre, i + decl.length - 1), prof = 0;
+  if(ini === -1) return '';
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === abre) prof++;
+    else if(js[k] === cierra){ prof--; if(prof === 0) return js.slice(ini, k + 1); }
+  }
+  return '';
+}
+
+// Variables que quedaron sin resolver: {algo} con forma de placeholder. Se pide
+// que el contenido sea a-z/_ para no confundirse con una llave suelta del texto
+// del mensaje (un emoji o un salto no matchean).
+function placeholdersSueltos(msg){
+  return (String(msg).match(/\{[a-z_]+\}/g) || []);
+}
+
+function correr(src){
+  lineas = []; fallos = 0; comprobaciones = 0;
+
+  var appJs = inlineScripts(src['app.html']).join('\n');
+  var ingJs = inlineScripts(src['ingresar.html']).join('\n');
+
+  // ───────────────────────────────────────────────────────────────
+  // Montaje: buildMsg() y las plantillas seed, los dos REALES.
+  // ───────────────────────────────────────────────────────────────
+  var fuenteBuildMsg = extraerFuncion(appJs, 'buildMsg');
+  check('se pudo extraer buildMsg() de app.html', fuenteBuildMsg !== '', true);
+
+  var litPlantillas = literalDesde(ingJs, 'const plantillas=', '[', ']');
+  check('se pudo extraer el literal de plantillas seed de ingresar.html',
+        litPlantillas !== '', true);
+
+  if(!fuenteBuildMsg || !litPlantillas){ pintar(); return; }
+
+  // barb es la barbería recién creada dentro de ingresar.html; acá sólo hace
+  // falta que exista para que el literal evalúe.
+  var seed;
+  try{
+    seed = new Function('barb', 'return ' + litPlantillas + ';')({id:'B1'});
+  }catch(e){
+    check('el literal de plantillas seed evalúa', 'excepción: ' + e.message, true);
+    pintar(); return;
+  }
+  check('el seed trae las 10 plantillas', seed.length, 10);
+
+  var NEGOCIO = 'Barbería Sintonía';
+  var S = {
+    barberia: {
+      id: 'B1',
+      nombre: NEGOCIO,
+      link_reviews: 'https://g.page/r/reseñas',
+      direccion: 'Av. Siempre Viva 742'
+    },
+    plantillas: seed
+  };
+  var LOC = {origin: 'https://www.mireservia.cl'};
+  var LINK_RESERVAS = LOC.origin + '/reservar.html?id=B1';
+
+  var buildMsg;
+  try{
+    buildMsg = new Function('S', 'location', fuenteBuildMsg + '\nreturn buildMsg;')(S, LOC);
+  }catch(e){
+    check('buildMsg() se puede instanciar', 'excepción: ' + e.message, true);
+    pintar(); return;
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el botón existe en la ficha');
+
+  // Se ejecuta el trozo real de verCliente() que arma la lista, en vez de
+  // leerlo con regex: así el test recibe los mismos objetos que la UI.
+  var fuenteVer = extraerFuncion(appJs, 'verCliente');
+  var ini = fuenteVer.indexOf('const msgs=[');
+  var fin = fuenteVer.indexOf('const overlay=');
+  check('se pudo aislar el armado de botones de verCliente()',
+        ini !== -1 && fin > ini, true);
+  if(ini === -1 || fin <= ini){ pintar(); return; }
+
+  var trozo = fuenteVer.slice(ini, fin);
+  var CLIENTE = {nombre:'Ana', cumpleanos:'1990-03-14'};
+  var botones;
+  try{
+    botones = new Function('c', 'uv', 'diasDesde',
+      trozo + '\nreturn msgs;')(CLIENTE, null, function(){ return 30; });
+  }catch(e){
+    check('el armado de botones se ejecuta', 'excepción: ' + e.message, true);
+    pintar(); return;
+  }
+
+  function eventos(){ return botones.map(function(b){ return b.ev; }); }
+
+  check('la ficha ofrece un botón de Bienvenida',
+        eventos().indexOf('Bienvenida') !== -1, true);
+  // Las otras tres no se tocaron; si alguna desaparece, es una regresión.
+  check('  ...sin perder Recuperar inactivo',
+        eventos().indexOf('Recuperar inactivo') !== -1, true);
+  check('  ...sin perder Pedir reseña',
+        eventos().indexOf('Pedir reseña') !== -1, true);
+  check('  ...sin perder Cumpleaños (cliente con fecha cargada)',
+        eventos().indexOf('Cumpleaños') !== -1, true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('cada botón encuentra su plantilla');
+
+  // Éste es el modo de falla silencioso nº1: buildMsg devuelve null y el botón
+  // no se dibuja, sin ningún error.
+  botones.forEach(function(b){
+    check('cada botón de la ficha encuentra su plantilla — ' + b.ev,
+          buildMsg(b.ev, b.v) !== null, true);
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('ningún mensaje sale con variables literales');
+
+  // Modo de falla nº2: el placeholder viaja tal cual al WhatsApp del cliente.
+  // El null NO se saltea: si el evento está mal escrito, este check también
+  // tiene que gritar, no quedarse mudo (ver prueba de mutación (b) arriba).
+  botones.forEach(function(b){
+    var msg = buildMsg(b.ev, b.v);
+    var sueltos = msg === null ? ['(plantilla no encontrada)'] : placeholdersSueltos(msg);
+    check(b.ev + ' no deja variables sin resolver', sueltos.join(' '), '');
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('Bienvenida resuelve lo que promete');
+
+  var bienvenida = buildMsg('Bienvenida', {nombre: CLIENTE.nombre});
+  check('el mensaje se arma', typeof bienvenida, 'string');
+  check('Bienvenida saluda con el nombre del cliente',
+        bienvenida.indexOf('Ana') !== -1, true);
+  // Los dos alias que ya se habían escapado literales una vez.
+  check('Bienvenida resuelve {negocio} con el nombre del negocio',
+        bienvenida.indexOf(NEGOCIO) !== -1, true);
+  check('Bienvenida resuelve {link} con el link de reservas',
+        bienvenida.indexOf(LINK_RESERVAS) !== -1, true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el alta manual sigue mandándola sola');
+
+  // El botón se suma al envío automático, no lo reemplaza: el alta manual desde
+  // el panel sigue siendo el camino principal de esta plantilla.
+  var fuenteGuardar = extraerFuncion(appJs, 'guardarCliente');
+  check('guardarCliente() sigue llamando a buildMsg(\'Bienvenida\')',
+        /buildMsg\(\s*'Bienvenida'/.test(fuenteGuardar), true);
+  // Y sólo en la rama de insert: reeditar una ficha no puede volver a saludar.
+  var idxUpdate = fuenteGuardar.indexOf('.update(payload)');
+  var idxBienve = fuenteGuardar.indexOf("buildMsg('Bienvenida'");
+  check('  ...después del insert, no en la rama de update',
+        idxUpdate !== -1 && idxBienve > idxUpdate, true);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>

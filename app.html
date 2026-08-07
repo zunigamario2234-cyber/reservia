@@ -3634,7 +3634,24 @@ function verCliente(id){
   const totalVal=histVis.reduce((s,v)=>s+(v.valor||0),0);
   const next=vis<5?5:vis<10?10:vis<20?20:20;
   const pct=Math.min(100,(vis/next*100));
+  // "Bienvenida" está acá porque hasta ahora era la única plantilla sin forma de
+  // dispararse a mano: salía sola en guardarCliente(), rama insert, y en ningún
+  // otro lado. Las fichas que nacen en la base —reservar.html, unirse.html y
+  // mi-agenda.html, todas vía buscar_o_crear_cliente_club/unirse_club_publico—
+  // nunca pasan por buildMsg(), así que esas personas no la recibían nunca.
+  //
+  // Este botón es la cobertura de la puerta del Club QR, y a propósito NO se
+  // automatizó: en unirse.html quien está frente a la pantalla es la persona, en
+  // su propio teléfono, así que un wa.me disparado ahí mandaría un mensaje DEL
+  // cliente AL negocio — al revés de lo que hace falta. El dueño ve la ficha
+  // nueva (canal 'Club QR') y decide si saluda.
+  //
+  // No se agrega para el alta por reserva web: esa persona ya recibió el correo
+  // de confirmación y acaba de usar el link de reservas, que es justo lo que la
+  // plantilla ofrece. El botón igual existe para ella, pero como decisión del
+  // dueño, no como envío automático.
   const msgs=[
+    {l:'Bienvenida',ev:'Bienvenida',v:{nombre:c.nombre}},
     {l:'Recuperar',ev:'Recuperar inactivo',v:{nombre:c.nombre,dias:diasDesde(uv)}},
     {l:'Reseña',ev:'Pedir reseña',v:{nombre:c.nombre}},
   ];
