@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — cobro conjunto de reservas</title>
+
+<!--
+  Test del cobro conjunto: el prorrateo de app.html y la RPC transaccional de
+  migration_cobro_conjunto.sql.
+
+  POR QUÉ EXISTE
+  Esto reparte plata de terceros. Un prorrateo mal redondeado NO se ve: no tira
+  ningún error, no rompe ninguna pantalla — simplemente le paga de menos a un
+  profesional, y nadie se entera hasta que alguien suma las comisiones a fin de
+  mes. Es la peor clase de bug de este repo: silencioso y con consecuencia
+  económica sobre otra persona.
+
+  Se rompe en silencio de cinco maneras:
+
+   1. Que el reparto no sume EXACTO el total cobrado. Con dos líneas y un
+      descuento del 33% los redondeos no cierran solos; si el resto no se
+      imputa a alguna línea, la caja y la suma de visitas se separan de a
+      pesos y el descuadre aparece recién en el IVA.
+
+   2. Que el resto del redondeo se reparta de forma no determinista. Si va a
+      una línea distinta según el orden, dos cobros idénticos dan comisiones
+      distintas.
+
+   3. Que el descuento se prorratee y el valor salga por diferencia (al revés
+      de como está). Ahí se rompe la invariante que ya usaba el cobro
+      individual: descuento_monto = max(0, precio_lista - valor).
+
+   4. Que la propina deje de ser proporcional al valor. Hoy eso hace que
+      propina_i = valor_i * pct / 100 se cumpla sola, y por eso propina_pct
+      sigue siendo cierto en cada visita sin cambiarle el significado a la
+      columna. Si el reparto cambia, esa columna empieza a mentir.
+
+   5. Que el cobro vuelva a escribirse con inserts sueltos desde el navegador.
+      Con varias reservas, un corte a mitad de camino deja al cliente pagando
+      todo y al sistema registrando una parte, sin rollback posible.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES. repartirProporcional(), cobroProrratear() y
+  confirmarCobro() se recompilan desde app.html y se EJECUTAN contra un DOM y
+  un sb falsos, así que el payload que se verifica es el mismo que viajaría a
+  la base. La migración se verifica como texto. No abre Supabase ni cobra nada.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) En repartirProporcional, borrar la línea que imputa el resto
+      (`out[idx]+=total-...`)
+      -> falla "3 líneas al 33% cuadran exacto" y los casos de división infinita.
+   b) Imputar el resto a la línea 0 en vez de a la de mayor peso
+      -> falla "el resto va siempre a la línea de mayor peso".
+   c) En cobroProrratear, repartir las propinas en partes iguales en vez de
+      proporcional al valor
+      -> falla "la propina mantiene propina_pct verdadero en cada línea".
+   d) En confirmarCobro, mandar valor sin prorratear (el total en cada línea)
+      -> falla "el payload reparte el total entre las líneas".
+   e) En confirmarCobro, declarar solo el valor sin la propina en
+      p_total_declarado
+      -> falla "el total declarado incluye las propinas".
+   f) En la migración, sacar la validación del total
+      -> falla "la RPC valida que el total cuadre".
+   g) En la migración, sacar el chequeo de fechas distintas
+      -> falla "la RPC exige que todas las reservas sean del mismo día".
+   h) En cobroRecalcular, apagar el bloque que pinta el reparto por profesional
+      -> falla "el desglose nombra a los dos profesionales" y las comisiones.
+
+  Las ocho se corrieron y las ocho dieron rojo.
+
+  DOS AGUJEROS QUE ESTE TEST YA TIENE TAPADOS
+  El primer intento de (d) pasaba en VERDE: el check miraba que el payload
+  tuviera la clave `valor`, y con el total sin repartir la clave sigue estando.
+  Comprobar que un campo EXISTE no prueba que su contenido sea correcto. Ahora
+  se verifica la suma de los valores contra el total y el valor concreto de
+  cada línea.
+
+  El primer intento de (b) también pasaba en verde: el único caso que miraba
+  el reparto del resto usaba pesos [1,1,1], y con pesos EMPATADOS la línea de
+  mayor peso es justamente la primera — así que "va a la de mayor peso" y "va
+  siempre a la línea 0" dan idéntico resultado. Se agregó el caso [1,1,4], que
+  pone la mayor al final, comparando el array exacto.
+
+  UNA MUTACIÓN QUE NO SIRVE, Y POR QUÉ
+  Cambiar el prorrateo de la propina para que use el precio de LISTA en vez
+  del valor cobrado NO pone el test en rojo, y no es un agujero: es una
+  mutación equivalente. `valores` se calcula proporcional a `lista`, así que
+  repartir por uno o por otro da el mismo resultado salvo centavos de
+  redondeo. No perder tiempo intentando cazarla — la mutación que sí prueba
+  algo es (c), repartir en partes iguales, que rompe la proporcionalidad de
+  verdad.
+
+  ⚠ CÓMO SE PROBARON LOS PASOS SQL DE LA MIGRACIÓN (hallazgo de Mario)
+  El SQL Editor de Supabase no soporta \gset, y auth_barberia_id()/auth_rol()
+  devuelven null corriendo SQL sin sesión. Ver la cabecera de los pasos 4 a 6
+  en migration_cobro_conjunto.sql: hay que simular el JWT con set_config()
+  local a la transacción, o la RPC corta con 'No autorizado' y parece rota.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — cobro conjunto de reservas</h1>
+<p>Verifica que el prorrateo cuadre exacto con lo cobrado y que el cobro entero
+viaje en una sola operación transaccional.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html','migration_cobro_conjunto.sql'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// extraerFuncion() busca "function X(", que matchea DENTRO de
+// "async function X(" y deja el async afuera. Recompilar así da SyntaxError
+// porque el cuerpo tiene await — y como la llamada va envuelta en intentar(),
+// el error queda mudo y los checks del payload fallan todos con el mismo
+// "obtenido: null", que parece un bug del código y es un bug del test.
+// Mismo tropiezo que documenta test-orden-servicios.html en armarMover().
+function extraerFuncionAsync(js, nombre){
+  var f = extraerFuncion(js, nombre);
+  if(!f) return '';
+  var esAsync = new RegExp('async\\s+function\\s+' + nombre + '\\s*\\(').test(js);
+  return (esAsync ? 'async ' : '') + f;
+}
+
+// DOM mínimo: solo los campos que el prorrateo lee/escribe. Devolver objetos
+// con .value alcanza y evita depender de un navegador con la página montada.
+// classList va porque confirmarCobro() pregunta si la agenda está activa antes
+// de repintarla; sin eso truena DESPUÉS de llamar a la RPC.
+function domFalso(valores){
+  var campos = {};
+  function nuevo(v){
+    return { value: v === undefined ? '' : v, textContent:'', innerHTML:'', disabled:false,
+             style:{}, classList:{ contains:function(){ return false; } } };
+  }
+  Object.keys(valores).forEach(function(k){ campos[k] = nuevo(valores[k]); });
+  return { getElementById: function(id){
+    if(!campos[id]) campos[id] = nuevo('');
+    return campos[id];
+  } };
+}
+
+// Recompila el prorrateo real de app.html contra un COBRO_CTX y un DOM dados.
+function armarProrrateo(js, ctx, final, propina){
+  var fuente = extraerFuncion(js, 'repartirProporcional') + '\n' +
+               extraerFuncion(js, 'cobroProrratear');
+  if(fuente.indexOf('function cobroProrratear') === -1) return null;
+  var doc = domFalso({ 'cob-final': final, 'cob-propina': propina });
+  return new Function('document','COBRO_CTX',
+                      fuente + '\nreturn {prorratear:cobroProrratear, repartir:repartirProporcional};')
+         (doc, ctx);
+}
+
+async function correr(src){
+  var appHtml = src['app.html'];
+  var js  = sinComentarios(inlineScripts(appHtml).join('\n'));
+  var sql = sinComentariosSql(src['migration_cobro_conjunto.sql']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el reparto cuadra exacto con lo cobrado');
+
+  var mod = armarProrrateo(js, {lineas:[]}, '0', '0');
+  check('el prorrateo se pudo recompilar', mod !== null, true);
+  if(!mod){ pintar(); return; }
+  var R = mod.repartir;
+
+  function suma(a){ return a.reduce(function(x,y){ return x+y; }, 0); }
+
+  // El caso real: papá $20.000 con Mario, hijo $15.000 con Ana, 10% de dcto.
+  check('el caso del papá y el hijo reparte 18.000 / 13.500',
+        intentar(function(){ return R(31500,[20000,15000]); }), [18000,13500]);
+
+  // Los que no dividen redondo: acá es donde se pierde plata sin avisar.
+  check('3 líneas al 33% cuadran exacto',
+        intentar(function(){ return suma(R(20100,[10000,10000,10000])); }), 20100);
+  check('división infinita (1/3) cuadra exacto',
+        intentar(function(){ return suma(R(10000,[1,1,1])); }), 10000);
+  check('montos primos feos cuadran exacto',
+        intentar(function(){ return suma(R(33333,[7919,104729,13])); }), 33333);
+
+  // Determinismo: el resto tiene que caer SIEMPRE en la misma línea.
+  check('el resto va siempre a la línea de mayor peso',
+        intentar(function(){ return R(10000,[1,1,1]); }), [3334,3333,3333]);
+  // Con pesos EMPATADOS la mayor es la primera, así que el caso de arriba no
+  // distingue "va a la de mayor peso" de "va siempre a la línea 0" — pasaba en
+  // verde con esa mutación. Este caso pone la mayor al final y compara el
+  // array exacto: con idx=0 daría [1666,1667,6667].
+  check('  ...y con la mayor al final, es esa la que absorbe',
+        intentar(function(){ return R(10000,[1,1,4]); }), [1667,1667,6666]);
+
+  // Bordes que no pueden tirar ni producir negativos.
+  check('total 0 reparte ceros', intentar(function(){ return R(0,[20000,15000]); }), [0,0]);
+  check('una sola línea se lleva todo', intentar(function(){ return R(17777,[20000]); }), [17777]);
+  check('sin líneas devuelve vacío', intentar(function(){ return R(1000,[]); }), []);
+  check('sin pesos utilizables reparte en partes iguales',
+        intentar(function(){ return R(9999,[0,0,0]); }), [3333,3333,3333]);
+  check('ningún reparto produce negativos',
+        intentar(function(){
+          return [R(31500,[20000,15000]),R(20100,[10,10,10]),R(1,[5,5])]
+                 .every(function(r){ return r.every(function(x){ return x >= 0; }); });
+        }), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el prorrateo del cobro completo');
+
+  var ctx = { lineas:[{reservaId:'r1',lista:20000},{reservaId:'r2',lista:15000}],
+              descPct:10, propinaPct:10 };
+  var P = armarProrrateo(js, ctx, '31500', '3150').prorratear();
+
+  check('los valores salen prorrateados por precio de lista', P.valores, [18000,13500]);
+  check('la suma de valores es el precio final', suma(P.valores), 31500);
+  check('la suma de propinas es la propina total', suma(P.propinas), 3150);
+  check('el total de lista es la suma de las líneas', P.listaTotal, 35000);
+
+  // LA PROPIEDAD QUE SALE GRATIS, y que hay que no romper: como la propina se
+  // reparte por VALOR, cada línea cumple propina_i = valor_i * pct / 100. Por
+  // eso propina_pct sigue siendo cierto en cada visita.
+  check('la propina mantiene propina_pct verdadero en cada línea',
+        P.propinas, [Math.round(18000*10/100), Math.round(13500*10/100)]);
+
+  // La invariante que ya usaba el cobro individual, ahora por línea.
+  check('se conserva descuento = lista − valor en cada línea',
+        ctx.lineas.map(function(l,i){ return Math.max(0, l.lista - P.valores[i]); }),
+        [2000,1500]);
+
+  // Cobrar POR ENCIMA del precio de lista es legítimo y no es descuento.
+  var P2 = armarProrrateo(js, ctx, '40000', '0').prorratear();
+  check('cobrar de más no genera descuento negativo',
+        ctx.lineas.map(function(l,i){ return Math.max(0, l.lista - P2.valores[i]); }),
+        [0,0]);
+  check('  ...y la suma sigue cuadrando', suma(P2.valores), 40000);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el payload que viaja a la base');
+
+  // confirmarCobro() REAL contra un sb falso que captura la llamada. Verificar
+  // el payload de verdad es el punto: es lo que decide cuánta plata cobra cada
+  // profesional.
+  var capt = null;
+  var fuenteCC = extraerFuncion(js,'repartirProporcional') + '\n' +
+                 extraerFuncion(js,'cobroProrratear') + '\n' +
+                 extraerFuncionAsync(js,'confirmarCobro');
+  var ctx2 = { lineas:[{reservaId:'r1',lista:20000},{reservaId:'r2',lista:15000}],
+               descPct:10, propinaPct:10 };
+  var doc2 = domFalso({ 'cob-final':'31500', 'cob-propina':'3150', 'cob-metodo':'Efectivo' });
+  var sbFalso = { rpc: function(nombre,args){ capt = {nombre:nombre,args:args}; return Promise.resolve({error:null}); } };
+  var noop = function(){ return Promise.resolve(); };
+
+  var corrida = await intentar(function(){
+    return new Function('document','COBRO_CTX','sb','notify','fmt','confirm',
+      'loadReservas','loadVisitas','loadClientes','renderReservas','renderDashboard',
+      'closeM','renderAgenda','calcularComision',
+      fuenteCC + '\nreturn confirmarCobro();')
+      (doc2, ctx2, sbFalso, function(){}, function(n){ return '$'+n; }, function(){ return true; },
+       noop, noop, noop, function(){}, function(){},
+       function(){}, function(){}, function(v,p){ return Math.round(v*p/100); });
+  });
+
+  // Se reporta el resultado de la corrida y no solo sus efectos: si la función
+  // recompilada tira, sin este check todos los del payload fallan con
+  // "obtenido: null" y parece un bug del código en vez del test.
+  check('confirmarCobro corre sin excepciones',
+        typeof corrida === 'string' && corrida.indexOf('excepción') !== -1 ? corrida : 'sin excepción',
+        'sin excepción');
+
+  check('llama a la RPC transaccional', capt && capt.nombre, 'registrar_cobro_conjunto');
+  check('  ...y no inserta visitas sueltas desde el navegador',
+        /from\('visitas'\)\.insert/.test(extraerFuncion(js,'confirmarCobro')), false);
+
+  var args = (capt && capt.args) || {};
+  var Ls = args.p_lineas || [];
+  check('manda una línea por reserva', Ls.length, 2);
+  // El check que en la primera versión pasaba en verde con el total sin
+  // repartir: mirar que exista la clave `valor` no prueba NADA.
+  check('el payload reparte el total entre las líneas',
+        Ls.map(function(l){ return l.valor; }), [18000,13500]);
+  check('  ...y esos valores suman el precio final',
+        suma(Ls.map(function(l){ return l.valor; })), 31500);
+  check('cada línea lleva su reserva', Ls.map(function(l){ return l.reserva_id; }), ['r1','r2']);
+  check('cada línea lleva su precio de lista congelado',
+        Ls.map(function(l){ return l.precio_lista; }), [20000,15000]);
+  check('cada línea lleva su descuento',
+        Ls.map(function(l){ return l.descuento_monto; }), [2000,1500]);
+  check('cada línea lleva su parte de la propina',
+        Ls.map(function(l){ return l.propina; }), [1800,1350]);
+  check('el total declarado incluye las propinas', args.p_total_declarado, 34650);
+  check('  ...y coincide con la suma real del payload',
+        suma(Ls.map(function(l){ return l.valor + l.propina; })), args.p_total_declarado);
+  check('el método de pago viaja', args.p_metodo_pago, 'Efectivo');
+
+  // Servicio sin precio: no se inventa una foto de precio que nadie tomó.
+  var capt2 = null;
+  var sbFalso2 = { rpc: function(n,a){ capt2 = a; return Promise.resolve({error:null}); } };
+  var corrida2 = await intentar(function(){
+    return new Function('document','COBRO_CTX','sb','notify','fmt','confirm',
+      'loadReservas','loadVisitas','loadClientes','renderReservas','renderDashboard',
+      'closeM','renderAgenda','calcularComision',
+      fuenteCC + '\nreturn confirmarCobro();')
+      (domFalso({'cob-final':'12000','cob-propina':'0','cob-metodo':'Efectivo'}),
+       {lineas:[{reservaId:'r9',lista:0}],descPct:null,propinaPct:null},
+       sbFalso2, function(){}, function(n){ return '$'+n; }, function(){ return true; },
+       noop, noop, noop, function(){}, function(){}, function(){}, function(){},
+       function(v,p){ return Math.round(v*p/100); });
+  });
+  check('el cobro sin precio de lista corre sin excepciones',
+        typeof corrida2 === 'string' && corrida2.indexOf('excepción') !== -1 ? corrida2 : 'sin excepción',
+        'sin excepción');
+  check('sin precio de lista manda null, no un 0 inventado',
+        capt2 && capt2.p_lineas[0].precio_lista, null);
+  check('  ...y tampoco inventa un descuento',
+        capt2 && capt2.p_lineas[0].descuento_monto, null);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('lo que el dueño ve antes de confirmar');
+
+  // El reparto en pantalla no es decoración: es plata de otro. El profesional
+  // tiene que poder ver cuánto le tocó, y quien cobra tiene que poder detectar
+  // un reparto raro ANTES de que quede grabado.
+  var fuenteUI = extraerFuncion(js,'repartirProporcional') + '\n' +
+                 extraerFuncion(js,'cobroProrratear') + '\n' +
+                 extraerFuncion(js,'cobroRenderLineas') + '\n' +
+                 extraerFuncion(js,'cobroRecalcular');
+  var docUI = domFalso({ 'cob-final':'31500', 'cob-propina':'3150' });
+  var ctxUI = { lineas:[
+      {reservaId:'r1',lista:20000,nombre:'Juan Pérez',servicio:'Corte',profesional:'Mario',hora:'10:00',sinPrecio:false,matchNormalizado:false},
+      {reservaId:'r2',lista:15000,nombre:'Tomás Soto',servicio:'Corte niño',profesional:'Ana',hora:'10:30',sinPrecio:false,matchNormalizado:false}
+    ], descPct:10, propinaPct:10 };
+  var UI = intentar(function(){
+    var f = new Function('document','COBRO_CTX','S','fmt','fmtHora','escHtml','ivaDe','netoDe','calcularComision',
+      fuenteUI + '\nreturn function(){ cobroRenderLineas(); cobroRecalcular(); };')
+      (docUI, ctxUI,
+       { barberos:[{nombre:'Mario',comision_pct:50},{nombre:'Ana',comision_pct:40}] },
+       function(n){ return '$'+n; }, function(h){ return h; }, function(s){ return s; },
+       function(b){ return Math.round(b*19/119); }, function(b){ return b-Math.round(b*19/119); },
+       function(v,p){ return Math.round(v*p/100); });
+    f();
+    return { lineas: docUI.getElementById('cob-lineas').innerHTML,
+             desglose: docUI.getElementById('cob-desglose').innerHTML,
+             total: docUI.getElementById('cob-total').textContent };
+  });
+
+  check('el render corre sin excepciones', typeof UI === 'object', true);
+  if(typeof UI === 'object'){
+    check('lista las dos personas por nombre',
+          UI.lineas.indexOf('Juan Pérez') !== -1 && UI.lineas.indexOf('Tomás Soto') !== -1, true);
+    check('con 2 líneas ofrece quitar cada una',
+          (UI.lineas.match(/cobroQuitarLinea/g)||[]).length, 2);
+    check('el desglose nombra a los dos profesionales',
+          UI.desglose.indexOf('Mario') !== -1 && UI.desglose.indexOf('Ana') !== -1, true);
+    // 50% de 18.000 y 40% de 13.500: lo que cada uno se lleva, a la vista.
+    check('muestra la comisión de Mario ($9.000)', UI.desglose.indexOf('$9000') !== -1, true);
+    check('muestra la comisión de Ana ($5.400)',   UI.desglose.indexOf('$5400') !== -1, true);
+    check('muestra la propina de cada uno',
+          UI.desglose.indexOf('$1800') !== -1 && UI.desglose.indexOf('$1350') !== -1, true);
+    check('el total es servicios + propinas', UI.total, '$34650');
+  }
+
+  // Con una sola línea no se muestra el reparto: no hay nada que repartir y
+  // sería ruido en el flujo que ya estaba en producción.
+  var docU1 = domFalso({ 'cob-final':'15000', 'cob-propina':'0' });
+  var UI1 = intentar(function(){
+    var f = new Function('document','COBRO_CTX','S','fmt','fmtHora','escHtml','ivaDe','netoDe','calcularComision',
+      fuenteUI + '\nreturn function(){ cobroRenderLineas(); cobroRecalcular(); };')
+      (docU1, { lineas:[{reservaId:'r1',lista:15000,nombre:'Juan',servicio:'Corte',profesional:'Mario',hora:'10:00',sinPrecio:false,matchNormalizado:false}], descPct:null, propinaPct:null },
+       { barberos:[{nombre:'Mario',comision_pct:50}] },
+       function(n){ return '$'+n; }, function(h){ return h; }, function(s){ return s; },
+       function(b){ return Math.round(b*19/119); }, function(b){ return b-Math.round(b*19/119); },
+       function(v,p){ return Math.round(v*p/100); });
+    f();
+    return { lineas: docU1.getElementById('cob-lineas').innerHTML,
+             desglose: docU1.getElementById('cob-desglose').innerHTML };
+  });
+  if(typeof UI1 === 'object'){
+    check('con 1 línea no ofrece quitarla', UI1.lineas.indexOf('cobroQuitarLinea'), -1);
+    check('con 1 línea no muestra reparto', UI1.desglose.indexOf('Reparto por profesional'), -1);
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el aviso de confirmación');
+
+  // El cobro de UNA reserva es el flujo que ya estaba en producción: su texto
+  // no tenía por qué cambiar. "(1 reserva)" no aporta nada y era ruido nuevo.
+  // El conteo solo aparece cuando hubo varias.
+  var avisoSrc = extraerFuncionAsync(js,'confirmarCobro');
+  function aviso(nLineas, propina){
+    return intentar(function(){
+      return new Function('n','propinaTotal','fmt',
+        'var detalle=[];' +
+        (/if\(n>1\)detalle\.push/.test(avisoSrc) ? 'if(n>1)detalle.push(n+" reservas");' : 'ROTO;') +
+        (/if\(rep\.propinaTotal>0\)detalle\.push/.test(avisoSrc) ? 'if(propinaTotal>0)detalle.push("propina "+fmt(propinaTotal));' : 'ROTO;') +
+        'return "Cobro registrado \\u2713"+(detalle.length?" ("+detalle.join(", ")+")":"");')
+        (nLineas, propina, function(v){ return '$'+v; });
+    });
+  }
+  check('una reserva sin propina no lleva paréntesis', aviso(1,0), 'Cobro registrado ✓');
+  check('una reserva con propina solo menciona la propina', aviso(1,1500), 'Cobro registrado ✓ (propina $1500)');
+  check('dos reservas sí llevan el conteo', aviso(2,0), 'Cobro registrado ✓ (2 reservas)');
+  check('dos reservas con propina llevan las dos cosas', aviso(2,3150), 'Cobro registrado ✓ (2 reservas, propina $3150)');
+  // Guardia sobre el archivo real: si alguien vuelve a poner el conteo fijo,
+  // los cuatro de arriba seguirían pasando porque miran una reconstrucción.
+  check('el conteo del aviso está condicionado a n>1',
+        /if\(n>1\)detalle\.push/.test(avisoSrc), true);
+  check('  ...y no hay un "1 reserva" hardcodeado',
+        /\$\{n\} reserva\$\{n>1\?'s':''\}/.test(avisoSrc), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el cobro individual quedó en el mismo camino');
+
+  // Un cobro de una reserva es el caso N=1: si volvieran a existir dos vías,
+  // la individual perdería la atomicidad que sí tiene la conjunta.
+  check('procesarReserva ya no existe', /async function procesarReserva\(/.test(js), false);
+  check('abrirCobro arranca con una línea',
+        /COBRO_CTX=\{lineas:\[cobroLineaDesde\(r\)\]/.test(js), true);
+  check('la × de quitar exige más de una línea',
+        /COBRO_CTX\.lineas\.length<=1\)return/.test(extraerFuncion(js,'cobroQuitarLinea')), true);
+
+  // Solo el mismo día, y de cualquier cliente: el caso real es un padre y un
+  // hijo con apellidos distintos, así que NO se puede filtrar por nombre.
+  var disp = extraerFuncion(js,'cobroReservasDisponibles');
+  check('las candidatas son del mismo día', /r\.fecha===fecha/.test(disp), true);
+  check('  ...y sin cobrar', /!r\.procesado/.test(disp), true);
+  check('  ...sin filtrar por cliente', /nombre_cliente/.test(disp), false);
+  check('  ...y sin repetir las ya agregadas', /yaEstan\.has\(r\.id\)/.test(disp), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la migración');
+
+  check('agrega cobro_id sin romper si ya existe',
+        /alter table public\.visitas\s+add column if not exists cobro_id uuid/i.test(sql), true);
+  check('define la RPC', /create or replace function\s+registrar_cobro_conjunto/i.test(sql), true);
+  check('es security definer', /security definer/i.test(sql), true);
+  check('fija el search_path', /set search_path = public/i.test(sql), true);
+  // Identidad por auth_barberia_id(), NUNCA recibida como parámetro.
+  check('la identidad no llega por parámetro',
+        /p_barberia_id/.test(sql), false);
+  check('exige rol dueño', /auth_rol\(\)\s*<>\s*'dueno'/i.test(sql), true);
+
+  check('la RPC valida que el total cuadre',
+        /round\(p_total_declarado\)\s*<>\s*round\(v_suma\)/i.test(sql), true);
+  check('la RPC exige que todas las reservas sean del mismo día',
+        /no puede mezclar fechas distintas/i.test(sql), true);
+  check('revalida que la reserva no esté ya cobrada',
+        /if v_reserva\.procesado then/i.test(sql), true);
+  check('marca las reservas como Atendida',
+        /update reservas set procesado = true, estado = 'Atendida'/i.test(sql), true);
+  check('la comisión va sobre lo cobrado, no sobre la lista',
+        /v_comision_monto := round\(v_base \* v_comision_pct \/ 100\)/i.test(sql), true);
+  check('la propina queda fuera del reparto de comisión',
+        /v_base := v_valor;/.test(sql), true);
+
+  // La trampa del SQL Editor: dollar-quoting + begin/commit falla en silencio.
+  check('no lleva begin;/commit; activos',
+        /^\s*(begin|commit)\s*;/im.test(sql), false);
+  check('los grants son solo para authenticated',
+        /grant execute on function registrar_cobro_conjunto\(jsonb,text,numeric\) to authenticated/i.test(sql), true);
+  check('  ...y se revoca de public primero',
+        /revoke all on function registrar_cobro_conjunto\(jsonb,text,numeric\) from public/i.test(sql), true);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>

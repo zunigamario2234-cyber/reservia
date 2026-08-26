@@ -115,7 +115,11 @@ function correr(html){
 
   // ── 1. Extracción ───────────────────────────────────────────────────────
   titulo('extracción desde app.html');
+  // repartirProporcional y cobroProrratear entraron con el cobro conjunto:
+  // cobroRecalcular() ahora lee el reparto en vez de un único monto, así que
+  // sin ellas la recompilación tira y esta suite queda muda.
   var FN=['ivaPctNegocio','ivaDe','netoDe','fmt','resolveServicioPrecio',
+          'repartirProporcional','cobroProrratear',
           'cobroDescuento','cobroDescuentoEditado','cobroPrecioEditado',
           'cobroPropina','cobroPropinaEditada','cobroRecalcular'];
   var fuente=FN.map(function(n){
@@ -137,12 +141,17 @@ function correr(html){
     ' TRAMOS_D:DESCUENTO_TRAMOS,TRAMOS_P:PROPINA_TRAMOS};'
   )({
     barberia:{iva_pct:19},
+    barberos:[{nombre:'Mario',comision_pct:50}],
     servicios:[{id:'sv-1',nombre:'Corte clásico',precio:15000},
                {id:'sv-2',nombre:'Barba',precio:8000}]
   });
 
+  // El contexto pasó de {reservaId, lista} a {lineas:[…]} con el cobro
+  // conjunto: el cobro de una reserva sola es el caso N=1. Toda esta suite
+  // sigue probando ESE caso, que es el que ya estaba en producción.
   function arrancar(lista){
-    M.setCtx({reservaId:'r-1',lista:lista,descPct:null,propinaPct:null});
+    M.setCtx({lineas:[{reservaId:'r-1',lista:lista,nombre:'Juan',profesional:'Mario'}],
+              descPct:null,propinaPct:null});
     document.getElementById('cob-desc-pct').value='';
     document.getElementById('cob-final').value=lista||'';
     document.getElementById('cob-propina').value='';
@@ -223,35 +232,46 @@ function correr(html){
   // ── 6. Dónde cae cada peso (sobre el texto del insert) ──────────────────
   // Esta parte no se puede ejecutar sin Supabase, pero es donde vive la mitad
   // de las decisiones del diseño.
-  titulo('el insert manda cada cosa a su columna');
-  check('procesarReserva recibe el desglose ya decidido',
-        /async function procesarReserva\(id,metodoPago,d\)/.test(js), true);
+  // El destino de cada peso ya no lo arma un insert desde el navegador sino el
+  // payload que confirmarCobro() le manda a registrar_cobro_conjunto(). Lo que
+  // se comprueba es lo mismo de siempre; cambió DÓNDE vive.
+  // Ver test-cobro-conjunto.html para el prorrateo entre varias líneas.
+  titulo('el payload manda cada cosa a su columna');
+  var cc=extraerFuncion(js,'confirmarCobro');
+  check('confirmarCobro arma el payload del cobro', cc!=='', true);
   check('guarda la propina en su propia columna',
-        /\n\s*propina,/.test(js), true);
+        /propina:\s*rep\.propinas\[i\]/.test(cc), true);
   check('guarda las cuatro columnas del desglose',
-        /precio_lista:d\?\.precio_lista/.test(js)
-        && /descuento_pct:d\?\.descuento_pct/.test(js)
-        && /descuento_monto:d\?\.descuento_monto/.test(js)
-        && /propina_pct:d\?\.propina_pct/.test(js), true);
+        /precio_lista:/.test(cc) && /descuento_pct:/.test(cc)
+        && /descuento_monto:/.test(cc) && /propina_pct:/.test(cc), true);
   // Mira la COLUMNA valor, no cualquier suma: fmt(valor+propina) es el total
   // a cobrar en pantalla y ahí sumar la propina es lo correcto. Lo que no
-  // puede pasar es que el insert mande valor: algo-con-propina.
+  // puede pasar es que el payload mande valor: algo-con-propina.
   check('NUNCA suma la propina dentro de la columna valor',
-        /valor:[^,}\n]*propina/.test(js), false);
-  check('el insert manda el valor del servicio tal cual',
-        /estado:'Atendida',comision_monto,metodo_pago/.test(js)
-        && /hora:r\.hora,/.test(js), true);
-  check('la comisión se calcula sobre el valor cobrado',
-        /calcularComision\(valor,barObj\?\.comision_pct\|\|50\)/.test(js), true);
+        /valor:[^,}\n]*propina/.test(cc), false);
   check('el descuento nunca queda negativo (el check de la base lo rechaza)',
-        /Math\.max\(0,lista-valor\)/.test(js), true);
+        /Math\.max\(0,l\.lista-rep\.valores\[i\]\)/.test(cc), true);
   check('sin precio de lista no se inventa uno',
-        /precio_lista:\s*lista>0\?lista:null/.test(js), true);
+        /precio_lista:\s*l\.lista>0\?l\.lista:null/.test(cc), true);
 
-  // Si la visita no entra, la reserva NO puede quedar marcada: antes el
-  // insert se hacía sin mirar el error y el cobro desaparecía.
-  check('no marca la reserva si el insert falló',
-        /if\(error\)\{notify\(error\.message,'err'\);return false;\}/.test(js), true);
+  // La comisión se mudó a plpgsql: la calcula la RPC adentro de la
+  // transacción, no el navegador. En app.html quedó solo para MOSTRAR el
+  // reparto antes de confirmar.
+  check('el navegador ya no decide la comisión que se guarda',
+        /comision_monto/.test(cc), false);
+
+  // Antes el insert y el update iban sueltos y había que mirar el error a
+  // mano para no marcar la reserva sobre un cobro que no entró. Ahora es una
+  // sola operación: o entra todo o no entra nada.
+  titulo('el cobro entra completo o no entra');
+  check('procesarReserva ya no existe',
+        /async function procesarReserva\(/.test(js), false);
+  check('el cobro viaja en una sola llamada transaccional',
+        /sb\.rpc\('registrar_cobro_conjunto'/.test(cc), true);
+  check('ya no marca la reserva desde el navegador',
+        /from\('reservas'\)\.update\(\{procesado:true/.test(js), false);
+  check('si la RPC falla no sigue adelante',
+        /if\(error\)\{notify\(error\.message,'err'\);return;\}/.test(cc), true);
 
   // ── 7. Los otros lectores ───────────────────────────────────────────────
   titulo('reportes y edición');
@@ -272,17 +292,33 @@ function correr(html){
   pintar();
 }
 
+// correr() va envuelta aparte y NO dentro del .catch() del fetch. Cuando el
+// cobro conjunto cambió la forma de COBRO_CTX, esta suite empezó a tirar
+// adentro de correr(), el catch de abajo lo agarraba y mostraba "el navegador
+// no me deja leerlo solo": parecía un problema de permisos de archivo y era
+// código roto. Peor todavía, el <pre> quedaba SIN clase ok/fail, que es
+// indistinguible de que el test no corrió.
+function correrSeguro(txt){
+  try{ correr(txt); }
+  catch(e){
+    var pre=document.getElementById('resultado');
+    pre.className='fail';
+    pre.textContent='La suite se cayó antes de terminar: '+(e&&e.message?e.message:e)+
+                    '\n\n>>> 1 FALLO(S) — la suite no pudo completarse';
+  }
+}
+
 fetch('app.html').then(function(r){
   if(!r.ok)throw new Error('app.html respondió HTTP '+r.status);
   return r.text();
-}).then(correr).catch(function(){
+}).then(correrSeguro).catch(function(){
   document.getElementById('manual').style.display='block';
   document.getElementById('resultado').textContent=
     'Esperando app.html… (el navegador no me deja leerlo solo)';
   document.getElementById('archivo').addEventListener('change',function(e){
     var f=e.target.files[0]; if(!f)return;
     var fr=new FileReader();
-    fr.onload=function(){ correr(String(fr.result)); };
+    fr.onload=function(){ correrSeguro(String(fr.result)); };
     fr.readAsText(f);
   });
 });

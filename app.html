@@ -1065,11 +1065,20 @@ input[readonly]{background:#111;color:#666;cursor:default}
      Se abre desde la tabla de Reservas y también DESDE m-reserva, o sea un
      modal sobre otro modal: eso funciona gracias a la pila de openM(). -->
 <div class="overlay" id="m-cobro">
-  <div class="modal" style="max-width:460px">
+  <div class="modal" style="max-width:520px">
     <div class="modal-hdr"><span class="modal-title">Cobrar</span><button class="xbtn" onclick="closeM('m-cobro')">×</button></div>
 
     <div id="cob-resumen" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px"></div>
     <div id="cob-aviso-precio" style="display:none;background:rgba(224,80,80,0.12);border:0.5px solid #e05050;color:#ff8f8f;border-radius:8px;padding:10px;font-size:11px;line-height:1.5;margin-bottom:12px"></div>
+
+    <!-- Las líneas del cobro. Con una sola reserva se ve igual que antes (una
+         fila sin ×): el cobro individual es el caso N=1 del conjunto, no un
+         camino aparte. -->
+    <div class="fg">
+      <label>Líneas del cobro</label>
+      <div id="cob-lineas" style="margin-bottom:8px"></div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="abrirAgregarReserva()">+ Agregar otra reserva</button>
+    </div>
 
     <div class="fg"><label>Precio de lista</label><input id="cob-lista" type="text" readonly></div>
 
@@ -1104,6 +1113,21 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-primary" id="cob-btn" onclick="confirmarCobro()">Registrar cobro</button>
       <button class="btn btn-ghost" onclick="closeM('m-cobro')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Selector de reservas para sumar al cobro. Va como modal APILADO encima de
+     m-cobro (openM ya lo resuelve, ver test-modales-apilados.html) en vez de
+     embebido: m-cobro ya carga precio, descuento, propina y método, y una
+     lista adentro lo desbordaba en celular. -->
+<div class="overlay" id="m-cobro-add">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hdr"><span class="modal-title">Agregar reserva al cobro</span><button class="xbtn" onclick="closeM('m-cobro-add')">×</button></div>
+    <div id="cobadd-sub" style="font-size:11px;color:var(--text3);margin-bottom:10px"></div>
+    <div id="cobadd-lista"></div>
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost" onclick="closeM('m-cobro-add')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -3095,53 +3119,15 @@ async function eliminarReservaModal(id){
   if(await eliminar('reservas',id,loadReservas,renderReservas))closeM('m-reserva');
 }
 
-// Ejecuta el cobro. El monto y el desglose YA vienen decididos por m-cobro
-// (ver confirmarCobro()): acá no se resuelve ningún precio. Antes esta función
-// tomaba el precio del servicio por su cuenta y no había forma de cobrar otra
-// cosa, que es lo que dejaba atascadas las reservas ya cobradas en físico.
-// Devuelve true/false para que el modal sepa si puede cerrarse.
-async function procesarReserva(id,metodoPago,d){
-  const r=S.reservas.find(x=>x.id===id); if(!r)return false;
-  // Chequeo fresco contra Supabase, no S.clientes (caché en memoria de
-  // cuando cargó la página): si el cliente reservó por reservar.html y
-  // buscar_o_crear_cliente_club() ya le creó la ficha mientras esta
-  // pestaña de app.html seguía abierta, S.clientes no se entera solo —
-  // sin este chequeo fresco, acá se insertaría un cliente duplicado con
-  // el mismo whatsapp.
-  let {data:cl}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).eq('whatsapp',r.whatsapp_cliente).maybeSingle();
-  if(!cl){
-    const {data,error:clErr}=await sb.from('clientes').insert({barberia_id:S.barberia.id,nombre:r.nombre_cliente,whatsapp:r.whatsapp_cliente,cumpleanos:r.cumpleanos_cliente||null,canal:'Reserva Web',fecha_registro:r.fecha}).select().single();
-    if(clErr||!data){notify(clErr?.message||'No se pudo crear la ficha del cliente','err');return false;}
-    cl=data; await loadClientes();
-  }
-  const valor=Math.max(0,Math.round(d?.valor||0));
-  const propina=Math.max(0,Math.round(d?.propina||0));
-  const barObj=S.barberos.find(b=>b.nombre===r.barbero_nombre);
-  // La comisión va sobre lo COBRADO, no sobre el precio de lista: el descuento
-  // lo absorben los dos. Decisión del dueño, 2026-07-31.
-  const comision_monto=calcularComision(valor,barObj?.comision_pct||50);
-  const {error}=await sb.from('visitas').insert({
-    barberia_id:S.barberia.id,cliente_id:cl.id,barbero_nombre:r.barbero_nombre||'',
-    servicio:r.servicio||'',valor,fecha:r.fecha,hora:r.hora,
-    fuente:'Reserva',estado:'Atendida',comision_monto,metodo_pago:metodoPago,
-    precio_lista:d?.precio_lista??null,
-    descuento_pct:d?.descuento_pct??null,
-    descuento_monto:d?.descuento_monto??null,
-    propina,
-    propina_pct:d?.propina_pct??null
-  });
-  // Si la visita no entró, la reserva NO se marca procesada. Antes el insert
-  // se hacía sin mirar el error y la reserva quedaba cerrada igual: el cobro
-  // desaparecía y no había forma de volver a intentarlo desde la app.
-  if(error){notify(error.message,'err');return false;}
-  const {error:updErr}=await sb.from('reservas').update({procesado:true,estado:'Atendida'}).eq('id',id);
-  if(updErr){notify('Se registró el cobro, pero la reserva quedó sin marcar: '+updErr.message,'warn');}
-  await loadReservas();await loadVisitas();renderReservas();renderDashboard();
-  notify(propina>0?`Cobro registrado ✓ (propina ${fmt(propina)})`:'Cobro registrado ✓');
-  closeM('m-reserva');
-  if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
-  return true;
-}
+// procesarReserva() vivía acá y la reemplazó registrar_cobro_conjunto()
+// (migration_cobro_conjunto.sql), que hace lo mismo dentro de UNA transacción.
+// Hacía insert de visita y update de reserva por separado desde el navegador:
+// con una reserva el riesgo era chico, pero al cobrar varias juntas un corte a
+// mitad de camino dejaba al cliente pagando todo y al sistema registrando una
+// parte. El chequeo fresco de cliente por WhatsApp que tenía —para no duplicar
+// la ficha si reservar.html la creó con esta pestaña abierta— ahora lo hace la
+// RPC adentro de la transacción, donde además dos líneas del mismo cliente no
+// pueden pisarse entre sí.
 
 // ─── COBRO CON DESGLOSE (precio, descuento, propina) ─────────────────────
 // `valor` NO cambia de significado: es lo cobrado por el SERVICIO, bruto (con
@@ -3169,28 +3155,169 @@ function resolveServicioPrecio(servicioRaw){
   return sv?{sv,como:'normalizado'}:{sv:null,como:null};
 }
 
+// Arma una línea del cobro desde una reserva. El precio de lista se resuelve
+// una sola vez, acá: si el servicio no matchea, la línea vale 0 y el aviso se
+// lo dice al dueño (mismo criterio que tenía el cobro individual).
+function cobroLineaDesde(r){
+  const {sv,como}=resolveServicioPrecio(r.servicio);
+  return {
+    reservaId:r.id, nombre:r.nombre_cliente||'', servicio:resolveServicioInfo(r.servicio).nombre,
+    servicioRaw:r.servicio||'', profesional:r.barbero_nombre||'', fecha:r.fecha, hora:r.hora,
+    lista:sv?.precio||0, sinPrecio:!sv, matchNormalizado:como==='normalizado', matchNombre:sv?.nombre||''
+  };
+}
+
+// Reparte `total` entre N líneas de forma proporcional a `pesos`, devolviendo
+// enteros que suman EXACTAMENTE total. El resto del redondeo va a la línea de
+// mayor peso, siempre la misma para los mismos datos.
+//
+// Sin esto la suma de las visitas se separa de la caja de a pesos, y el
+// descuadre recién se nota cuando no cuaja el IVA a fin de mes. Cuando no hay
+// pesos utilizables (ningún servicio con precio de lista) reparte en partes
+// iguales, que es lo único razonable.
+function repartirProporcional(total, pesos){
+  const n=pesos.length;
+  if(n===0)return [];
+  if(total===0)return pesos.map(()=>0);
+  const suma=pesos.reduce((a,b)=>a+b,0);
+  const out = suma>0
+    ? pesos.map(p=>Math.round(total*p/suma))
+    : pesos.map(()=>Math.floor(total/n));
+  let idx=0;
+  for(let i=1;i<n;i++) if(pesos[i]>pesos[idx]) idx=i;
+  out[idx]+=total-out.reduce((a,b)=>a+b,0);
+  return out;
+}
+
+// El reparto completo del cobro. Se calcula en un solo lugar para que lo que
+// se muestra en pantalla y lo que se manda a la RPC sean el MISMO número.
+//
+// El VALOR se prorratea por precio de lista y el descuento sale por diferencia
+// —no al revés— para conservar la invariante que ya usaba el cobro individual:
+// descuento_monto = max(0, precio_lista - valor).
+//
+// La propina se prorratea por valor cobrado (decisión del dueño 2026-08-05).
+// Efecto secundario feliz: propina_i = valor_i * pct / 100, así que
+// propina_pct sigue siendo cierto en cada visita sin cambiarle el significado.
+function cobroProrratear(){
+  const L=COBRO_CTX.lineas;
+  const valorTotal=Math.max(0,Math.round(parseFloat(document.getElementById('cob-final').value)||0));
+  const propinaTotal=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
+  const valores=repartirProporcional(valorTotal,L.map(l=>l.lista));
+  const propinas=repartirProporcional(propinaTotal,valores);
+  return {valores,propinas,valorTotal,propinaTotal,
+          listaTotal:L.reduce((s,l)=>s+l.lista,0)};
+}
+
+function cobroRenderLineas(){
+  const L=COBRO_CTX.lineas;
+  const rep=cobroProrratear();
+  // La × solo con 2+: quitar la última dejaría un cobro sin nada que cobrar.
+  document.getElementById('cob-lineas').innerHTML=L.map((l,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg2);border-radius:8px;margin-bottom:6px;font-size:12px">
+      <div style="flex:1;min-width:0">
+        <strong style="color:var(--text)">${escHtml(l.nombre)}</strong> · ${escHtml(l.servicio)}<br>
+        <span style="color:var(--text3);font-size:11px">${fmtHora(l.hora)} · ${escHtml(l.profesional||'—')}</span>
+      </div>
+      <span style="white-space:nowrap">${l.lista>0?fmt(l.lista):'<span style="color:#e0a030">sin precio</span>'}</span>
+      ${L.length>1?`<button type="button" class="btn btn-danger btn-sm" onclick="cobroQuitarLinea('${l.reservaId}')" title="Quitar del cobro">×</button>`:''}
+    </div>`).join('');
+
+  const aviso=document.getElementById('cob-aviso-precio');
+  const sinPrecio=L.filter(l=>l.sinPrecio);
+  const norm=L.filter(l=>l.matchNormalizado);
+  if(sinPrecio.length){
+    aviso.style.display='';
+    aviso.innerHTML='No encontré '+sinPrecio.map(l=>'<strong>'+escHtml(l.servicioRaw||'(sin servicio)')+'</strong>').join(', ')+
+      ' en tu lista de servicios, así que esa línea no tiene precio de lista. Escribe abajo el precio final que cobraste.';
+    // Con varias líneas esto deja de ser un detalle: el reparto es proporcional
+    // al precio de lista, así que una línea sin precio se lleva $0 y su
+    // profesional no cobra comisión por ella. Hay que decirlo antes, no
+    // descubrirlo al cierre de mes.
+    if(L.length>1){
+      aviso.innerHTML+='<br><br>⚠️ Al repartir el total entre las líneas, esa se lleva <strong>$0</strong> '+
+        'y su profesional no recibe comisión. Si no es lo que quieres, cóbrala aparte o carga el servicio con su precio.';
+    }
+  } else if(norm.length){
+    aviso.style.display='';
+    aviso.innerHTML='Un servicio matcheó ignorando mayúsculas y espacios (<strong>'+escHtml(norm[0].matchNombre)+'</strong>). Revisa que el precio sea el correcto.';
+  } else aviso.style.display='none';
+
+  document.getElementById('cob-lista').value=rep.listaTotal>0?fmt(rep.listaTotal):'—';
+}
+
+// Reservas que se pueden sumar: mismo día que la primera línea, sin cobrar, y
+// que no estén ya en el cobro. De cualquier cliente y profesional a propósito
+// —el caso real es un padre y un hijo con apellidos distintos—, así que no se
+// filtra por nombre.
+function cobroReservasDisponibles(){
+  const fecha=COBRO_CTX.lineas[0]?.fecha;
+  const yaEstan=new Set(COBRO_CTX.lineas.map(l=>l.reservaId));
+  return S.reservas.filter(r=>r.fecha===fecha&&!r.procesado&&!yaEstan.has(r.id))
+                   .sort((a,b)=>String(a.hora).localeCompare(String(b.hora)));
+}
+
+function abrirAgregarReserva(){
+  if(!COBRO_CTX)return;
+  const libres=cobroReservasDisponibles();
+  openM('m-cobro-add');
+  document.getElementById('cobadd-sub').textContent=
+    'Reservas sin cobrar del '+(COBRO_CTX.lineas[0]?.fecha||'')+'. Solo del mismo día.';
+  document.getElementById('cobadd-lista').innerHTML=libres.length?libres.map(r=>{
+    const l=cobroLineaDesde(r);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:0.5px solid var(--border);font-size:12px">
+      <div style="flex:1;min-width:0">
+        <strong style="color:var(--text)">${escHtml(r.nombre_cliente||'')}</strong> · ${escHtml(l.servicio)}<br>
+        <span style="color:var(--text3);font-size:11px">${fmtHora(r.hora)} · ${escHtml(r.barbero_nombre||'—')}</span>
+      </div>
+      <span style="white-space:nowrap;color:var(--text2)">${l.lista>0?fmt(l.lista):'—'}</span>
+      <button type="button" class="btn btn-primary btn-sm" onclick="cobroAgregarReserva('${r.id}')">Agregar</button>
+    </div>`;
+  }).join(''):'<div class="empty">No hay otras reservas sin cobrar ese día.</div>';
+}
+
+function cobroAgregarReserva(id){
+  if(!COBRO_CTX)return;
+  const r=S.reservas.find(x=>x.id===id);
+  if(!r||r.procesado)return;
+  if(COBRO_CTX.lineas.some(l=>l.reservaId===id))return;
+  COBRO_CTX.lineas.push(cobroLineaDesde(r));
+  cobroSincronizarPrecio();
+  closeM('m-cobro-add');
+  notify('Reserva agregada al cobro ✓');
+}
+
+function cobroQuitarLinea(id){
+  if(!COBRO_CTX||COBRO_CTX.lineas.length<=1)return;
+  COBRO_CTX.lineas=COBRO_CTX.lineas.filter(l=>l.reservaId!==id);
+  cobroSincronizarPrecio();
+}
+
+// Al cambiar las líneas, el precio final se reescribe desde el nuevo total de
+// lista aplicando el % vigente. Si el dueño ya había escrito un monto a mano
+// (descPct null) igual se reescribe: ese monto describía OTRO conjunto de
+// líneas, dejarlo ahí sería cobrar un número que ya no corresponde a nada.
+function cobroSincronizarPrecio(){
+  const listaTotal=COBRO_CTX.lineas.reduce((s,l)=>s+l.lista,0);
+  const pct=COBRO_CTX.descPct||0;
+  document.getElementById('cob-final').value=Math.max(0,listaTotal-Math.round(listaTotal*pct/100))||'';
+  if(COBRO_CTX.propinaPct!=null){
+    const base=parseFloat(document.getElementById('cob-final').value)||0;
+    document.getElementById('cob-propina').value=Math.round(base*COBRO_CTX.propinaPct/100)||'';
+  }
+  cobroRenderLineas();
+  cobroRecalcular();
+}
+
 function abrirCobro(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   if(r.procesado){notify('Esta reserva ya fue cobrada','warn');return;}
-  const {sv,como}=resolveServicioPrecio(r.servicio);
-  const lista=sv?.precio||0;
-  COBRO_CTX={reservaId:id,lista,descPct:null,propinaPct:null};
+  COBRO_CTX={lineas:[cobroLineaDesde(r)],descPct:null,propinaPct:null};
+  const lista=COBRO_CTX.lineas[0].lista;
   openM('m-cobro');
 
-  document.getElementById('cob-resumen').innerHTML=
-    `<strong>${escHtml(r.nombre_cliente||'')}</strong> · ${escHtml(resolveServicioInfo(r.servicio).nombre)}<br>`+
-    `${r.fecha} ${fmtHora(r.hora)} · ${escHtml(r.barbero_nombre||'—')}`;
+  document.getElementById('cob-resumen').innerHTML=`Cobro del <strong>${r.fecha}</strong>`;
 
-  const aviso=document.getElementById('cob-aviso-precio');
-  if(!sv){
-    aviso.style.display='';
-    aviso.innerHTML='No encontré <strong>'+escHtml(r.servicio||'(sin servicio)')+'</strong> en tu lista de servicios, así que no hay precio de lista. Escribe abajo el precio que cobraste.';
-  } else if(como==='normalizado'){
-    aviso.style.display='';
-    aviso.innerHTML='El servicio matcheó ignorando mayúsculas y espacios (<strong>'+escHtml(sv.nombre)+'</strong>). Revisa que el precio sea el correcto.';
-  } else aviso.style.display='none';
-
-  document.getElementById('cob-lista').value=sv?fmt(lista):'—';
   document.getElementById('cob-desc-pct').value='';
   document.getElementById('cob-final').value=lista||'';
   document.getElementById('cob-propina').value='';
@@ -3199,6 +3326,7 @@ function abrirCobro(id){
   document.getElementById('cob-prop-btns').innerHTML=PROPINA_TRAMOS.map(p=>
     `<button type="button" class="btn btn-ghost btn-sm" onclick="cobroPropina(${p})">${p===0?'Sin propina':p+'%'}</button>`).join('');
   sel('cob-metodo',METODOS_PAGO.map(m=>({v:m,t:m})));
+  cobroRenderLineas();
   cobroRecalcular();
 }
 
@@ -3207,11 +3335,13 @@ function cobroDescuento(pct){
   cobroDescuentoEditado();
 }
 // El % ESCRIBE el precio final. A partir de ahí el que manda es el precio.
+// El % se aplica sobre la SUMA de las líneas, no sobre una sola.
 function cobroDescuentoEditado(){
   if(!COBRO_CTX)return;
   const pct=parseFloat(document.getElementById('cob-desc-pct').value)||0;
   COBRO_CTX.descPct=pct>0?pct:null;
-  document.getElementById('cob-final').value=Math.max(0,COBRO_CTX.lista-Math.round(COBRO_CTX.lista*pct/100));
+  const listaTotal=COBRO_CTX.lineas.reduce((s,l)=>s+l.lista,0);
+  document.getElementById('cob-final').value=Math.max(0,listaTotal-Math.round(listaTotal*pct/100));
   cobroRecalcular();
 }
 // Editar el precio a mano descarta el %: guardarlo haría que el porcentaje y
@@ -3238,38 +3368,85 @@ function cobroPropinaEditada(){
 
 function cobroRecalcular(){
   if(!COBRO_CTX)return;
-  const valor=Math.max(0,Math.round(parseFloat(document.getElementById('cob-final').value)||0));
-  const propina=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
-  const desc=Math.max(0,COBRO_CTX.lista-valor);
+  const rep=cobroProrratear();
+  const {valorTotal:valor,propinaTotal:propina,listaTotal}=rep;
+  const desc=Math.max(0,listaTotal-valor);
   document.getElementById('cob-desc-monto').textContent=desc>0?'−'+fmt(desc):'';
   document.getElementById('cob-total').textContent=fmt(valor+propina);
-  document.getElementById('cob-desglose').innerHTML=
-    `Servicio ${fmt(valor)} · IVA incluido ${fmt(ivaDe(valor))} · neto ${fmt(netoDe(valor))}`+
-    (propina>0?`<br>Propina ${fmt(propina)} — entera al profesional, sin IVA ni comisión`:'');
+
+  let html=`Servicios ${fmt(valor)} · IVA incluido ${fmt(ivaDe(valor))} · neto ${fmt(netoDe(valor))}`;
+  // Con más de una línea se muestra el reparto ANTES de confirmar. Es plata de
+  // otro: el profesional tiene que poder ver cuánto le tocó y por qué, y quien
+  // cobra tiene que poder detectar un reparto raro antes de que quede grabado.
+  if(COBRO_CTX.lineas.length>1){
+    html+='<br><span style="color:var(--text2)">Reparto por profesional:</span>';
+    COBRO_CTX.lineas.forEach((l,i)=>{
+      const bar=S.barberos.find(b=>b.nombre===l.profesional);
+      const com=calcularComision(rep.valores[i],bar?.comision_pct||50);
+      html+=`<br>· ${escHtml(l.profesional||'—')} — ${escHtml(l.nombre)}: ${fmt(rep.valores[i])}`+
+            ` · comisión ${fmt(com)}`+
+            (rep.propinas[i]>0?` · propina ${fmt(rep.propinas[i])}`:'');
+    });
+  }
+  if(propina>0){
+    html+=`<br>Propina ${fmt(propina)} — entera al profesional, sin IVA ni comisión`;
+  }
+  document.getElementById('cob-desglose').innerHTML=html;
 }
 
+// Manda el cobro entero a registrar_cobro_conjunto(), que lo escribe todo o no
+// escribe nada.
+//
+// UN SOLO CAMINO: el cobro de una reserva sola es el caso N=1 de esta misma
+// función. Antes pasaba por procesarReserva(), que hacía insert de visita y
+// update de reserva por separado desde el navegador; mantener las dos vías
+// habría dejado dos implementaciones del mismo cobro en este archivo, y la
+// individual sin la garantía de atomicidad que sí tiene la conjunta.
 async function confirmarCobro(){
   if(!COBRO_CTX)return;
-  const valor=Math.max(0,Math.round(parseFloat(document.getElementById('cob-final').value)||0));
-  const propina=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
-  if(valor<=0&&!confirm('El precio final es $0. ¿Registrar el cobro igual?'))return;
-  const lista=COBRO_CTX.lista||0;
-  const btn=document.getElementById('cob-btn');
-  btn.disabled=true;btn.textContent='Registrando...';
-  const ok=await procesarReserva(COBRO_CTX.reservaId,document.getElementById('cob-metodo').value,{
+  const rep=cobroProrratear();
+  if(rep.valorTotal<=0&&!confirm('El precio final es $0. ¿Registrar el cobro igual?'))return;
+
+  const lineas=COBRO_CTX.lineas.map((l,i)=>({
+    reserva_id: l.reservaId,
+    valor: rep.valores[i],
     // Sin precio de lista (servicio no encontrado) no se inventa una foto de
     // precio: queda null, que es lo que significa "no había referencia".
-    precio_lista: lista>0?lista:null,
+    precio_lista: l.lista>0?l.lista:null,
     descuento_pct: COBRO_CTX.descPct,
     // max(0, …) porque cobrar POR ENCIMA del precio de lista es legítimo y no
     // es un descuento negativo — el check de la base rechaza los negativos.
-    descuento_monto: lista>0?Math.max(0,lista-valor):null,
-    valor,
-    propina,
+    descuento_monto: l.lista>0?Math.max(0,l.lista-rep.valores[i]):null,
+    propina: rep.propinas[i],
     propina_pct: COBRO_CTX.propinaPct
+  }));
+
+  const btn=document.getElementById('cob-btn');
+  btn.disabled=true;btn.textContent='Registrando...';
+  const {error}=await sb.rpc('registrar_cobro_conjunto',{
+    p_lineas:lineas,
+    p_metodo_pago:document.getElementById('cob-metodo').value,
+    // La RPC compara esto contra la suma de las líneas y rechaza el cobro si no
+    // cuadra: un prorrateo mal redondeado no entra a la base en silencio.
+    p_total_declarado:rep.valorTotal+rep.propinaTotal
   });
   btn.disabled=false;btn.textContent='Registrar cobro';
-  if(ok){COBRO_CTX=null;closeM('m-cobro');}
+  if(error){notify(error.message,'err');return;}
+
+  await loadReservas();await loadVisitas();await loadClientes();
+  renderReservas();renderDashboard();
+  // Con UNA reserva el texto es el de siempre, sin paréntesis: decir
+  // "(1 reserva)" es información vacía en el flujo que ya estaba en producción
+  // —si cobraste una, ya lo sabés— y este cambio no tenía por qué tocarlo.
+  // El conteo aparece solo cuando de verdad hubo varias.
+  const n=COBRO_CTX.lineas.length;
+  const detalle=[];
+  if(n>1)detalle.push(`${n} reservas`);
+  if(rep.propinaTotal>0)detalle.push(`propina ${fmt(rep.propinaTotal)}`);
+  notify('Cobro registrado ✓'+(detalle.length?` (${detalle.join(', ')})`:''));
+  COBRO_CTX=null;
+  closeM('m-cobro');closeM('m-reserva');
+  if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
 }
 
 async function canjearVIP(id){
