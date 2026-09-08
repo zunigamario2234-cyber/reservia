@@ -621,7 +621,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card"><div class="card-hdr"><span class="card-title">Resultado IVA mensual</span></div><div id="iva-resultado"></div></div>
   </div>
   <div id="tc-com" style="display:none">
-    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
     <tbody id="t-comisiones"></tbody></table></div>
     <div style="margin-top:12px">
       <button class="btn btn-ghost btn-sm" onclick="verComisionesEnReportes()" title="Abre el reporte por profesional con este mismo mes cargado">📊 Ver análisis completo por profesional</button>
@@ -829,7 +829,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="g3" id="rep-prof-metrics"></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Comisiones por profesional</span></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
+      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Totales por método de pago</span></div>
@@ -1077,7 +1077,11 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="fg">
       <label>Líneas del cobro</label>
       <div id="cob-lineas" style="margin-bottom:8px"></div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="abrirAgregarReserva()">+ Agregar otra reserva</button>
+      <div id="cob-prods" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="abrirAgregarReserva()">+ Agregar otra reserva</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="abrirAgregarProducto()">+ Agregar producto</button>
+      </div>
     </div>
 
     <div class="fg"><label>Precio de lista</label><input id="cob-lista" type="text" readonly></div>
@@ -1128,6 +1132,29 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div id="cobadd-lista"></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeM('m-cobro-add')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Buscador de productos. Se escribe el CÓDIGO o el nombre en vez de navegar
+     una lista completa: el inventario puede tener decenas de productos y en el
+     mostrador se busca por el número que trae la etiqueta. Filtra sobre
+     S.inventario, que ya está en memoria — no consulta nada. -->
+<div class="overlay" id="m-cobro-prod">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hdr"><span class="modal-title">Agregar producto al cobro</span><button class="xbtn" onclick="closeM('m-cobro-prod')">×</button></div>
+    <div class="fg">
+      <label>Buscar por código o nombre</label>
+      <input id="cobprod-q" type="text" placeholder="PRD-001 o cera" oninput="renderBuscadorProductos()" autocomplete="off">
+    </div>
+    <div class="fg">
+      <label>Profesional que vende *</label>
+      <select id="cobprod-prof"></select>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">De acá sale su comisión por el producto, así que no se preselecciona: hay que elegirlo.</div>
+    </div>
+    <div id="cobprod-lista" style="max-height:280px;overflow-y:auto"></div>
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost" onclick="closeM('m-cobro-prod')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1381,7 +1408,22 @@ if (typeof SUPABASE_URL === 'undefined') {
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[] };
+// TODA lista que el código recorra tiene que estar declarada acá, aunque su
+// loader la vaya a pisar después. `visitas`, `barberos` y `barberoServicios`
+// faltaban: existían recién cuando su loader terminaba, y mientras tanto eran
+// undefined.
+//
+// Con un solo consumidor eso nunca molestó. Pero construirVentas() lee
+// S.visitas desde DOS loaders que corren EN PARALELO en el Promise.all de
+// loadAll(): el que termina primero la ejecutaba cuando el otro todavía no
+// había escrito nada, y el panel entero moría con "Cannot read properties of
+// undefined (reading 'map')" antes de pintar. Pasó en producción el
+// 2026-09-08 y hubo que revertir.
+//
+// `barberoServicios` no tiene ese problema hoy —solo se lee en un render, ya
+// terminada la carga— pero queda declarada por la misma razón: la próxima vez
+// que alguien la lea durante loadAll, no debería enterarse por un panel caído.
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[] };
 const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
@@ -1439,13 +1481,19 @@ async function loadAll(){
   S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
+  // Después de las dos fuentes, nunca antes: S.ventas es derivado.
+  construirVentas();
 }
 
 async function loadClientes(){ const {data}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.clientes=data||[]; }
-async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; }
+// Las dos fuentes de S.ventas lo reconstruyen al terminar. Así cualquier
+// recarga puntual —después de un cobro, de editar una cita— lo deja
+// sincronizado sin que haya que acordarse en cada punto de llamada, que es
+// justo la clase de olvido que dejaría el IVA subdeclarado en silencio.
+async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; construirVentas(); }
 async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
 // ═══ ORDEN MANUAL DE SERVICIOS ═══
 // Sube o baja un servicio un lugar. El orden que se guarda es el de la lista
@@ -1486,6 +1534,7 @@ async function loadBarberos(){ const {data}=await sb.from('barberos').select('*'
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
+async function loadCobroProductos(){ const {data}=await sb.from('cobro_productos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.cobroProductos=data||[]; construirVentas(); }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
 // Join embebido de PostgREST (alianza_canjes_select_own ya lo permite, scoped
@@ -1669,25 +1718,94 @@ function actualizarEjemploComision(){
 // Agrupa citas por profesional, sumando ventas y comisión (usa el monto guardado en
 // cada visita si existe -congelado al momento de atenderla-, o lo calcula al vuelo
 // como respaldo para visitas anteriores a esta funcionalidad).
+// Acepta indistintamente visitas o elementos de S.ventas. Los de tipo
+// 'producto' se acumulan APARTE (ventasProd/comisionProd) para que el reporte
+// pueda dividir servicios y productos, que es lo que pidió el dueño: tanto él
+// como el profesional tienen que poder ver de dónde vino cada peso.
+//
+// `citas` cuenta SOLO servicios: un producto no es una cita, y si entrara acá
+// las metas del profesional y el ticket promedio empezarían a mentir.
 function agregarComisionesPorProfesional(citas){
   const byP={};
   citas.forEach(v=>{
     const p=v.barbero_nombre||'Sin asignar';
     const bar=S.barberos.find(b=>b.nombre===p);
+    const esProducto = v.tipo==='producto';
     const pct=bar?.comision_pct||50;
-    const com=v.comision_monto??calcularComision(v.valor,pct);
+    // La comisión de producto SIEMPRE viene congelada de la RPC (con
+    // comision_producto_pct, que es otro porcentaje). Nunca se recalcula al
+    // vuelo: hacerlo con el pct de servicios multiplicaría por cinco lo que
+    // el negocio le debe al profesional.
+    const com = esProducto
+      ? (v.comision_monto||0)
+      : (v.comision_monto??calcularComision(v.valor,pct));
     // La propina va ENTERA al profesional, fuera del reparto: se acumula
     // aparte porque el dueño le debe comisión + propina. Sumarla a la
     // comisión escondería de dónde viene cada peso.
     const prop=v.propina||0;
+    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,propinas:0,ventasProd:0,comisionProd:0,pct,pctProd:bar?.comision_producto_pct||0,servicios:{}};
+    byP[p].propinas+=prop;
+    if(esProducto){
+      byP[p].ventasProd+=(v.valor||0);
+      byP[p].comisionProd+=com;
+      return;
+    }
     const sNombre=resolveServicioInfo(v.servicio).nombre;
-    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,propinas:0,pct,servicios:{}};
-    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;byP[p].propinas+=prop;
+    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;
     if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0,com:0};
     byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);byP[p].servicios[sNombre].com+=com;
   });
   return byP;
 }
+// ─── S.ventas: TODO lo que entró de plata, servicios y productos juntos ───
+//
+// POR QUÉ EXISTE
+// `visitas` es la única fuente de ventas del sistema, pero también decide el
+// CONTEO de citas: getCitas() alimenta los niveles del Club VIP y
+// renderProfesionals() las metas. Por eso los productos NO son filas de
+// visitas — un cliente que compra cinco shampoos subiría a Plata sin haberse
+// cortado el pelo nunca. Viven en cobro_productos y acá se unen las dos
+// fuentes SOLO para los lectores que suman dinero.
+//
+// LA REGLA PARA ELEGIR FUENTE, que es lo fácil de equivocar:
+//   · ¿Suma plata?  -> S.ventas   (IVA, ventas del período, comisiones)
+//   · ¿Cuenta citas? -> S.visitas (total de citas, ticket promedio, niveles
+//                                  VIP, historial del cliente, tabla de Citas)
+// Los reportes usaban el MISMO array para las dos cosas: si se les pasa
+// S.ventas entero, "Total citas" empieza a contar shampoos y el ticket
+// promedio se distorsiona sin que nada avise.
+//
+// Funciona porque cobro_productos.valor significa exactamente lo mismo que
+// visitas.valor: bruto con IVA incluido, ya descontado y sin propina. Por eso
+// ivaDe() sirve igual sobre los dos.
+//
+// ⚠ LAS DOS FUENTES VAN CON `|| []` Y NO ES DECORATIVO. Esta función la llaman
+// loadVisitas() y loadCobroProductos(), que corren EN PARALELO dentro del
+// Promise.all de loadAll(). El que termina primero la ejecuta cuando el otro
+// todavía no escribió su array. `cobro_productos` arranca vacía y responde
+// antes que `visitas`, que trae cientos de filas: sin el guardia, el panel
+// entero se cae con "Cannot read properties of undefined (reading 'map')" en
+// la carga inicial. Pasó en producción el 2026-09-08.
+//
+// No alcanza con declarar las claves en S —que también se hizo—: alguien
+// podría llamar a construirVentas() antes de que exista S.
+function construirVentas(){
+  S.ventas = [
+    ...(S.visitas||[]).map(v=>({
+      fecha:v.fecha, valor:v.valor||0, barbero_nombre:v.barbero_nombre||'',
+      comision_monto:v.comision_monto, propina:v.propina||0,
+      servicio:v.servicio, cliente_id:v.cliente_id, tipo:'servicio'
+    })),
+    ...(S.cobroProductos||[]).map(p=>({
+      fecha:p.fecha, valor:p.valor||0, barbero_nombre:p.barbero_nombre||'',
+      // La comisión de producto ya viene congelada de la RPC, con el
+      // porcentaje propio del profesional. No se recalcula acá.
+      comision_monto:p.comision_monto||0, propina:0,
+      producto_id:p.producto_id, cantidad:p.cantidad, tipo:'producto'
+    }))
+  ];
+}
+
 function getCitas(cid){ return S.visitas.filter(v=>v.cliente_id===cid).length; }
 function getUltCita(cid){ const vs=S.visitas.filter(v=>v.cliente_id===cid).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)); return vs[0]?.fecha||null; }
 function diasDesde(f){ if(!f)return 9999; return Math.floor((Date.now()-new Date(f))/86400000); }
@@ -3205,8 +3323,15 @@ function cobroProrratear(){
   const propinaTotal=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
   const valores=repartirProporcional(valorTotal,L.map(l=>l.lista));
   const propinas=repartirProporcional(propinaTotal,valores);
-  return {valores,propinas,valorTotal,propinaTotal,
-          listaTotal:L.reduce((s,l)=>s+l.lista,0)};
+  // Los productos NO entran al prorrateo: van a precio lleno, por decisión del
+  // dueño. Así ningún profesional ve bajar su comisión por el descuento de un
+  // producto que no vendió. Y como quedan fuera, el descuento nunca puede
+  // exceder lo que hay para descontar.
+  const prods=COBRO_CTX.productos||[];
+  const prodTotal=prods.reduce((s,p)=>s+p.precio*p.cantidad,0);
+  return {valores,propinas,valorTotal,propinaTotal,prodTotal,
+          listaTotal:L.reduce((s,l)=>s+l.lista,0),
+          totalCobro:valorTotal+prodTotal+propinaTotal};
 }
 
 function cobroRenderLineas(){
@@ -3221,6 +3346,24 @@ function cobroRenderLineas(){
       </div>
       <span style="white-space:nowrap">${l.lista>0?fmt(l.lista):'<span style="color:#e0a030">sin precio</span>'}</span>
       ${L.length>1?`<button type="button" class="btn btn-danger btn-sm" onclick="cobroQuitarLinea('${l.reservaId}')" title="Quitar del cobro">×</button>`:''}
+    </div>`).join('');
+
+  // Las líneas de producto se ven distintas de las de reserva: llevan cantidad
+  // editable y el profesional que las vende, que es de quien sale la comisión.
+  const P=COBRO_CTX.productos||[];
+  document.getElementById('cob-prods').innerHTML=P.map((p,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px;font-size:12px">
+      <div style="flex:1;min-width:0">
+        <strong style="color:var(--text)">📦 ${escHtml(p.nombre)}</strong>${p.codigo?` <span style="color:var(--text3);font-size:10px">${escHtml(p.codigo)}</span>`:''}<br>
+        <span style="color:var(--text3);font-size:11px">${escHtml(p.profesional)} · ${fmt(p.precio)} c/u</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="cobroCambiarCantidad(${i},-1)" ${p.cantidad<=1?'disabled':''}>−</button>
+        <span style="min-width:18px;text-align:center">${p.cantidad}</span>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="cobroCambiarCantidad(${i},1)">+</button>
+      </div>
+      <span style="white-space:nowrap;font-weight:600">${fmt(p.precio*p.cantidad)}</span>
+      <button type="button" class="btn btn-danger btn-sm" onclick="cobroQuitarProducto(${i})" title="Quitar del cobro">×</button>
     </div>`).join('');
 
   const aviso=document.getElementById('cob-aviso-precio');
@@ -3255,6 +3398,84 @@ function cobroReservasDisponibles(){
   const yaEstan=new Set(COBRO_CTX.lineas.map(l=>l.reservaId));
   return S.reservas.filter(r=>r.fecha===fecha&&!r.procesado&&!yaEstan.has(r.id))
                    .sort((a,b)=>String(a.hora).localeCompare(String(b.hora)));
+}
+
+// ─── PRODUCTOS EN EL COBRO ───
+
+function renderBuscadorProductos(){
+  const q=(document.getElementById('cobprod-q').value||'').trim().toLowerCase();
+  // Sin búsqueda no se listan los 40 productos: en el mostrador se escribe el
+  // código de la etiqueta, no se navega un catálogo.
+  const list=!q?[]:S.inventario.filter(p=>
+    (p.codigo||'').toLowerCase().includes(q)||p.nombre.toLowerCase().includes(q)).slice(0,12);
+  const cont=document.getElementById('cobprod-lista');
+  if(!q){ cont.innerHTML='<div class="empty" style="padding:16px 0">Escribe un código o un nombre para buscar.</div>'; return; }
+  cont.innerHTML=list.length?list.map(p=>{
+    const sinStock=(p.stock||0)<=0;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:0.5px solid var(--border);font-size:12px${sinStock?';opacity:.5':''}">
+      <div style="flex:1;min-width:0">
+        <strong style="color:var(--text)">${escHtml(p.nombre)}</strong>
+        <span style="color:var(--text3);font-size:10px"> ${escHtml(p.codigo||'')}</span><br>
+        <span style="font-size:11px;color:${sinStock?'#e05050':'var(--text3)'}">${sinStock?'Sin stock':'Stock: '+p.stock}</span>
+      </div>
+      <span style="white-space:nowrap;color:var(--text2)">${fmt(p.precio_venta)}</span>
+      <button type="button" class="btn btn-primary btn-sm" ${sinStock?'disabled':''} onclick="cobroAgregarProducto('${p.id}')">Agregar</button>
+    </div>`;
+  }).join(''):'<div class="empty" style="padding:16px 0">Ningún producto coincide.</div>';
+}
+
+function abrirAgregarProducto(){
+  if(!COBRO_CTX)return;
+  openM('m-cobro-prod');
+  document.getElementById('cobprod-q').value='';
+  // Sin preselección, a propósito: de este select sale la comisión, y
+  // adjudicarla por omisión es plata de otro mal asignada.
+  sel('cobprod-prof',S.barberos.filter(b=>b.activo).map(b=>({v:b.nombre,t:b.nombre})),true);
+  document.getElementById('cobprod-prof').value='';
+  renderBuscadorProductos();
+}
+
+function cobroAgregarProducto(id){
+  if(!COBRO_CTX)return;
+  const p=S.inventario.find(x=>x.id===id);
+  if(!p)return;
+  const prof=document.getElementById('cobprod-prof').value;
+  if(!prof){ notify('Elige el profesional que vende el producto','warn'); return; }
+  if(!COBRO_CTX.productos)COBRO_CTX.productos=[];
+  // Sumar cantidad si ya está en el cobro con el mismo profesional; si lo
+  // vendió otro, va como línea aparte porque la comisión es de cada uno.
+  const ya=COBRO_CTX.productos.find(x=>x.productoId===id&&x.profesional===prof);
+  const enCobro=COBRO_CTX.productos.filter(x=>x.productoId===id).reduce((s,x)=>s+x.cantidad,0);
+  if(enCobro+1>(p.stock||0)){ notify(`Solo hay ${p.stock} de ${p.nombre}`,'warn'); return; }
+  if(ya)ya.cantidad++;
+  else COBRO_CTX.productos.push({productoId:id,nombre:p.nombre,codigo:p.codigo||'',precio:p.precio_venta||0,cantidad:1,profesional:prof});
+  closeM('m-cobro-prod');
+  cobroRenderLineas();
+  cobroRecalcular();
+  notify('Producto agregado ✓');
+}
+
+function cobroQuitarProducto(i){
+  if(!COBRO_CTX||!COBRO_CTX.productos)return;
+  COBRO_CTX.productos.splice(i,1);
+  cobroRenderLineas();
+  cobroRecalcular();
+}
+
+function cobroCambiarCantidad(i,delta){
+  if(!COBRO_CTX||!COBRO_CTX.productos)return;
+  const l=COBRO_CTX.productos[i];
+  if(!l)return;
+  const p=S.inventario.find(x=>x.id===l.productoId);
+  const nueva=l.cantidad+delta;
+  if(nueva<1)return;
+  // El tope es el stock real: la RPC lo revalida igual, pero avisar acá evita
+  // que el cobro se caiga entero al confirmar.
+  const otras=COBRO_CTX.productos.filter((x,j)=>j!==i&&x.productoId===l.productoId).reduce((s,x)=>s+x.cantidad,0);
+  if(otras+nueva>(p?.stock||0)){ notify(`Solo hay ${p?.stock||0} de ${l.nombre}`,'warn'); return; }
+  l.cantidad=nueva;
+  cobroRenderLineas();
+  cobroRecalcular();
 }
 
 function abrirAgregarReserva(){
@@ -3312,7 +3533,7 @@ function cobroSincronizarPrecio(){
 function abrirCobro(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   if(r.procesado){notify('Esta reserva ya fue cobrada','warn');return;}
-  COBRO_CTX={lineas:[cobroLineaDesde(r)],descPct:null,propinaPct:null};
+  COBRO_CTX={lineas:[cobroLineaDesde(r)],productos:[],descPct:null,propinaPct:null};
   const lista=COBRO_CTX.lineas[0].lista;
   openM('m-cobro');
 
@@ -3371,14 +3592,20 @@ function cobroRecalcular(){
   const rep=cobroProrratear();
   const {valorTotal:valor,propinaTotal:propina,listaTotal}=rep;
   const desc=Math.max(0,listaTotal-valor);
+  const prodTotal=rep.prodTotal||0;
   document.getElementById('cob-desc-monto').textContent=desc>0?'−'+fmt(desc):'';
-  document.getElementById('cob-total').textContent=fmt(valor+propina);
+  // El total incluye los productos, que van a precio lleno.
+  document.getElementById('cob-total').textContent=fmt(valor+prodTotal+propina);
 
   let html=`Servicios ${fmt(valor)} · IVA incluido ${fmt(ivaDe(valor))} · neto ${fmt(netoDe(valor))}`;
+  if(prodTotal>0){
+    html+=`<br>Productos ${fmt(prodTotal)} · IVA incluido ${fmt(ivaDe(prodTotal))}`+
+          (desc>0?' — a precio lleno: el descuento se aplica solo a los servicios':'');
+  }
   // Con más de una línea se muestra el reparto ANTES de confirmar. Es plata de
   // otro: el profesional tiene que poder ver cuánto le tocó y por qué, y quien
   // cobra tiene que poder detectar un reparto raro antes de que quede grabado.
-  if(COBRO_CTX.lineas.length>1){
+  if(COBRO_CTX.lineas.length>1||(COBRO_CTX.productos||[]).length){
     html+='<br><span style="color:var(--text2)">Reparto por profesional:</span>';
     COBRO_CTX.lineas.forEach((l,i)=>{
       const bar=S.barberos.find(b=>b.nombre===l.profesional);
@@ -3386,6 +3613,15 @@ function cobroRecalcular(){
       html+=`<br>· ${escHtml(l.profesional||'—')} — ${escHtml(l.nombre)}: ${fmt(rep.valores[i])}`+
             ` · comisión ${fmt(com)}`+
             (rep.propinas[i]>0?` · propina ${fmt(rep.propinas[i])}`:'');
+    });
+    // La comisión de producto usa comision_producto_pct, que arranca en 0: si
+    // el dueño no lo configuró, acá se ve "comisión $0" y esa es la verdad.
+    (COBRO_CTX.productos||[]).forEach(p=>{
+      const bar=S.barberos.find(b=>b.nombre===p.profesional);
+      const pct=bar?.comision_producto_pct||0;
+      const com=calcularComision(p.precio*p.cantidad,pct);
+      html+=`<br>· ${escHtml(p.profesional)} — 📦 ${escHtml(p.nombre)} x${p.cantidad}: ${fmt(p.precio*p.cantidad)}`+
+            ` · comisión ${fmt(com)} (${pct}%)`;
     });
   }
   if(propina>0){
@@ -3405,9 +3641,13 @@ function cobroRecalcular(){
 async function confirmarCobro(){
   if(!COBRO_CTX)return;
   const rep=cobroProrratear();
-  if(rep.valorTotal<=0&&!confirm('El precio final es $0. ¿Registrar el cobro igual?'))return;
+  // Mira el total del cobro y no solo los servicios: un cobro de puros
+  // productos tiene el precio final de servicios en 0 y es perfectamente
+  // legítimo.
+  if(rep.totalCobro<=0&&!confirm('El total a cobrar es $0. ¿Registrar el cobro igual?'))return;
 
   const lineas=COBRO_CTX.lineas.map((l,i)=>({
+    tipo: 'reserva',
     reserva_id: l.reservaId,
     valor: rep.valores[i],
     // Sin precio de lista (servicio no encontrado) no se inventa una foto de
@@ -3419,7 +3659,19 @@ async function confirmarCobro(){
     descuento_monto: l.lista>0?Math.max(0,l.lista-rep.valores[i]):null,
     propina: rep.propinas[i],
     propina_pct: COBRO_CTX.propinaPct
-  }));
+  })).concat((COBRO_CTX.productos||[]).map(p=>({
+    // Los productos viajan en el MISMO array con su discriminador: por eso la
+    // firma de la RPC no cambió y el frontend viejo pudo seguir cobrando
+    // mientras se desplegaba esto.
+    tipo: 'producto',
+    producto_id: p.productoId,
+    cantidad: p.cantidad,
+    precio_unitario: p.precio,
+    // A precio lleno: el descuento se imputa solo a los servicios.
+    valor: p.precio*p.cantidad,
+    descuento_monto: 0,
+    barbero_nombre: p.profesional
+  })));
 
   const btn=document.getElementById('cob-btn');
   btn.disabled=true;btn.textContent='Registrando...';
@@ -3428,20 +3680,25 @@ async function confirmarCobro(){
     p_metodo_pago:document.getElementById('cob-metodo').value,
     // La RPC compara esto contra la suma de las líneas y rechaza el cobro si no
     // cuadra: un prorrateo mal redondeado no entra a la base en silencio.
-    p_total_declarado:rep.valorTotal+rep.propinaTotal
+    p_total_declarado:rep.totalCobro
   });
   btn.disabled=false;btn.textContent='Registrar cobro';
   if(error){notify(error.message,'err');return;}
 
-  await loadReservas();await loadVisitas();await loadClientes();
+  // loadCobroProductos también: si no, S.ventas queda sin la venta recién
+  // hecha y el IVA de esta pantalla muestra menos de lo que entró. Y el
+  // inventario, porque la RPC descontó stock.
+  await loadReservas();await loadVisitas();await loadClientes();await loadCobroProductos();await loadInventario();
   renderReservas();renderDashboard();
   // Con UNA reserva el texto es el de siempre, sin paréntesis: decir
   // "(1 reserva)" es información vacía en el flujo que ya estaba en producción
   // —si cobraste una, ya lo sabés— y este cambio no tenía por qué tocarlo.
   // El conteo aparece solo cuando de verdad hubo varias.
   const n=COBRO_CTX.lineas.length;
+  const nP=(COBRO_CTX.productos||[]).reduce((s,p)=>s+p.cantidad,0);
   const detalle=[];
   if(n>1)detalle.push(`${n} reservas`);
+  if(nP>0)detalle.push(`${nP} producto${nP>1?'s':''}`);
   if(rep.propinaTotal>0)detalle.push(`propina ${fmt(rep.propinaTotal)}`);
   notify('Cobro registrado ✓'+(detalle.length?` (${detalle.join(', ')})`:''));
   COBRO_CTX=null;
@@ -3513,7 +3770,8 @@ function deltaHtml(cur,prev,nombrePrev){
   return `<span class="${cls}">${arrow} ${Math.abs(pct)}%</span> vs ${nombrePrev}`;
 }
 
-function sumValorDia(fechaStr){ return S.visitas.filter(v=>v.fecha===fechaStr).reduce((s,v)=>s+(v.valor||0),0); }
+// Los charts de ingresos van sobre S.ventas: son plata, no citas.
+function sumValorDia(fechaStr){ return S.ventas.filter(v=>v.fecha===fechaStr).reduce((s,v)=>s+(v.valor||0),0); }
 
 function buildIngresosBuckets(periodo){
   const hoy=new Date(); hoy.setHours(0,0,0,0);
@@ -3535,8 +3793,8 @@ function buildIngresosBuckets(periodo){
   if(periodo==='anio'){
     const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const y=hoy.getFullYear();
-    const curData=meses.map((_,i)=>S.visitas.filter(v=>v.fecha&&v.fecha.startsWith(y+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
-    const prevData=meses.map((_,i)=>S.visitas.filter(v=>v.fecha&&v.fecha.startsWith((y-1)+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
+    const curData=meses.map((_,i)=>S.ventas.filter(v=>v.fecha&&v.fecha.startsWith(y+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
+    const prevData=meses.map((_,i)=>S.ventas.filter(v=>v.fecha&&v.fecha.startsWith((y-1)+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
     return {labels:meses,curData,prevData,curLabel:String(y),prevLabel:String(y-1),tipo:'bar'};
   }
   const y=hoy.getFullYear(), m=hoy.getMonth();
@@ -3640,13 +3898,24 @@ function renderChartNuevos(range){
 
 function renderDashboard(){
   const range=getPeriodoRange(DASH_PERIODO);
+  // vCur/vPrev CUENTAN citas; wCur/wPrev SUMAN plata. Son arrays distintos a
+  // propósito: si el conteo saliera de S.ventas, cada producto vendido contaría
+  // como una cita más y el ticket promedio se hundiría sin que nada lo avise.
   const vCur=S.visitas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo));
   const vPrev=S.visitas.filter(v=>enRango(v.fecha,range.prevFrom,range.prevTo));
-  const ventas=vCur.reduce((s,v)=>s+(v.valor||0),0);
-  const ventasPrev=vPrev.reduce((s,v)=>s+(v.valor||0),0);
+  const wCur=S.ventas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo));
+  const wPrev=S.ventas.filter(v=>enRango(v.fecha,range.prevFrom,range.prevTo));
+  // Ventas e IVA incluyen productos: es plata que entró.
+  const ventas=wCur.reduce((s,v)=>s+(v.valor||0),0);
+  const ventasPrev=wPrev.reduce((s,v)=>s+(v.valor||0),0);
   const iva=ivaDe(ventas);
-  const ticket=vCur.length?Math.round(ventas/vCur.length):0;
-  const ticketPrev=vPrev.length?Math.round(ventasPrev/vPrev.length):0;
+  // El ticket sigue midiendo SOLO servicios sobre citas (decisión del dueño):
+  // así no cambia de significado ni deja de ser comparable con los meses
+  // anteriores el día que se empiecen a vender productos.
+  const ventasServ=vCur.reduce((s,v)=>s+(v.valor||0),0);
+  const ventasServPrev=vPrev.reduce((s,v)=>s+(v.valor||0),0);
+  const ticket=vCur.length?Math.round(ventasServ/vCur.length):0;
+  const ticketPrev=vPrev.length?Math.round(ventasServPrev/vPrev.length):0;
   const nuevosClientes=S.clientes.filter(c=>{const f=c.created_at?c.created_at.split('T')[0]:(c.fecha_registro||null);return f&&enRango(f,range.curFrom,range.curTo);}).length;
 
   const vips=S.clientes.filter(c=>getNivel(getCitas(c.id))!=='Sin nivel').length;
@@ -3681,7 +3950,9 @@ function renderDashboard(){
 
   // Chart profesionals (período seleccionado)
   const byBar={};
-  vCur.forEach(v=>{byBar[v.barbero_nombre]=(byBar[v.barbero_nombre]||0)+(v.valor||0);});
+  // Ventas por profesional: incluye lo que vendió en productos, porque es
+  // plata que entró por él.
+  wCur.forEach(v=>{byBar[v.barbero_nombre]=(byBar[v.barbero_nombre]||0)+(v.valor||0);});
   const maxBar=Math.max(...Object.values(byBar),1);
   document.getElementById('d-chart-bar').innerHTML=Object.keys(byBar).length?Object.entries(byBar).map(([b,v])=>`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px">
@@ -4309,8 +4580,12 @@ function renderCostos(){
   </tr>`).join('');
   // IVA — lee el mismo mes que la tabla de arriba. Antes llamaba a mesActual()
   // por su cuenta: con el selector marcando julio, esto seguía mostrando agosto.
+  //
+  // Va sobre S.ventas y NO sobre S.visitas: el débito fiscal incluye la venta
+  // de productos. Con S.visitas quedaría subdeclarado, y es la clase de error
+  // que no da ningún síntoma hasta que lo encuentra el SII.
   const mes=mf;
-  const vMes=S.visitas.filter(v=>v.fecha?.startsWith(mes));
+  const vMes=S.ventas.filter(v=>v.fecha?.startsWith(mes));
   // Suma primero y redondea una sola vez al final, igual que antes: si se
   // redondeara por visita los totales no cuadrarían con lo ya declarado.
   const vBruto=vMes.reduce((s,v)=>s+(v.valor||0),0);
@@ -4322,23 +4597,45 @@ function renderCostos(){
   document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${cMes.filter(c=>c.iva>0).length} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
   // Comisiones — mismo mes que el resto de la pantalla, por lo mismo.
+  // Sobre S.ventas para que la comisión de productos entre en lo que el
+  // negocio le debe al profesional, dividida en su propia columna.
   const mes2=mf;
-  const byB=agregarComisionesPorProfesional(S.visitas.filter(v=>v.fecha?.startsWith(mes2)));
+  const byB=agregarComisionesPorProfesional(S.ventas.filter(v=>v.fecha?.startsWith(mes2)));
   document.getElementById('t-comisiones').innerHTML=Object.entries(byB).map(([b,d])=>{
     const com=Math.round(d.comision);
+    const comP=Math.round(d.comisionProd||0);
     const prop=Math.round(d.propinas||0);
     // "Para negocio" no resta la propina porque nunca la sumó: `ventas` es la
     // suma de `valor`, que no la incluye. La propina es plata de paso.
-    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td></tr>`;
-  }).join('')||`<tr><td colspan="8" class="empty">Sin ventas en ${nombreMesLargo(mf)}.</td></tr>`;
+    // Sí incluye los productos: es lo que le queda al negocio de TODO lo que
+    // entró, después de las dos comisiones.
+    const paraNegocio=(d.ventas+(d.ventasProd||0))-com-comP;
+    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td>
+    <td data-label="Servicios">${fmt(d.ventas)}</td>
+    <td data-label="Productos">${d.ventasProd>0?fmt(d.ventasProd):'—'}</td>
+    <td data-label="% Comisión">${d.pct}%</td>
+    <td data-label="Comisión servicios" class="gold">${fmt(com)}</td>
+    <td data-label="Comisión productos" class="gold">${comP>0?fmt(comP):'—'}</td>
+    <td data-label="Propinas">${prop>0?fmt(prop):'—'}</td>
+    <td data-label="Total a pagarle" style="font-weight:600">${fmt(com+comP+prop)}</td>
+    <td data-label="Para negocio">${fmt(paraNegocio)}</td></tr>`;
+  }).join('')||`<tr><td colspan="10" class="empty">Sin ventas en ${nombreMesLargo(mf)}.</td></tr>`;
 }
 
 function renderProfesionals(){
   const mes=mesActual();
   document.getElementById('cards-profesionals').innerHTML=S.barberos.map(b=>{
+    // vs CUENTA citas (para la meta); ws SUMA plata (ventas y comisión). Un
+    // producto vendido no acerca al profesional a su meta de citas, pero sí
+    // suma a lo que el negocio le debe.
     const vs=S.visitas.filter(v=>v.barbero_nombre===b.nombre&&v.fecha?.startsWith(mes));
-    const ventas=vs.reduce((s,v)=>s+(v.valor||0),0);
-    const com=Math.round(vs.reduce((s,v)=>s+(v.comision_monto??calcularComision(v.valor,b.comision_pct||50)),0));
+    const ws=S.ventas.filter(v=>v.barbero_nombre===b.nombre&&v.fecha?.startsWith(mes));
+    const ventas=ws.reduce((s,v)=>s+(v.valor||0),0);
+    // La comisión de producto ya viene congelada con su propio porcentaje: el
+    // respaldo al vuelo con comision_pct solo aplica a servicios.
+    const com=Math.round(ws.reduce((s,v)=>s+(v.tipo==='producto'
+      ? (v.comision_monto||0)
+      : (v.comision_monto??calcularComision(v.valor,b.comision_pct||50))),0));
     const meta=b.meta_citas||80;
     const pct=Math.min(100,(vs.length/meta*100));
     const avatar=b.foto_url
@@ -4794,6 +5091,26 @@ function getRepCitas(mesIni, mesFin, profNombre){
   });
 }
 
+// Gemelas de las de citas pero sobre S.ventas, para lo que suma PLATA. Existen
+// aparte y no reemplazan a las otras porque los reportes usaban el mismo array
+// para el dinero y para el conteo: con una sola fuente, "Total citas" pasaría a
+// contar productos y el ticket promedio se hundiría sin ningún síntoma.
+function getRepVentas(mesIni, mesFin, profNombre){
+  return S.ventas.filter(v=>{
+    const mes=v.fecha?.slice(0,7);
+    const mOk=(!mesIni||mes>=mesIni)&&(!mesFin||mes<=mesFin);
+    const pOk=!profNombre||v.barbero_nombre===profNombre;
+    return mOk&&pOk;
+  });
+}
+function getRepVentasRango(desde, hasta, profNombre){
+  return S.ventas.filter(v=>{
+    const fOk=(!desde||v.fecha>=desde)&&(!hasta||v.fecha<=hasta);
+    const pOk=!profNombre||v.barbero_nombre===profNombre;
+    return fOk&&pOk;
+  });
+}
+
 // Comisiones por profesional: filtra por fecha completa (no solo mes) y por el campo real barbero_nombre.
 function getRepCitasRango(desde, hasta, profNombre){
   return S.visitas.filter(v=>{
@@ -4819,9 +5136,11 @@ function renderReporteResumen(){
   const mesIni=document.getElementById('rep-mes-ini').value;
   const mesFin=document.getElementById('rep-mes-fin').value;
   const citas=getRepCitas(mesIni,mesFin);
-  const ventas=citas.reduce((s,v)=>s+(v.valor||0),0);
+  // Ventas e IVA sobre TODO lo que entró; citas, ticket y clientes únicos solo
+  // sobre las visitas. Un producto no es una cita ni tiene cliente propio.
+  const ventas=getRepVentas(mesIni,mesFin).reduce((s,v)=>s+(v.valor||0),0);
   const iva=ivaDe(ventas);
-  const ticket=citas.length?Math.round(ventas/citas.length):0;
+  const ticket=citas.length?Math.round(citas.reduce((s,v)=>s+(v.valor||0),0)/citas.length):0;
   const clientes=new Set(citas.map(v=>v.cliente_id)).size;
 
   document.getElementById('rep-metrics').innerHTML=`
@@ -4873,10 +5192,12 @@ function renderReporteProfesional(){
   const prof=document.getElementById('rep-sel-prof').value;
   const citas=getRepCitasRango(desde,hasta,prof||null);
 
-  // By profesional stats (usa el monto de comisión guardado por visita, con respaldo al vuelo)
-  const byP=agregarComisionesPorProfesional(citas);
+  // By profesional stats (usa el monto de comisión guardado por visita, con respaldo al vuelo).
+  // Sobre las VENTAS para que la comisión de productos entre en lo que se le
+  // debe a cada uno; el agregador separa servicios de productos por dentro.
+  const byP=agregarComisionesPorProfesional(getRepVentasRango(desde,hasta,prof||null));
 
-  const totalV=citas.reduce((s,v)=>s+(v.valor||0),0);
+  const totalV=getRepVentasRango(desde,hasta,prof||null).reduce((s,v)=>s+(v.valor||0),0);
   const totalC=citas.length;
   document.getElementById('rep-prof-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Total citas</div><div class="mc-val">${totalC}</div></div>
@@ -4885,10 +5206,21 @@ function renderReporteProfesional(){
 
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
+    const comP=Math.round(d.comisionProd||0);
     const prop=Math.round(d.propinas||0);
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
-    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td><td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
-  }).join('')||'<tr><td colspan="9" class="empty">Sin datos en este rango</td></tr>';
+    const paraNegocio=(d.ventas+(d.ventasProd||0))-com-comP;
+    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td>
+    <td data-label="Servicios">${fmt(d.ventas)}</td>
+    <td data-label="Productos">${d.ventasProd>0?fmt(d.ventasProd):'—'}</td>
+    <td data-label="% Comisión">${d.pct}%</td>
+    <td data-label="Comisión servicios" class="gold">${fmt(com)}</td>
+    <td data-label="Comisión productos" class="gold">${comP>0?fmt(comP):'—'}</td>
+    <td data-label="Propinas">${prop>0?fmt(prop):'—'}</td>
+    <td data-label="Total a pagarle" style="font-weight:600">${fmt(com+comP+prop)}</td>
+    <td data-label="Para negocio">${fmt(paraNegocio)}</td>
+    <td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
+  }).join('')||'<tr><td colspan="11" class="empty">Sin datos en este rango</td></tr>';
 
   // Totales por método de pago, mismo rango ya filtrado que el resto de esta pestaña.
   const byPago={};
@@ -5015,7 +5347,7 @@ function exportarExcel(tipo){
     const prof=document.getElementById('rep-sel-prof')?.value||'';
     const citas=getRepCitasRango(desde,hasta,prof||null);
     if(!citas.length){notify('Sin datos para exportar','warn');return;}
-    const byP=agregarComisionesPorProfesional(citas);
+    const byP=agregarComisionesPorProfesional(getRepVentasRango(desde,hasta,prof||null));
     const resumen=Object.entries(byP).map(([p,d])=>{
       const com=Math.round(d.comision);
       const prop=Math.round(d.propinas||0);

@@ -314,11 +314,12 @@ async function correr(src){
 
   var corrida = await intentar(function(){
     return new Function('document','COBRO_CTX','sb','notify','fmt','confirm',
-      'loadReservas','loadVisitas','loadClientes','renderReservas','renderDashboard',
+      'loadReservas','loadVisitas','loadClientes','loadCobroProductos','loadInventario',
+      'renderReservas','renderDashboard',
       'closeM','renderAgenda','calcularComision',
       fuenteCC + '\nreturn confirmarCobro();')
       (doc2, ctx2, sbFalso, function(){}, function(n){ return '$'+n; }, function(){ return true; },
-       noop, noop, noop, function(){}, function(){},
+       noop, noop, noop, noop, noop, function(){}, function(){},
        function(){}, function(){}, function(v,p){ return Math.round(v*p/100); });
   });
 
@@ -359,13 +360,14 @@ async function correr(src){
   var sbFalso2 = { rpc: function(n,a){ capt2 = a; return Promise.resolve({error:null}); } };
   var corrida2 = await intentar(function(){
     return new Function('document','COBRO_CTX','sb','notify','fmt','confirm',
-      'loadReservas','loadVisitas','loadClientes','renderReservas','renderDashboard',
+      'loadReservas','loadVisitas','loadClientes','loadCobroProductos','loadInventario',
+      'renderReservas','renderDashboard',
       'closeM','renderAgenda','calcularComision',
       fuenteCC + '\nreturn confirmarCobro();')
       (domFalso({'cob-final':'12000','cob-propina':'0','cob-metodo':'Efectivo'}),
        {lineas:[{reservaId:'r9',lista:0}],descPct:null,propinaPct:null},
        sbFalso2, function(){}, function(n){ return '$'+n; }, function(){ return true; },
-       noop, noop, noop, function(){}, function(){}, function(){}, function(){},
+       noop, noop, noop, noop, noop, function(){}, function(){}, function(){}, function(){},
        function(v,p){ return Math.round(v*p/100); });
   });
   check('el cobro sin precio de lista corre sin excepciones',

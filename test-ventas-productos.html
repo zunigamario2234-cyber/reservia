@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — productos en las ventas</title>
+
+<!--
+  Test de S.ventas y del reparto servicios/productos (Entrega 2).
+
+  POR QUÉ EXISTE
+  Los productos entran a la plata del negocio pero NO son citas. Todo este
+  archivo existe para fijar esa frontera, que se rompe en silencio de cuatro
+  maneras y ninguna tira un error:
+
+   1. Que un producto cuente como cita. getCitas() decide los niveles del Club
+      VIP: un cliente que compra cinco shampoos subiría a Plata sin haberse
+      cortado el pelo nunca, y se descubre cuando reclama un beneficio que no
+      le corresponde. También hunde el ticket promedio y falsea las metas.
+
+   2. Que el módulo de IVA siga leyendo solo las visitas. Ahí la venta de
+      productos queda fuera del débito fiscal: se SUBDECLARA, sin ningún
+      síntoma, hasta que lo encuentra el SII.
+
+   3. Que la comisión de producto se recalcule al vuelo con comision_pct, que
+      es el de SERVICIOS. Sobre un producto de $10.000 con 50% de servicios y
+      5% de productos, el negocio pasaría a deber $5.000 en vez de $500: diez
+      veces más, en plata real de otra persona.
+
+   4. Que S.ventas quede desincronizado tras una recarga puntual. Por eso lo
+      reconstruyen los DOS loaders y no solo loadAll().
+
+  QUÉ COMPRUEBA
+  El ARCHIVO REAL. construirVentas() y agregarComisionesPorProfesional() se
+  recompilan desde app.html y se EJECUTAN con datos mixtos; el cableado de cada
+  lector se verifica como texto contra su función aislada. No abre Supabase.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) En agregarComisionesPorProfesional, sacar el `return` que corta la rama
+      de producto -> falla "un producto no cuenta como cita".
+   b) En esa misma función, calcular la comisión de producto con
+      calcularComision(v.valor,pct) -> falla "la comisión de producto no se
+      recalcula con el % de servicios".
+   c) En renderCostos, volver el IVA a S.visitas -> falla "el IVA suma también
+      los productos".
+   d) En construirVentas, no mapear S.cobroProductos -> falla "S.ventas une las
+      dos fuentes" y los totales.
+   e) En loadCobroProductos, sacar la llamada a construirVentas() -> falla "los
+      dos loaders reconstruyen S.ventas".
+   f) En el dashboard, calcular el ticket sobre wCur -> falla "el ticket se
+      mide solo sobre servicios".
+
+  Las seis se corrieron y las seis dieron rojo.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — productos en las ventas</h1>
+<p>Verifica que los productos entren a la plata del negocio y NO al conteo de
+citas, y que su comisión use su propio porcentaje.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html','migration_cobro_productos.sql'];
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+async function correr(src){
+  var appHtml = src['app.html'];
+  var js  = sinComentarios(inlineScripts(appHtml).join('\n'));
+  var sql = sinComentariosSql(src['migration_cobro_productos.sql']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('S.ventas une las dos fuentes');
+
+  var fCV = extraerFuncion(js, 'construirVentas');
+  check('construirVentas existe', fCV !== '', true);
+
+  var estado = {
+    visitas: [
+      {fecha:'2026-08-20', valor:15000, barbero_nombre:'Mario', comision_monto:6303, propina:1000, servicio:'Corte', cliente_id:'c1'},
+      {fecha:'2026-08-21', valor:20000, barbero_nombre:'Ana',   comision_monto:8000, propina:0,    servicio:'Color', cliente_id:'c2'}
+    ],
+    cobroProductos: [
+      {fecha:'2026-08-20', valor:10000, barbero_nombre:'Mario', comision_monto:500, producto_id:'p1', cantidad:2}
+    ],
+    ventas: []
+  };
+  var S = intentar(function(){
+    return new Function('S', fCV + '\nconstruirVentas(); return S;')(estado);
+  });
+
+  check('S.ventas une las dos fuentes', S.ventas.length, 3);
+  check('  ...marcando el tipo de cada una',
+        S.ventas.map(function(v){ return v.tipo; }), ['servicio','servicio','producto']);
+  check('el total de ventas incluye los productos',
+        S.ventas.reduce(function(s,v){ return s+v.valor; }, 0), 45000);
+  check('las visitas solas sumarían menos',
+        S.visitas.reduce(function(s,v){ return s+v.valor; }, 0), 35000);
+  // La invariante que hace que ivaDe() sirva sobre las dos: mismo significado
+  // de `valor` en ambas fuentes.
+  // El `|| {}` no es decorativo: sin él, una mutación que deje S.ventas sin
+  // productos hace que [0] sea undefined, la excepción escapa de correr() y el
+  // <pre> queda SIN clase — indistinguible de un test que no corrió, que es
+  // justo el falso verde que este repo ya documentó dos veces.
+  var prod = S.ventas.filter(function(v){ return v.tipo==='producto'; })[0] || {};
+  check('el producto conserva su valor bruto', prod.valor, 10000);
+  check('el producto no trae propina', prod.propina, 0);
+
+  // LA CARRERA QUE TIRÓ EL PANEL EN PRODUCCIÓN (2026-09-08).
+  // construirVentas() la llaman loadVisitas() y loadCobroProductos(), que
+  // corren EN PARALELO en el Promise.all de loadAll(). El que termina primero
+  // la ejecuta cuando el otro todavía no escribió su array — y cobro_productos,
+  // al estar vacía, responde antes que visitas. Sin el `|| []` el panel entero
+  // muere con "Cannot read properties of undefined (reading 'map')" antes de
+  // pintar nada.
+  function ventasCon(estado){
+    return intentar(function(){
+      return new Function('S', fCV + '\nconstruirVentas(); return S.ventas;')(estado);
+    });
+  }
+  check('sobrevive si visitas todavía no cargó',
+        ventasCon({cobroProductos:[{fecha:'2026-08-20',valor:1000,barbero_nombre:'Ana'}]}).length, 1);
+  check('sobrevive si los productos todavía no cargaron',
+        ventasCon({visitas:[{fecha:'2026-08-20',valor:1000,barbero_nombre:'Ana'}]}).length, 1);
+  check('sobrevive si no cargó ninguna de las dos',
+        ventasCon({}).length, 0);
+
+  // La causa raíz, generalizada: TODA lista que el código recorra tiene que
+  // estar declarada en S, aunque su loader la pise después. Mientras no lo
+  // esté, es undefined durante toda la carga y cualquiera que la lea ahí tira
+  // el panel entero. Este check recorre el archivo y las compara, así que
+  // atrapa la próxima antes de que llegue a producción.
+  var decl = /let S = \{([^}]*)\}/.exec(js);
+  var declaradas = decl ? (decl[1].match(/(\w+)\s*:/g)||[]).map(function(x){ return x.replace(/\s*:$/,''); }) : [];
+  var recorridas = [];
+  var reUso = /S\.(\w+)\.(?:map|filter|forEach|reduce|slice|sort|find|some|every)\(/g, mu;
+  while((mu = reUso.exec(js)) !== null){
+    if(recorridas.indexOf(mu[1]) === -1) recorridas.push(mu[1]);
+  }
+  var sinDeclarar = recorridas.filter(function(p){ return declaradas.indexOf(p) === -1; });
+  check('toda lista que se recorre está declarada en S', sinDeclarar, []);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el reparto servicios / productos');
+
+  var fAgg = extraerFuncion(js, 'agregarComisionesPorProfesional');
+  var byP = intentar(function(){
+    return new Function('S','calcularComision','resolveServicioInfo',
+      fAgg + '\nreturn agregarComisionesPorProfesional(S.ventas);')
+      ({ ventas:S.ventas, barberos:[{nombre:'Mario',comision_pct:50,comision_producto_pct:5},
+                                    {nombre:'Ana',comision_pct:40,comision_producto_pct:0}] },
+       function(v,p){ return Math.round(v*p/100); },
+       function(s){ return {nombre:s}; });
+  });
+
+  // EL CHECK MÁS IMPORTANTE DEL ARCHIVO: los niveles VIP cuelgan de esto.
+  check('un producto no cuenta como cita', byP.Mario.citas, 1);
+  check('  ...aunque el profesional haya vendido los dos', byP.Mario.ventasProd, 10000);
+  check('las ventas de servicio quedan aparte', byP.Mario.ventas, 15000);
+
+  // Si se recalculara con comision_pct (50%) daría 5000, diez veces más.
+  check('la comisión de producto no se recalcula con el % de servicios',
+        byP.Mario.comisionProd, 500);
+  check('  ...y la de servicios queda intacta', byP.Mario.comision, 6303);
+  check('la propina sigue acumulándose aparte', byP.Mario.propinas, 1000);
+  check('el profesional sin productos queda en cero', byP.Ana.ventasProd, 0);
+  check('  ...y su comisión de producto también', byP.Ana.comisionProd, 0);
+  check('se expone el % de producto para mostrarlo', byP.Mario.pctProd, 5);
+
+  // EL CASO QUE HACE FALTA PARA QUE ESTO SIRVA: un producto SIN comision_monto.
+  // Con el monto presente, recalcular al vuelo o no da lo mismo y la mutación
+  // pasa en verde. Sin él se ve la diferencia real: el código correcto da 0
+  // (no hay comisión que pagar), y recalcularlo con el % de SERVICIOS daría
+  // 5.000 sobre un producto de 10.000 — diez veces lo que corresponde.
+  var byP2 = intentar(function(){
+    return new Function('S','calcularComision','resolveServicioInfo',
+      fAgg + '\nreturn agregarComisionesPorProfesional(S.ventas);')
+      ({ ventas:[{fecha:'2026-08-20', valor:10000, barbero_nombre:'Mario', propina:0, tipo:'producto'}],
+         barberos:[{nombre:'Mario',comision_pct:50,comision_producto_pct:5}] },
+       function(v,p){ return Math.round(v*p/100); },
+       function(s){ return {nombre:s}; });
+  });
+  check('un producto sin comisión congelada no paga comisión',
+        byP2.Mario ? byP2.Mario.comisionProd : 'sin datos', 0);
+  check('  ...y sobre todo NO paga el % de servicios (sería 5.000)',
+        byP2.Mario ? byP2.Mario.comisionProd === 5000 : 'sin datos', false);
+  check('  ...y tampoco suma una cita',
+        byP2.Mario ? byP2.Mario.citas : 'sin datos', 0);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('quién lee ventas y quién lee citas');
+
+  var rc = extraerFuncion(js, 'renderCostos');
+  check('el IVA suma también los productos',
+        /const vMes=S\.ventas\.filter/.test(rc), true);
+  check('  ...y ya no solo las visitas',
+        /const vMes=S\.visitas\.filter/.test(rc), false);
+  check('las comisiones del mes salen de las ventas',
+        /agregarComisionesPorProfesional\(S\.ventas\.filter/.test(rc), true);
+
+  // Los niveles VIP y el historial NO pueden ver productos.
+  check('getCitas sigue contando solo visitas',
+        /function getCitas\(cid\)\{ return S\.visitas\.filter/.test(js), true);
+  check('getUltCita sigue mirando solo visitas',
+        /function getUltCita\(cid\)\{ const vs=S\.visitas\.filter/.test(js), true);
+
+  var rd = extraerFuncion(js, 'renderDashboard');
+  check('el dashboard suma ventas con productos',
+        /const ventas=wCur\.reduce/.test(rd), true);
+  check('el ticket se mide solo sobre servicios',
+        /const ticket=vCur\.length\?Math\.round\(ventasServ\/vCur\.length\)/.test(rd), true);
+  check('las citas del dashboard salen de las visitas',
+        /const vCur=S\.visitas\.filter/.test(rd), true);
+
+  var rv = extraerFuncion(js, 'renderVisitas');
+  check('la tabla de Citas no muestra productos',
+        /S\.ventas/.test(rv), false);
+
+  var rr = extraerFuncion(js, 'renderReporteResumen');
+  check('el reporte suma ventas con productos',
+        /getRepVentas\(mesIni,mesFin\)/.test(rr), true);
+  check('  ...pero cuenta citas y clientes sin ellos',
+        /new Set\(citas\.map\(v=>v\.cliente_id\)\)/.test(rr), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('S.ventas no se queda viejo');
+
+  // Es derivado: si un loader no lo reconstruye, la pantalla muestra datos de
+  // antes del último cobro y el IVA queda corto sin avisar.
+  check('loadVisitas reconstruye S.ventas',
+        /S\.visitas=data\|\|\[\]; construirVentas\(\);/.test(js), true);
+  check('loadCobroProductos reconstruye S.ventas',
+        /S\.cobroProductos=data\|\|\[\]; construirVentas\(\);/.test(js), true);
+  check('S arranca con las dos claves nuevas',
+        /cobroProductos:\[\], ventas:\[\]/.test(js), true);
+  check('loadAll carga los productos', /loadCobroProductos\(\)/.test(js), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el payload del cobro con productos');
+
+  // confirmarCobro() REAL con servicios Y productos. Lo que se verifica es la
+  // decisión de negocio que más plata mueve: el descuento baja los servicios y
+  // NO toca los productos, para que nadie subsidie con su comisión el
+  // descuento de algo que no vendió.
+  function domFalso(valores){
+    var campos = {};
+    function nuevo(v){
+      return { value: v===undefined?'':v, textContent:'', innerHTML:'', disabled:false,
+               style:{}, classList:{ contains:function(){ return false; } } };
+    }
+    Object.keys(valores).forEach(function(k){ campos[k]=nuevo(valores[k]); });
+    return { getElementById:function(id){ if(!campos[id])campos[id]=nuevo(''); return campos[id]; } };
+  }
+  function extraerFuncionAsync(js, nombre){
+    var f = extraerFuncion(js, nombre);
+    if(!f) return '';
+    return (new RegExp('async\\s+function\\s+'+nombre+'\\s*\\(').test(js) ? 'async ' : '') + f;
+  }
+
+  var capt = null;
+  var fuenteCC = extraerFuncion(js,'repartirProporcional') + '\n' +
+                 extraerFuncion(js,'cobroProrratear') + '\n' +
+                 extraerFuncionAsync(js,'confirmarCobro');
+  // Servicios $20.000 con 10% de descuento -> $18.000. Producto $5.000 x2.
+  var ctxCC = {
+    lineas:[{reservaId:'r1',lista:20000}],
+    productos:[{productoId:'p1',nombre:'Cera',codigo:'PRD-001',precio:5000,cantidad:2,profesional:'Ana'}],
+    descPct:10, propinaPct:null
+  };
+  var docCC = domFalso({'cob-final':'18000','cob-propina':'0','cob-metodo':'Efectivo'});
+  var noop = function(){ return Promise.resolve(); };
+  var corrida = await intentar(function(){
+    return new Function('document','COBRO_CTX','sb','notify','fmt','confirm',
+      'loadReservas','loadVisitas','loadClientes','loadCobroProductos','loadInventario',
+      'renderReservas','renderDashboard','closeM','renderAgenda','calcularComision',
+      fuenteCC + '\nreturn confirmarCobro();')
+      (docCC, ctxCC,
+       { rpc:function(n,a){ capt={nombre:n,args:a}; return Promise.resolve({error:null}); } },
+       function(){}, function(v){ return '$'+v; }, function(){ return true; },
+       noop, noop, noop, noop, noop,
+       function(){}, function(){}, function(){}, function(){},
+       function(v,p){ return Math.round(v*p/100); });
+  });
+  check('confirmarCobro corre sin excepciones',
+        typeof corrida==='string'&&corrida.indexOf('excepción')!==-1 ? corrida : 'sin excepción',
+        'sin excepción');
+
+  var Ls = (capt && capt.args && capt.args.p_lineas) || [];
+  check('viajan las dos clases de línea', Ls.length, 2);
+  check('cada una con su discriminador',
+        Ls.map(function(l){ return l.tipo; }), ['reserva','producto']);
+
+  var prodL = Ls.filter(function(l){ return l.tipo==='producto'; })[0] || {};
+  // EL CHECK DE LA DECISIÓN: con 10% de descuento, el servicio bajó a 18.000
+  // pero el producto sigue en 10.000. Si acá apareciera 9.000, el profesional
+  // que vendió la cera estaría pagando parte del descuento del corte.
+  check('el producto va a precio lleno pese al descuento', prodL.valor, 10000);
+  check('  ...y sin descuento imputado', prodL.descuento_monto, 0);
+  check('el servicio sí absorbe el descuento',
+        Ls.filter(function(l){ return l.tipo==='reserva'; })[0].valor, 18000);
+  check('el producto lleva cantidad y precio unitario',
+        [prodL.cantidad, prodL.precio_unitario], [2,5000]);
+  check('el producto lleva el profesional que lo vendió', prodL.barbero_nombre, 'Ana');
+  check('el total declarado suma servicios y productos',
+        capt.args.p_total_declarado, 28000);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la migración');
+
+  check('crea cobro_productos', /create table if not exists public\.cobro_productos/i.test(sql), true);
+  check('agrega comision_producto_pct con default 0',
+        /add column if not exists comision_producto_pct numeric not null default 0/i.test(sql), true);
+  check('el índice de código es por negocio, no global',
+        /on public\.inventario \(barberia_id, codigo\) where codigo is not null/i.test(sql), true);
+  check('el stock se descuenta de forma relativa',
+        /set stock = stock - v_cantidad/i.test(sql), true);
+  check('  ...y no vende lo que no hay',
+        /and stock >= v_cantidad/i.test(sql), true);
+  check('exige profesional en cada producto',
+        /Falta elegir el profesional que vendió/i.test(sql), true);
+  check('registra la salida de stock',
+        /insert into movimientos_stock[\s\S]*'salida'/i.test(sql), true);
+  check('la firma de la RPC no cambió',
+        /registrar_cobro_conjunto\(\s*p_lineas jsonb,\s*p_metodo_pago text,\s*p_total_declarado numeric\s*\)/i.test(sql), true);
+  check('no lleva begin;/commit; activos', /^\s*(begin|commit)\s*;/im.test(sql), false);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
