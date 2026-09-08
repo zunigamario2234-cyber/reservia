@@ -159,6 +159,7 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
 <div class="container">
   <div class="tabs-top" id="tabs-top" style="display:none">
     <button class="tab-btn active" id="tab-btn-club" onclick="cambiarTabTop('club')">🎟 Mi Club</button>
+    <button class="tab-btn" id="tab-btn-mis" onclick="cambiarTabTop('mis')">📋 Mis reservas</button>
     <button class="tab-btn" id="tab-btn-reservar" onclick="cambiarTabTop('reservar')">📅 Reservar</button>
   </div>
 
@@ -166,6 +167,13 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
     <div id="contenido">
       <div class="msg-full">Cargando tu información...</div>
     </div>
+  </div>
+
+  <!-- Solo lo que VIENE. El historial pasado (fechas, montos) queda afuera a
+       propósito: este link no tiene token y se comparte por WhatsApp, así que
+       lo único que muestra es lo que quien coordinó la reserva ya sabe. -->
+  <div id="tab-mis" style="display:none">
+    <div id="mis-reservas"><div class="msg-full">Cargando tus reservas...</div></div>
   </div>
 
   <div id="tab-reservar" style="display:none">
@@ -351,10 +359,57 @@ function rFmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).pad
 
 function cambiarTabTop(tab){
   document.getElementById('tab-club').style.display = tab==='club'?'':'none';
+  document.getElementById('tab-mis').style.display = tab==='mis'?'':'none';
   document.getElementById('tab-reservar').style.display = tab==='reservar'?'':'none';
   document.getElementById('tab-btn-club').classList.toggle('active',tab==='club');
+  document.getElementById('tab-btn-mis').classList.toggle('active',tab==='mis');
   document.getElementById('tab-btn-reservar').classList.toggle('active',tab==='reservar');
+  // Se cargan al ENTRAR y no al abrir la página: si el cliente acaba de
+  // reservar en la pestaña de al lado, al volver acá tiene que ver la nueva.
+  if(tab==='mis') cargarMisReservas();
   window.scrollTo(0,0);
+}
+
+// Gemela de escHtml() en app.html. Esta página venía usando textContent en
+// todos lados, así que no la necesitaba; las tarjetas de abajo se arman con
+// innerHTML y el nombre del servicio y del profesional los escribe el dueño.
+function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+// Las próximas reservas del cliente. Las trae get_proximas_reservas_publico(),
+// que matchea por whatsapp normalizado —en la base conviven cuatro formatos
+// del mismo número— y devuelve SOLO fecha, hora, servicio y profesional: ni
+// teléfono, ni montos, ni ids.
+async function cargarMisReservas(){
+  const cont = document.getElementById('mis-reservas');
+  cont.innerHTML = '<div class="msg-full">Cargando tus reservas...</div>';
+  const {data, error} = await sb.rpc('get_proximas_reservas_publico',
+    {p_barberia_id:BARBERIA_ID, p_cliente_id:CLIENTE_ID});
+  if(error){
+    // Nunca se deja la pantalla en "Cargando..." para siempre: si falla, el
+    // cliente tiene que saber que puede preguntar por WhatsApp.
+    cont.innerHTML = '<div class="msg-full">No pudimos cargar tus reservas ahora.<br>Intenta de nuevo en unos minutos.</div>';
+    return;
+  }
+  const lista = data||[];
+  if(!lista.length){
+    cont.innerHTML = `<div class="card" style="text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">📭</div>
+      <div style="font-size:13px;color:#e8e6e0;margin-bottom:6px">No tienes reservas agendadas</div>
+      <div style="font-size:12px;color:#666;line-height:1.5">Cuando reserves, va a aparecer acá.</div>
+      <button class="btn btn-primary" style="margin-top:14px" onclick="cambiarTabTop('reservar')">Reservar ahora</button>
+    </div>`;
+    return;
+  }
+  cont.innerHTML = lista.map(r=>{
+    const f = new Date(r.fecha+'T12:00:00');
+    const dia = f.toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'});
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="font-size:11px;color:#7c6af7;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${escapeHtml(dia)}</div>
+      <div style="font-size:22px;font-weight:700;color:#e8e6e0;margin:4px 0 8px">${escapeHtml((r.hora||'').slice(0,5))}</div>
+      <div style="font-size:13px;color:#e8e6e0">${escapeHtml(r.servicio||'Servicio')}</div>
+      ${r.profesional?`<div style="font-size:12px;color:#666;margin-top:2px">con ${escapeHtml(r.profesional)}</div>`:''}
+    </div>`;
+  }).join('');
 }
 
 async function initReservar(){

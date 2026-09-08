@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — próximas reservas en el club</title>
+
+<!--
+  Test de "Mis reservas" en club.html y de get_proximas_reservas_publico().
+
+  POR QUÉ EXISTE
+  Esta pantalla vive detrás de un link SIN TOKEN que se comparte por WhatsApp,
+  así que todo lo que muestre queda expuesto a quien tenga la URL. Se rompe en
+  silencio de cuatro maneras:
+
+   1. Que un cliente vea reservas de OTRA persona. Una ficha vieja sin teléfono
+      tiene whatsapp_norm = '', que matchearía contra todas las reservas que
+      tampoco lo tienen. Sin el guardia `c.whatsapp_norm <> ''` eso es una
+      filtración de datos entre clientes, no un bug cosmético.
+
+   2. Que la fórmula de normalización se separe de la de clientes. Son dos
+      columnas generadas independientes: si una cambia, el match deja de
+      funcionar y NO tira ningún error — al cliente simplemente no le aparecen
+      sus reservas, y parece que el sistema las perdió.
+
+   3. Que se use current_date en vez de la hora de Chile. El servidor corre en
+      UTC, que va ADELANTE: a las 21:00 chilenas current_date ya devuelve
+      mañana y esconde la cita de esa misma noche. Es el mismo bug de las
+      noches que ya se arregló del lado del navegador.
+
+   4. Que la RPC devuelva de más. Cada columna que se agregue al returns table
+      es un dato más que se filtra con el link. Hoy son cuatro y ninguna es
+      sensible.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES: la migración como texto y el render de club.html
+  ejecutándose contra un sb falso. No abre Supabase.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) Sacar `and c.whatsapp_norm <> ''` de la RPC
+      -> falla "descarta las fichas sin teléfono".
+   b) Cambiar la zona por current_date
+      -> falla "el corte del día usa la hora de Chile".
+   c) Agregar una columna sensible al returns table (por ejemplo whatsapp)
+      -> falla "solo devuelve fecha, hora, servicio y profesional".
+   d) Sacar el filtro de canceladas
+      -> falla "no muestra las canceladas".
+   e) En club.html, no escapar el servicio en la tarjeta
+      -> falla "escapa lo que pinta con innerHTML".
+   f) Cargar las reservas una sola vez al init en vez de al entrar a la pestaña
+      -> falla "las recarga al entrar a la pestaña".
+   g) Sacar el `not exists` de teléfonos compartidos
+      -> falla "bloquea los teléfonos compartidos entre personas distintas".
+   h) Comparar el nombre COMPLETO en vez del primero
+      -> falla "comparando el PRIMER nombre, no el completo".
+
+  Las ocho se corrieron y las ocho dieron rojo.
+
+  POR QUÉ EL FILTRO COMPARA SOLO EL PRIMER NOMBRE
+  De los 13 grupos de fichas con teléfono repetido en la base real, la mayoría
+  son la MISMA persona duplicada ("Felipe Guerra"/"Felipe", "Jorge Duarte" ×2)
+  y tienen que seguir viendo lo suyo. Solo dos son personas distintas
+  ("Mario"/"Luis Silva", "juan"/"Ian Zuñiga"). El primer nombre separa unos de
+  otros; el nombre completo bloquearía a todos y se vería igual de "seguro"
+  mientras rompe la feature para casi todos. Por eso hay un check que EXIGE que
+  no se compare el nombre entero.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — próximas reservas en el club</h1>
+<p>Verifica que el cliente vea SOLO sus reservas futuras, y que el link sin
+token no exponga nada más que fecha, hora, servicio y profesional.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['club.html','migration_proximas_reservas_club.sql','migration_club_alta_directa.sql'];
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+function extraerFuncionAsync(js, nombre){
+  var f = extraerFuncion(js, nombre);
+  if(!f) return '';
+  return (new RegExp('async\\s+function\\s+'+nombre+'\\s*\\(').test(js) ? 'async ' : '') + f;
+}
+function domFalso(){
+  var campos = {};
+  function nuevo(){ return {value:'', textContent:'', innerHTML:'', style:{},
+                            classList:{toggle:function(){}, contains:function(){return false;}}}; }
+  return { getElementById:function(id){ if(!campos[id])campos[id]=nuevo(); return campos[id]; } };
+}
+
+async function correr(src){
+  var clubHtml = src['club.html'];
+  var js  = sinComentarios(inlineScripts(clubHtml).join('\n'));
+  var sql = sinComentariosSql(src['migration_proximas_reservas_club.sql']);
+  var sqlClub = sinComentariosSql(src['migration_club_alta_directa.sql']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el match por whatsapp normalizado');
+
+  check('agrega whatsapp_norm a reservas',
+        /alter table public\.reservas[\s\S]*add column if not exists whatsapp_norm text/i.test(sql), true);
+  check('es una columna GENERADA, no una normal',
+        /generated always as \(right\(regexp_replace/i.test(sql), true);
+  check('tiene índice por negocio', /idx_reservas_barberia_whatsapp_norm/i.test(sql), true);
+
+  // Las dos fórmulas tienen que ser idénticas salvo la columna de origen. Si
+  // se separan, el match se rompe SIN ningún error visible.
+  function formula(s, col){
+    var m = new RegExp("right\\(regexp_replace\\(coalesce\\("+col+",''\\), '..', '', 'g'\\), 9\\)").exec(s);
+    return m ? m[0].replace(col,'<col>') : null;
+  }
+  var fReservas = formula(sql,'whatsapp_cliente');
+  var fClientes = formula(sqlClub,'whatsapp');
+  check('la fórmula de reservas existe', fReservas !== null, true);
+  check('la fórmula de clientes existe', fClientes !== null, true);
+  check('las dos normalizan IGUAL', fReservas, fClientes);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('lo que la RPC deja ver, y lo que no');
+
+  check('define la RPC', /create or replace function get_proximas_reservas_publico/i.test(sql), true);
+  check('es security definer', /security definer/i.test(sql), true);
+  check('fija el search_path', /set search_path = public/i.test(sql), true);
+  check('exige los DOS ids de scoping',
+        /get_proximas_reservas_publico\(p_barberia_id uuid, p_cliente_id uuid\)/i.test(sql), true);
+
+  // Cada columna de más es un dato más expuesto por un link sin token.
+  var ret = /returns table \(([\s\S]*?)\)\s*language sql/i.exec(sql);
+  var cols = ret ? ret[1].split(',').map(function(c){ return c.trim().split(/\s+/)[0]; }).filter(Boolean) : [];
+  check('solo devuelve fecha, hora, servicio y profesional',
+        cols, ['fecha','hora','servicio','profesional']);
+  check('no devuelve el whatsapp', /whatsapp[^_]/.test((ret||[])[1]||''), false);
+
+  // EL GUARDIA MÁS IMPORTANTE: sin él, un cliente sin teléfono ve las reservas
+  // de todos los demás que tampoco lo tienen.
+  check('descarta las fichas sin teléfono',
+        /and c\.whatsapp_norm <> ''/i.test(sql), true);
+  check('matchea norm contra norm',
+        /r\.whatsapp_norm = c\.whatsapp_norm/i.test(sql), true);
+
+  // Dos personas DISTINTAS con el mismo teléfono se verían las reservas entre
+  // sí, porque `reservas` no tiene cliente_id y el emparejamiento es por
+  // número. En la base real hay dos casos. Ante la duda no se muestra nada.
+  //
+  // Se mira el CUERPO del not exists y no solo su presencia: la primera
+  // versión de estos checks pasaba en verde con la subconsulta neutralizada
+  // por dentro (un `where false` adentro deja el `not exists` intacto a la
+  // vista). Que algo esté escrito no prueba que haga efecto.
+  function bloqueNotExists(s){
+    var i = s.toLowerCase().indexOf('not exists (');
+    if(i === -1) return '';
+    var ini = s.indexOf('(', i), prof = 0;
+    for(var k = ini; k < s.length; k++){
+      if(s[k] === '(') prof++;
+      else if(s[k] === ')'){ prof--; if(prof === 0) return s.slice(ini+1, k); }
+    }
+    return '';
+  }
+  var ne = bloqueNotExists(sql);
+  check('bloquea los teléfonos compartidos entre personas distintas', ne !== '', true);
+  check('  ...mira la tabla de clientes', /select 1 from clientes c2/i.test(ne), true);
+  check('  ...acotado al mismo negocio', /c2\.barberia_id = c\.barberia_id/i.test(ne), true);
+  check('  ...sobre el mismo teléfono', /c2\.whatsapp_norm = c\.whatsapp_norm/i.test(ne), true);
+  check('  ...excluyéndose a sí misma', /c2\.id <> c\.id/i.test(ne), true);
+  check('  ...comparando el PRIMER nombre, no el completo',
+        /lower\(split_part\(trim\(c2\.nombre\), ' ', 1\)\) <> lower\(split_part\(trim\(c\.nombre\), ' ', 1\)\)/i.test(ne), true);
+  // Con el nombre completo, "Felipe Guerra" y "Felipe" —la misma persona con
+  // la ficha duplicada— quedarían bloqueados de más, y son la mayoría de los
+  // casos. Un filtro que tapa todo se ve igual que uno correcto.
+  check('  ...y no por el nombre entero, que bloquearía los duplicados benignos',
+        /c2\.nombre <> c\.nombre/i.test(ne), false);
+  // Un literal falso adentro de una subconsulta de seguridad la desactiva
+  // entera sin que se note leyendo por encima.
+  check('  ...sin nada que la desactive por dentro',
+        /\bfalse\b/i.test(ne), false);
+  check('el corte del día usa la hora de Chile',
+        /now\(\) at time zone 'America\/Santiago'\)::date/i.test(sql), true);
+  check('  ...y no current_date, que en UTC ya es mañana',
+        /r\.fecha >= current_date/i.test(sql), false);
+  check('no muestra las ya cobradas', /r\.procesado = false/i.test(sql), true);
+  check('no muestra las canceladas', /<> 'Cancelada'/i.test(sql), true);
+  check('se concede a anon (el club no tiene login)',
+        /grant execute on function get_proximas_reservas_publico\(uuid, uuid\) to anon/i.test(sql), true);
+  check('no lleva begin;/commit; activos', /^\s*(begin|commit)\s*;/im.test(sql), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la pestaña en club.html');
+
+  check('existe la pestaña', /id="tab-btn-mis"/.test(clubHtml), true);
+  check('y su contenedor', /id="tab-mis"/.test(clubHtml), true);
+  var ct = extraerFuncion(js,'cambiarTabTop');
+  // Al entrar, no al abrir la página: si acaba de reservar en la pestaña de al
+  // lado, al volver tiene que ver la nueva.
+  check('las recarga al entrar a la pestaña',
+        /if\(tab==='mis'\) cargarMisReservas\(\);/.test(ct), true);
+
+  var cm = extraerFuncionAsync(js,'cargarMisReservas');
+  check('llama a la RPC con los dos ids',
+        /get_proximas_reservas_publico'[\s\S]*p_barberia_id:BARBERIA_ID[\s\S]*p_cliente_id:CLIENTE_ID/.test(cm), true);
+  check('escapa lo que pinta con innerHTML',
+        /escapeHtml\(r\.servicio/.test(cm) && /escapeHtml\(r\.profesional\)/.test(cm), true);
+  check('define escapeHtml', /function escapeHtml\(/.test(js), true);
+
+  // Ejecuta el render REAL contra un sb falso: sin datos, con datos y con error.
+  // cargarMisReservas() es ASYNC: hay que esperar la promesa antes de leer el
+  // DOM. Sin el await, el innerHTML se lee mientras todavía dice "Cargando..."
+  // y los seis checks de abajo fallan como si el código estuviera roto.
+  async function correrRender(respuesta){
+    var doc = domFalso();
+    try {
+      await new Function('document','sb','BARBERIA_ID','CLIENTE_ID','cambiarTabTop','escapeHtml',
+        extraerFuncion(js,'escapeHtml') + '\n' + cm + '\nreturn cargarMisReservas();')
+        (doc, { rpc:function(){ return Promise.resolve(respuesta); } }, 'b1','c1',
+         function(){}, null);
+      return doc.getElementById('mis-reservas').innerHTML;
+    } catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+  }
+  var vacio = await correrRender({data:[],error:null});
+  check('sin reservas invita a reservar', /No tienes reservas agendadas/.test(vacio), true);
+  check('  ...y ofrece el botón', /cambiarTabTop\('reservar'\)/.test(vacio), true);
+
+  var conDatos = await correrRender({data:[{fecha:'2026-12-24',hora:'15:30:00',servicio:'Corte',profesional:'Mario'}],error:null});
+  check('muestra la hora sin segundos', /15:30</.test(conDatos), true);
+  check('muestra el servicio', /Corte/.test(conDatos), true);
+  check('muestra el profesional', /con Mario/.test(conDatos), true);
+
+  // Nunca se deja la pantalla colgada en "Cargando...": el cliente tiene que
+  // saber que puede preguntar por otro lado.
+  var conError = await correrRender({data:null,error:{message:'boom'}});
+  check('ante un error avisa en vez de quedarse cargando',
+        /No pudimos cargar tus reservas/.test(conError), true);
+  check('  ...y no filtra el mensaje técnico', /boom/.test(conError), false);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
