@@ -621,7 +621,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card"><div class="card-hdr"><span class="card-title">Resultado IVA mensual</span></div><div id="iva-resultado"></div></div>
   </div>
   <div id="tc-com" style="display:none">
-    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
+    <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
     <tbody id="t-comisiones"></tbody></table></div>
     <div style="margin-top:12px">
       <button class="btn btn-ghost btn-sm" onclick="verComisionesEnReportes()" title="Abre el reporte por profesional con este mismo mes cargado">📊 Ver análisis completo por profesional</button>
@@ -829,7 +829,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="g3" id="rep-prof-metrics"></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Comisiones por profesional</span></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
+      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Ventas brutas</th><th>% Comisión</th><th>Comisión $</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Totales por método de pago</span></div>
@@ -1381,7 +1381,7 @@ if (typeof SUPABASE_URL === 'undefined') {
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Estado global
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[] };
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], reservas:[], servicios:[], profesionals:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[] };
 const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
@@ -1439,19 +1439,13 @@ async function loadAll(){
   S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
-  // Después de las dos fuentes, nunca antes: S.ventas es derivado.
-  construirVentas();
 }
 
 async function loadClientes(){ const {data}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.clientes=data||[]; }
-// Las dos fuentes de S.ventas lo reconstruyen al terminar. Así cualquier
-// recarga puntual —después de un cobro, de editar una cita— lo deja
-// sincronizado sin que haya que acordarse en cada punto de llamada, que es
-// justo la clase de olvido que dejaría el IVA subdeclarado en silencio.
-async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; construirVentas(); }
+async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; }
 async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
 // ═══ ORDEN MANUAL DE SERVICIOS ═══
 // Sube o baja un servicio un lugar. El orden que se guarda es el de la lista
@@ -1492,7 +1486,6 @@ async function loadBarberos(){ const {data}=await sb.from('barberos').select('*'
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
-async function loadCobroProductos(){ const {data}=await sb.from('cobro_productos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.cobroProductos=data||[]; construirVentas(); }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
 // Join embebido de PostgREST (alianza_canjes_select_own ya lo permite, scoped
@@ -1676,83 +1669,25 @@ function actualizarEjemploComision(){
 // Agrupa citas por profesional, sumando ventas y comisión (usa el monto guardado en
 // cada visita si existe -congelado al momento de atenderla-, o lo calcula al vuelo
 // como respaldo para visitas anteriores a esta funcionalidad).
-// Acepta indistintamente visitas o elementos de S.ventas. Los de tipo
-// 'producto' se acumulan APARTE (ventasProd/comisionProd) para que el reporte
-// pueda dividir servicios y productos, que es lo que pidió el dueño: tanto él
-// como el profesional tienen que poder ver de dónde vino cada peso.
-//
-// `citas` cuenta SOLO servicios: un producto no es una cita, y si entrara acá
-// las metas del profesional y el ticket promedio empezarían a mentir.
 function agregarComisionesPorProfesional(citas){
   const byP={};
   citas.forEach(v=>{
     const p=v.barbero_nombre||'Sin asignar';
     const bar=S.barberos.find(b=>b.nombre===p);
-    const esProducto = v.tipo==='producto';
     const pct=bar?.comision_pct||50;
-    // La comisión de producto SIEMPRE viene congelada de la RPC (con
-    // comision_producto_pct, que es otro porcentaje). Nunca se recalcula al
-    // vuelo: hacerlo con el pct de servicios multiplicaría por cinco lo que
-    // el negocio le debe al profesional.
-    const com = esProducto
-      ? (v.comision_monto||0)
-      : (v.comision_monto??calcularComision(v.valor,pct));
+    const com=v.comision_monto??calcularComision(v.valor,pct);
     // La propina va ENTERA al profesional, fuera del reparto: se acumula
     // aparte porque el dueño le debe comisión + propina. Sumarla a la
     // comisión escondería de dónde viene cada peso.
     const prop=v.propina||0;
-    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,propinas:0,ventasProd:0,comisionProd:0,pct,pctProd:bar?.comision_producto_pct||0,servicios:{}};
-    byP[p].propinas+=prop;
-    if(esProducto){
-      byP[p].ventasProd+=(v.valor||0);
-      byP[p].comisionProd+=com;
-      return;
-    }
     const sNombre=resolveServicioInfo(v.servicio).nombre;
-    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;
+    if(!byP[p])byP[p]={citas:0,ventas:0,comision:0,propinas:0,pct,servicios:{}};
+    byP[p].citas++;byP[p].ventas+=(v.valor||0);byP[p].comision+=com;byP[p].propinas+=prop;
     if(!byP[p].servicios[sNombre])byP[p].servicios[sNombre]={cnt:0,val:0,com:0};
     byP[p].servicios[sNombre].cnt++;byP[p].servicios[sNombre].val+=(v.valor||0);byP[p].servicios[sNombre].com+=com;
   });
   return byP;
 }
-// ─── S.ventas: TODO lo que entró de plata, servicios y productos juntos ───
-//
-// POR QUÉ EXISTE
-// `visitas` es la única fuente de ventas del sistema, pero también decide el
-// CONTEO de citas: getCitas() alimenta los niveles del Club VIP y
-// renderProfesionals() las metas. Por eso los productos NO son filas de
-// visitas — un cliente que compra cinco shampoos subiría a Plata sin haberse
-// cortado el pelo nunca. Viven en cobro_productos y acá se unen las dos
-// fuentes SOLO para los lectores que suman dinero.
-//
-// LA REGLA PARA ELEGIR FUENTE, que es lo fácil de equivocar:
-//   · ¿Suma plata?  -> S.ventas   (IVA, ventas del período, comisiones)
-//   · ¿Cuenta citas? -> S.visitas (total de citas, ticket promedio, niveles
-//                                  VIP, historial del cliente, tabla de Citas)
-// Los reportes usaban el MISMO array para las dos cosas: si se les pasa
-// S.ventas entero, "Total citas" empieza a contar shampoos y el ticket
-// promedio se distorsiona sin que nada avise.
-//
-// Funciona porque cobro_productos.valor significa exactamente lo mismo que
-// visitas.valor: bruto con IVA incluido, ya descontado y sin propina. Por eso
-// ivaDe() sirve igual sobre los dos.
-function construirVentas(){
-  S.ventas = [
-    ...S.visitas.map(v=>({
-      fecha:v.fecha, valor:v.valor||0, barbero_nombre:v.barbero_nombre||'',
-      comision_monto:v.comision_monto, propina:v.propina||0,
-      servicio:v.servicio, cliente_id:v.cliente_id, tipo:'servicio'
-    })),
-    ...S.cobroProductos.map(p=>({
-      fecha:p.fecha, valor:p.valor||0, barbero_nombre:p.barbero_nombre||'',
-      // La comisión de producto ya viene congelada de la RPC, con el
-      // porcentaje propio del profesional. No se recalcula acá.
-      comision_monto:p.comision_monto||0, propina:0,
-      producto_id:p.producto_id, cantidad:p.cantidad, tipo:'producto'
-    }))
-  ];
-}
-
 function getCitas(cid){ return S.visitas.filter(v=>v.cliente_id===cid).length; }
 function getUltCita(cid){ const vs=S.visitas.filter(v=>v.cliente_id===cid).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)); return vs[0]?.fecha||null; }
 function diasDesde(f){ if(!f)return 9999; return Math.floor((Date.now()-new Date(f))/86400000); }
@@ -3578,8 +3513,7 @@ function deltaHtml(cur,prev,nombrePrev){
   return `<span class="${cls}">${arrow} ${Math.abs(pct)}%</span> vs ${nombrePrev}`;
 }
 
-// Los charts de ingresos van sobre S.ventas: son plata, no citas.
-function sumValorDia(fechaStr){ return S.ventas.filter(v=>v.fecha===fechaStr).reduce((s,v)=>s+(v.valor||0),0); }
+function sumValorDia(fechaStr){ return S.visitas.filter(v=>v.fecha===fechaStr).reduce((s,v)=>s+(v.valor||0),0); }
 
 function buildIngresosBuckets(periodo){
   const hoy=new Date(); hoy.setHours(0,0,0,0);
@@ -3601,8 +3535,8 @@ function buildIngresosBuckets(periodo){
   if(periodo==='anio'){
     const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const y=hoy.getFullYear();
-    const curData=meses.map((_,i)=>S.ventas.filter(v=>v.fecha&&v.fecha.startsWith(y+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
-    const prevData=meses.map((_,i)=>S.ventas.filter(v=>v.fecha&&v.fecha.startsWith((y-1)+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
+    const curData=meses.map((_,i)=>S.visitas.filter(v=>v.fecha&&v.fecha.startsWith(y+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
+    const prevData=meses.map((_,i)=>S.visitas.filter(v=>v.fecha&&v.fecha.startsWith((y-1)+'-'+String(i+1).padStart(2,'0'))).reduce((s,v)=>s+(v.valor||0),0));
     return {labels:meses,curData,prevData,curLabel:String(y),prevLabel:String(y-1),tipo:'bar'};
   }
   const y=hoy.getFullYear(), m=hoy.getMonth();
@@ -3706,24 +3640,13 @@ function renderChartNuevos(range){
 
 function renderDashboard(){
   const range=getPeriodoRange(DASH_PERIODO);
-  // vCur/vPrev CUENTAN citas; wCur/wPrev SUMAN plata. Son arrays distintos a
-  // propósito: si el conteo saliera de S.ventas, cada producto vendido contaría
-  // como una cita más y el ticket promedio se hundiría sin que nada lo avise.
   const vCur=S.visitas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo));
   const vPrev=S.visitas.filter(v=>enRango(v.fecha,range.prevFrom,range.prevTo));
-  const wCur=S.ventas.filter(v=>enRango(v.fecha,range.curFrom,range.curTo));
-  const wPrev=S.ventas.filter(v=>enRango(v.fecha,range.prevFrom,range.prevTo));
-  // Ventas e IVA incluyen productos: es plata que entró.
-  const ventas=wCur.reduce((s,v)=>s+(v.valor||0),0);
-  const ventasPrev=wPrev.reduce((s,v)=>s+(v.valor||0),0);
+  const ventas=vCur.reduce((s,v)=>s+(v.valor||0),0);
+  const ventasPrev=vPrev.reduce((s,v)=>s+(v.valor||0),0);
   const iva=ivaDe(ventas);
-  // El ticket sigue midiendo SOLO servicios sobre citas (decisión del dueño):
-  // así no cambia de significado ni deja de ser comparable con los meses
-  // anteriores el día que se empiecen a vender productos.
-  const ventasServ=vCur.reduce((s,v)=>s+(v.valor||0),0);
-  const ventasServPrev=vPrev.reduce((s,v)=>s+(v.valor||0),0);
-  const ticket=vCur.length?Math.round(ventasServ/vCur.length):0;
-  const ticketPrev=vPrev.length?Math.round(ventasServPrev/vPrev.length):0;
+  const ticket=vCur.length?Math.round(ventas/vCur.length):0;
+  const ticketPrev=vPrev.length?Math.round(ventasPrev/vPrev.length):0;
   const nuevosClientes=S.clientes.filter(c=>{const f=c.created_at?c.created_at.split('T')[0]:(c.fecha_registro||null);return f&&enRango(f,range.curFrom,range.curTo);}).length;
 
   const vips=S.clientes.filter(c=>getNivel(getCitas(c.id))!=='Sin nivel').length;
@@ -3758,9 +3681,7 @@ function renderDashboard(){
 
   // Chart profesionals (período seleccionado)
   const byBar={};
-  // Ventas por profesional: incluye lo que vendió en productos, porque es
-  // plata que entró por él.
-  wCur.forEach(v=>{byBar[v.barbero_nombre]=(byBar[v.barbero_nombre]||0)+(v.valor||0);});
+  vCur.forEach(v=>{byBar[v.barbero_nombre]=(byBar[v.barbero_nombre]||0)+(v.valor||0);});
   const maxBar=Math.max(...Object.values(byBar),1);
   document.getElementById('d-chart-bar').innerHTML=Object.keys(byBar).length?Object.entries(byBar).map(([b,v])=>`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px">
@@ -4388,12 +4309,8 @@ function renderCostos(){
   </tr>`).join('');
   // IVA — lee el mismo mes que la tabla de arriba. Antes llamaba a mesActual()
   // por su cuenta: con el selector marcando julio, esto seguía mostrando agosto.
-  //
-  // Va sobre S.ventas y NO sobre S.visitas: el débito fiscal incluye la venta
-  // de productos. Con S.visitas quedaría subdeclarado, y es la clase de error
-  // que no da ningún síntoma hasta que lo encuentra el SII.
   const mes=mf;
-  const vMes=S.ventas.filter(v=>v.fecha?.startsWith(mes));
+  const vMes=S.visitas.filter(v=>v.fecha?.startsWith(mes));
   // Suma primero y redondea una sola vez al final, igual que antes: si se
   // redondeara por visita los totales no cuadrarían con lo ya declarado.
   const vBruto=vMes.reduce((s,v)=>s+(v.valor||0),0);
@@ -4405,45 +4322,23 @@ function renderCostos(){
   document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${cMes.filter(c=>c.iva>0).length} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
   // Comisiones — mismo mes que el resto de la pantalla, por lo mismo.
-  // Sobre S.ventas para que la comisión de productos entre en lo que el
-  // negocio le debe al profesional, dividida en su propia columna.
   const mes2=mf;
-  const byB=agregarComisionesPorProfesional(S.ventas.filter(v=>v.fecha?.startsWith(mes2)));
+  const byB=agregarComisionesPorProfesional(S.visitas.filter(v=>v.fecha?.startsWith(mes2)));
   document.getElementById('t-comisiones').innerHTML=Object.entries(byB).map(([b,d])=>{
     const com=Math.round(d.comision);
-    const comP=Math.round(d.comisionProd||0);
     const prop=Math.round(d.propinas||0);
     // "Para negocio" no resta la propina porque nunca la sumó: `ventas` es la
     // suma de `valor`, que no la incluye. La propina es plata de paso.
-    // Sí incluye los productos: es lo que le queda al negocio de TODO lo que
-    // entró, después de las dos comisiones.
-    const paraNegocio=(d.ventas+(d.ventasProd||0))-com-comP;
-    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td>
-    <td data-label="Servicios">${fmt(d.ventas)}</td>
-    <td data-label="Productos">${d.ventasProd>0?fmt(d.ventasProd):'—'}</td>
-    <td data-label="% Comisión">${d.pct}%</td>
-    <td data-label="Comisión servicios" class="gold">${fmt(com)}</td>
-    <td data-label="Comisión productos" class="gold">${comP>0?fmt(comP):'—'}</td>
-    <td data-label="Propinas">${prop>0?fmt(prop):'—'}</td>
-    <td data-label="Total a pagarle" style="font-weight:600">${fmt(com+comP+prop)}</td>
-    <td data-label="Para negocio">${fmt(paraNegocio)}</td></tr>`;
-  }).join('')||`<tr><td colspan="10" class="empty">Sin ventas en ${nombreMesLargo(mf)}.</td></tr>`;
+    return`<tr><td data-label="Profesional">${b}</td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td></tr>`;
+  }).join('')||`<tr><td colspan="8" class="empty">Sin ventas en ${nombreMesLargo(mf)}.</td></tr>`;
 }
 
 function renderProfesionals(){
   const mes=mesActual();
   document.getElementById('cards-profesionals').innerHTML=S.barberos.map(b=>{
-    // vs CUENTA citas (para la meta); ws SUMA plata (ventas y comisión). Un
-    // producto vendido no acerca al profesional a su meta de citas, pero sí
-    // suma a lo que el negocio le debe.
     const vs=S.visitas.filter(v=>v.barbero_nombre===b.nombre&&v.fecha?.startsWith(mes));
-    const ws=S.ventas.filter(v=>v.barbero_nombre===b.nombre&&v.fecha?.startsWith(mes));
-    const ventas=ws.reduce((s,v)=>s+(v.valor||0),0);
-    // La comisión de producto ya viene congelada con su propio porcentaje: el
-    // respaldo al vuelo con comision_pct solo aplica a servicios.
-    const com=Math.round(ws.reduce((s,v)=>s+(v.tipo==='producto'
-      ? (v.comision_monto||0)
-      : (v.comision_monto??calcularComision(v.valor,b.comision_pct||50))),0));
+    const ventas=vs.reduce((s,v)=>s+(v.valor||0),0);
+    const com=Math.round(vs.reduce((s,v)=>s+(v.comision_monto??calcularComision(v.valor,b.comision_pct||50)),0));
     const meta=b.meta_citas||80;
     const pct=Math.min(100,(vs.length/meta*100));
     const avatar=b.foto_url
@@ -4899,26 +4794,6 @@ function getRepCitas(mesIni, mesFin, profNombre){
   });
 }
 
-// Gemelas de las de citas pero sobre S.ventas, para lo que suma PLATA. Existen
-// aparte y no reemplazan a las otras porque los reportes usaban el mismo array
-// para el dinero y para el conteo: con una sola fuente, "Total citas" pasaría a
-// contar productos y el ticket promedio se hundiría sin ningún síntoma.
-function getRepVentas(mesIni, mesFin, profNombre){
-  return S.ventas.filter(v=>{
-    const mes=v.fecha?.slice(0,7);
-    const mOk=(!mesIni||mes>=mesIni)&&(!mesFin||mes<=mesFin);
-    const pOk=!profNombre||v.barbero_nombre===profNombre;
-    return mOk&&pOk;
-  });
-}
-function getRepVentasRango(desde, hasta, profNombre){
-  return S.ventas.filter(v=>{
-    const fOk=(!desde||v.fecha>=desde)&&(!hasta||v.fecha<=hasta);
-    const pOk=!profNombre||v.barbero_nombre===profNombre;
-    return fOk&&pOk;
-  });
-}
-
 // Comisiones por profesional: filtra por fecha completa (no solo mes) y por el campo real barbero_nombre.
 function getRepCitasRango(desde, hasta, profNombre){
   return S.visitas.filter(v=>{
@@ -4944,11 +4819,9 @@ function renderReporteResumen(){
   const mesIni=document.getElementById('rep-mes-ini').value;
   const mesFin=document.getElementById('rep-mes-fin').value;
   const citas=getRepCitas(mesIni,mesFin);
-  // Ventas e IVA sobre TODO lo que entró; citas, ticket y clientes únicos solo
-  // sobre las visitas. Un producto no es una cita ni tiene cliente propio.
-  const ventas=getRepVentas(mesIni,mesFin).reduce((s,v)=>s+(v.valor||0),0);
+  const ventas=citas.reduce((s,v)=>s+(v.valor||0),0);
   const iva=ivaDe(ventas);
-  const ticket=citas.length?Math.round(citas.reduce((s,v)=>s+(v.valor||0),0)/citas.length):0;
+  const ticket=citas.length?Math.round(ventas/citas.length):0;
   const clientes=new Set(citas.map(v=>v.cliente_id)).size;
 
   document.getElementById('rep-metrics').innerHTML=`
@@ -5000,12 +4873,10 @@ function renderReporteProfesional(){
   const prof=document.getElementById('rep-sel-prof').value;
   const citas=getRepCitasRango(desde,hasta,prof||null);
 
-  // By profesional stats (usa el monto de comisión guardado por visita, con respaldo al vuelo).
-  // Sobre las VENTAS para que la comisión de productos entre en lo que se le
-  // debe a cada uno; el agregador separa servicios de productos por dentro.
-  const byP=agregarComisionesPorProfesional(getRepVentasRango(desde,hasta,prof||null));
+  // By profesional stats (usa el monto de comisión guardado por visita, con respaldo al vuelo)
+  const byP=agregarComisionesPorProfesional(citas);
 
-  const totalV=getRepVentasRango(desde,hasta,prof||null).reduce((s,v)=>s+(v.valor||0),0);
+  const totalV=citas.reduce((s,v)=>s+(v.valor||0),0);
   const totalC=citas.length;
   document.getElementById('rep-prof-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Total citas</div><div class="mc-val">${totalC}</div></div>
@@ -5014,21 +4885,10 @@ function renderReporteProfesional(){
 
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
-    const comP=Math.round(d.comisionProd||0);
     const prop=Math.round(d.propinas||0);
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
-    const paraNegocio=(d.ventas+(d.ventasProd||0))-com-comP;
-    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td>
-    <td data-label="Servicios">${fmt(d.ventas)}</td>
-    <td data-label="Productos">${d.ventasProd>0?fmt(d.ventasProd):'—'}</td>
-    <td data-label="% Comisión">${d.pct}%</td>
-    <td data-label="Comisión servicios" class="gold">${fmt(com)}</td>
-    <td data-label="Comisión productos" class="gold">${comP>0?fmt(comP):'—'}</td>
-    <td data-label="Propinas">${prop>0?fmt(prop):'—'}</td>
-    <td data-label="Total a pagarle" style="font-weight:600">${fmt(com+comP+prop)}</td>
-    <td data-label="Para negocio">${fmt(paraNegocio)}</td>
-    <td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
-  }).join('')||'<tr><td colspan="11" class="empty">Sin datos en este rango</td></tr>';
+    return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td><td data-label="Ventas brutas">${fmt(d.ventas)}</td><td data-label="% Comisión">${d.pct}%</td><td data-label="Comisión $" class="gold">${fmt(com)}</td><td data-label="Propinas">${prop>0?fmt(prop):'—'}</td><td data-label="Total a pagarle" style="font-weight:600">${fmt(com+prop)}</td><td data-label="Para negocio">${fmt(d.ventas-com)}</td><td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
+  }).join('')||'<tr><td colspan="9" class="empty">Sin datos en este rango</td></tr>';
 
   // Totales por método de pago, mismo rango ya filtrado que el resto de esta pestaña.
   const byPago={};
@@ -5155,7 +5015,7 @@ function exportarExcel(tipo){
     const prof=document.getElementById('rep-sel-prof')?.value||'';
     const citas=getRepCitasRango(desde,hasta,prof||null);
     if(!citas.length){notify('Sin datos para exportar','warn');return;}
-    const byP=agregarComisionesPorProfesional(getRepVentasRango(desde,hasta,prof||null));
+    const byP=agregarComisionesPorProfesional(citas);
     const resumen=Object.entries(byP).map(([p,d])=>{
       const com=Math.round(d.comision);
       const prop=Math.round(d.propinas||0);
