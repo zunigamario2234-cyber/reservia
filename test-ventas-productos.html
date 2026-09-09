@@ -367,6 +367,37 @@ async function correr(src){
         capt.args.p_total_declarado, 28000);
 
   // ───────────────────────────────────────────────────────────────
+  titulo('el dueño puede configurar la comisión de productos');
+
+  // Sin esto la feature queda inconfigurable: la columna existe con default 0,
+  // el cálculo funciona, pero NINGÚN profesional cobraría nunca comisión de
+  // producto y el dueño no tendría cómo cambiarlo salvo por SQL.
+  check('el modal tiene el campo', /id="ba-com-prod"/.test(appHtml), true);
+  check('las dos comisiones están etiquetadas por separado',
+        /% Comisión servicios/.test(appHtml) && /% Comisión productos/.test(appHtml), true);
+  check('  ...y ya no hay un "% Comisión" a secas que se confunda',
+        /<label>% Comisión<\/label>/.test(appHtml), false);
+  check('la ayuda explica el default', /En 0 no se paga comisión/.test(appHtml), true);
+
+  // Al CREAR arranca en 0: nadie empieza a cobrar comisión de producto sin que
+  // el dueño lo decida.
+  check('un profesional nuevo arranca en 0',
+        /getElementById\('ba-com-prod'\)\.value=0;/.test(js), true);
+  // Al EDITAR se usa ?? y no ||: un 0 guardado es un valor legítimo y el más
+  // frecuente, así que con || se vería como "no configurado" y saltaría a otro.
+  check('al editar respeta el 0 guardado',
+        /getElementById\('ba-com-prod'\)\.value=b\.comision_producto_pct\?\?0;/.test(js), true);
+
+  var gp = extraerFuncion(js,'guardarProfesional');
+  check('el payload lo guarda', /comision_producto_pct:parseFloat/.test(gp), true);
+  // EL CHECK QUE PROTEGE PLATA: acá el fallback es 0, no 50. Un campo vacío o
+  // mal tipeado tiene que caer en "no paga comisión", que es el lado seguro;
+  // con el patrón del campo de servicios, un borrado accidental regalaría la
+  // mitad de cada producto vendido.
+  check('un valor inválido cae en 0, no en 50',
+        /comision_producto_pct:parseFloat\(document\.getElementById\('ba-com-prod'\)\.value\)\|\|0/.test(gp), true);
+
+  // ───────────────────────────────────────────────────────────────
   titulo('la migración');
 
   check('crea cobro_productos', /create table if not exists public\.cobro_productos/i.test(sql), true);

@@ -1224,7 +1224,13 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="ba-nombre" type="text" placeholder="Carlos"></div><div class="fg"><label>WhatsApp *</label><input id="ba-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
     <div class="fg"><label>Especialidad</label><input id="ba-especialidad" type="text" placeholder="Ej: Barbero, Estilista, Colorista"></div>
-    <div class="fr"><div class="fg"><label>% Comisión</label><input id="ba-com" type="number" value="50" min="0" max="100"></div><div class="fg"><label>Meta citas/mes</label><input id="ba-meta" type="number" value="80" min="0"></div></div>
+    <!-- Dos comisiones distintas y etiquetadas como tales: son dos
+         porcentajes sobre cosas distintas, y confundirlos configura mal la
+         plata de otro. El de productos arranca en 0 a propósito. -->
+    <div class="fr"><div class="fg"><label>% Comisión servicios</label><input id="ba-com" type="number" value="50" min="0" max="100"></div><div class="fg"><label>Meta citas/mes</label><input id="ba-meta" type="number" value="80" min="0"></div></div>
+    <div class="fg"><label>% Comisión productos</label><input id="ba-com-prod" type="number" value="0" min="0" max="100">
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">En 0 no se paga comisión por vender productos. Es otro porcentaje que el de servicios.</div>
+    </div>
     <div class="fg"><label>Correo</label><input id="ba-email" type="email" placeholder="profesional@correo.com"></div>
     <div class="fg"><label>Bio (se muestra en el link de reservas)</label><textarea id="ba-bio" rows="2" placeholder="Ej: Especialista en fade y barba, 8 años de experiencia."></textarea></div>
     <div class="fg">
@@ -1968,7 +1974,7 @@ function initModal(id){
     document.getElementById('co-fecha').value=hoy;
     document.getElementById('co-iva-si').textContent='Sí ('+ivaPctNegocio()+'%)';
   }
-  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
+  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
@@ -2581,6 +2587,9 @@ function editarProfesional(id){
   document.getElementById('ba-email').value=b.email||'';
   document.getElementById('ba-especialidad').value=b.especialidad||'';
   document.getElementById('ba-com').value=b.comision_pct||50;
+  // Sin `||0`: un 0 guardado es un valor legítimo y frecuente (es el default),
+  // así que se usa ?? para no confundirlo con "no configurado".
+  document.getElementById('ba-com-prod').value=b.comision_producto_pct??0;
   document.getElementById('ba-meta').value=b.meta_citas||80;
   document.getElementById('ba-bio').value=b.bio||'';
   document.getElementById('ba-puede-pagos').checked=!!b.puede_procesar_pagos;
@@ -2687,6 +2696,10 @@ async function guardarProfesional(){
     especialidad:document.getElementById('ba-especialidad').value.trim()||null,
     bio:document.getElementById('ba-bio').value.trim()||null,
     comision_pct:parseFloat(document.getElementById('ba-com').value)||50,
+    // `||0` en vez de `||50`: acá el 0 ES el default querido, así que un campo
+    // vacío o inválido cae en "no paga comisión de producto", que es el lado
+    // seguro. Con el patrón de arriba, un borrado accidental regalaría plata.
+    comision_producto_pct:parseFloat(document.getElementById('ba-com-prod').value)||0,
     meta_citas:parseInt(document.getElementById('ba-meta').value)||80,
     puede_procesar_pagos:document.getElementById('ba-puede-pagos').checked,
     ...(foto_url&&{foto_url})
