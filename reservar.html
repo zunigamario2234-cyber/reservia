@@ -250,7 +250,21 @@ let ULTIMO_NOMBRE = '';
 let SALTAR_PROFESIONAL = false;
 let CLIENTE_CLUB_ID = null; // id del cliente ya resuelto (buscar_o_crear_cliente_club) — para armar el link de Club VIP en la pantalla de éxito
 
-const HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
+// Jornada por defecto para el día que el negocio todavía no configuró.
+//
+// Antes esto era una lista literal de 18 horas cada 30 minutos, con el hueco
+// del almuerzo escrito a mano. Con el intervalo configurable esa lista pasaba a
+// mentir: un negocio en bloques de 60 igual veía las y media en los días que no
+// tuviera configurados. Ahora se genera con el MISMO paso que el resto de la
+// grilla, así que no hay dos verdades.
+//
+// Los valores dan exactamente la lista vieja cuando el paso es 30 — eso lo
+// comprueba test-reserva-publica.html contra la grilla real, no contra una copia.
+const BASE_APERTURA='09:00', BASE_CIERRE='19:00', BASE_COL_INI='13:00', BASE_COL_FIN='14:00';
+function horariosBase(){
+  return generarSlots(timeToMin(BASE_APERTURA), timeToMin(BASE_CIERRE),
+                      timeToMin(BASE_COL_INI), timeToMin(BASE_COL_FIN));
+}
 
 function timeToMin(t){ if(!t)return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
 function minToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
@@ -285,30 +299,55 @@ function ahoraEnChile(){
   }
 }
 
-// Cada cuántos minutos arranca un slot. Es el único lugar donde vive el paso de
-// la grilla: cuando el intervalo se haga configurable por negocio, se cambia acá.
-const PASO_MIN = 30;
+// Cada cuántos minutos PUEDE EMPEZAR una cita. Lo define el negocio en
+// Config → Horario (barberias.intervalo_min) y se asigna en init(), antes de
+// que se pinte cualquier grilla.
+//
+// Se declara con el 30 puesto a propósito, y no vacío: 30 es lo que corrió
+// hardcodeado hasta ahora, así que si la columna llegara vacía la página sigue
+// funcionando igual que siempre en vez de quedarse sin horarios.
+let PASO_MIN = 30;
+
+// El valor guardado, con red. La base ya lo limita a 30/45/60 con un CHECK
+// (migration_intervalo_horarios.sql); esta guarda es para el caso en que la
+// columna no llegue —negocio viejo, error de red, columna sin permiso— y sobre
+// todo para que un 0 o un negativo no cuelguen el navegador: la grilla se arma
+// con `for(m=ini; m<fin; m+=PASO_MIN)` y un paso <= 0 es un bucle infinito.
+//
+// El rango es amplio a propósito y NO repite la lista del CHECK: si algún día
+// se agrega "cada 20 minutos", se toca la base y el <select> del panel, no esto.
+function intervaloDe(negocio){
+  const n = Math.round(Number(negocio?.intervalo_min));
+  return (Number.isFinite(n) && n >= 5 && n <= 120) ? n : 30;
+}
+
+// El único lugar donde se recorre la jornada. Lo usan los dos caminos —el
+// horario configurado y el de respaldo— justamente para que no puedan separarse:
+// mientras el respaldo era una lista literal, cambiar el paso arreglaba uno y
+// dejaba el otro en 30.
+// La colación es opcional: si las dos horas vienen nulas, el negocio atiende
+// corrido y no se excluye nada.
+function generarSlots(ini, fin, colIni, colFin){
+  if(ini==null||fin==null) return [];
+  const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
+  const out=[];
+  for(let m=ini; m<fin; m+=PASO_MIN) if(!enColacion(m)) out.push(minToTime(m));
+  return out;
+}
 
 // Slots para un día de la semana según horario_negocio. Si el negocio no
-// configuró ese día (tabla vacía o falta esa fila puntual), se usa
-// HORARIOS_BASE como antes — para no dejar sin horarios a negocios que todavía
-// no configuraron su horario.
-// La colación es opcional: si las dos columnas vienen nulas, el negocio atiende
-// corrido y no se excluye nada.
+// configuró ese día (tabla vacía o falta esa fila puntual), se usa la jornada
+// por defecto — para no dejar sin horarios a negocios que todavía no
+// configuraron su horario.
 //
 // OJO: esto devuelve dónde PUEDE EMPEZAR una cita, no dónde cabe. Que una cita
 // de 60 min quepa a esa hora lo decide cabeEnLaJornada().
 function slotsParaDia(diaSemana){
   const cfg = B.horario[diaSemana];
-  if(!cfg) return HORARIOS_BASE.slice();
+  if(!cfg) return horariosBase();
   if(cfg.cerrado) return [];
-  const ini=timeToMin(cfg.hora_apertura), fin=timeToMin(cfg.hora_cierre);
-  if(ini==null||fin==null) return [];
-  const colIni=timeToMin(cfg.hora_colacion_inicio), colFin=timeToMin(cfg.hora_colacion_fin);
-  const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
-  const out=[];
-  for(let m=ini; m<fin; m+=PASO_MIN) if(!enColacion(m)) out.push(minToTime(m));
-  return out;
+  return generarSlots(timeToMin(cfg.hora_apertura), timeToMin(cfg.hora_cierre),
+                      timeToMin(cfg.hora_colacion_inicio), timeToMin(cfg.hora_colacion_fin));
 }
 
 // ¿Se pisan los intervalos [aIni,aIni+aDur) y [bIni,bIni+bDur)?
@@ -320,7 +359,7 @@ function seSolapan(aIni,aDur,bIni,bDur){
 }
 
 // Hora de cierre del día en minutos, o null si el negocio no configuró ese día
-// (ahí manda HORARIOS_BASE y no hay cierre que consultar).
+// (ahí manda la jornada por defecto y no hay cierre que consultar).
 function cierreDelDia(diaSemana){
   const cfg = B.horario[diaSemana];
   if(!cfg || cfg.cerrado) return null;
@@ -332,9 +371,9 @@ function cierreDelDia(diaSemana){
 //
 //  - Todas las unidades de la grilla que la cita ocupa tienen que existir en el
 //    día. Eso cubre la colación (un servicio de 60 min a las 13:30 con almuerzo
-//    a las 14:00 hoy se ofrece, porque solo se mira el inicio) y cubre el
-//    fallback HORARIOS_BASE, que no tiene hora_cierre que consultar sino un
-//    hueco implícito de 12:30 a 14:00.
+//    a las 14:00 hoy se ofrece, porque solo se mira el inicio) y cubre la
+//    jornada por defecto, que no tiene hora_cierre que consultar sino un
+//    hueco de colación propio.
 //
 //  - Y el final no puede pasarse del cierre configurado. Hace falta aparte
 //    porque con un cierre no alineado a la grilla —19:20 con pasos de 30— la
@@ -441,6 +480,10 @@ async function init(){
   const {data:barb} = await sb.from('barberias').select('*').eq('id',BARBERIA_ID).single();
   if(!barb){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:#555">Negocio no encontrada.</div>'; return; }
   B.barberia = barb;
+  // Antes de cualquier render de grilla. renderHorarios() recién corre cuando
+  // el cliente elige un día, así que acá va sobradísimo de tiempo — pero el
+  // orden importa: si se asignara después, la primera grilla saldría en 30.
+  PASO_MIN = intervaloDe(barb);
   renderHeaderNegocio(barb);
   configurarManifestDinamico(barb);
   document.title = 'Reservar — ' + barb.nombre;

@@ -281,7 +281,14 @@ let CLIENTE_NOMBRE = '';
 let RB = { servicios:[], profesionales:[], reservasOcupadas:[], horario:{}, bloqueos:[] };
 let RSEL = { servicio:null, profesional:null, fecha:null, hora:null };
 let rCalMes = new Date();
-const R_HORARIOS_BASE = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30'];
+// Gemelas de BASE_APERTURA/BASE_CIERRE/BASE_COL_INI/BASE_COL_FIN y
+// horariosBase() en reservar.html — ver ahí por qué la jornada por defecto se
+// genera en vez de listarse. Si se toca una, hay que tocar la otra.
+const R_BASE_APERTURA='09:00', R_BASE_CIERRE='19:00', R_BASE_COL_INI='13:00', R_BASE_COL_FIN='14:00';
+function rHorariosBase(){
+  return rGenerarSlots(rTimeToMin(R_BASE_APERTURA), rTimeToMin(R_BASE_CIERRE),
+                       rTimeToMin(R_BASE_COL_INI), rTimeToMin(R_BASE_COL_FIN));
+}
 
 function rTimeToMin(t){ if(!t)return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
 function rMinToTime(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
@@ -305,23 +312,32 @@ function rAhoraEnChile(){
   }
 }
 
-// Gemelas de PASO_MIN, slotsParaDia(), seSolapan(), cierreDelDia(),
-// cabeEnLaJornada() y bloqueoChocaCon() en reservar.html — ver ahí el detalle de
-// por qué el cálculo va por rangos y no por hora exacta. Si se toca una, hay
-// que tocar la otra.
-const R_PASO_MIN = 30;
+// Gemelas de PASO_MIN, intervaloDe(), generarSlots(), slotsParaDia(),
+// seSolapan(), cierreDelDia(), cabeEnLaJornada() y bloqueoChocaCon() en
+// reservar.html — ver ahí el detalle de por qué el cálculo va por rangos y no
+// por hora exacta, y por qué el paso se declara con el 30 puesto. Si se toca
+// una, hay que tocar la otra.
+let R_PASO_MIN = 30;
 
-function rSlotsParaDia(diaSemana){
-  const cfg = RB.horario[diaSemana];
-  if(!cfg) return R_HORARIOS_BASE.slice();
-  if(cfg.cerrado) return [];
-  const ini=rTimeToMin(cfg.hora_apertura), fin=rTimeToMin(cfg.hora_cierre);
+function rIntervaloDe(negocio){
+  const n = Math.round(Number(negocio?.intervalo_min));
+  return (Number.isFinite(n) && n >= 5 && n <= 120) ? n : 30;
+}
+
+function rGenerarSlots(ini, fin, colIni, colFin){
   if(ini==null||fin==null) return [];
-  const colIni=rTimeToMin(cfg.hora_colacion_inicio), colFin=rTimeToMin(cfg.hora_colacion_fin);
   const enColacion = m => colIni!=null && colFin!=null && m>=colIni && m<colFin;
   const out=[];
   for(let m=ini; m<fin; m+=R_PASO_MIN) if(!enColacion(m)) out.push(rMinToTime(m));
   return out;
+}
+
+function rSlotsParaDia(diaSemana){
+  const cfg = RB.horario[diaSemana];
+  if(!cfg) return rHorariosBase();
+  if(cfg.cerrado) return [];
+  return rGenerarSlots(rTimeToMin(cfg.hora_apertura), rTimeToMin(cfg.hora_cierre),
+                       rTimeToMin(cfg.hora_colacion_inicio), rTimeToMin(cfg.hora_colacion_fin));
 }
 
 function rSeSolapan(aIni,aDur,bIni,bDur){
@@ -706,12 +722,20 @@ function configurarManifestDinamico(barb){
 async function init(){
   if(!BARBERIA_ID || !CLIENTE_ID){ mostrarError('Este link no es válido. Falta información en la URL.'); return; }
 
-  // direccion y telefono los pide el modal de ubicación. Se suman a la lista
-  // en vez de pasar a select('*') a propósito: este select acotado es lo que
-  // hay que imitar, no al revés.
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono').eq('id',BARBERIA_ID).single();
+  // direccion y telefono los pide el modal de ubicación; intervalo_min, la
+  // grilla de la pestaña Reservar. Se suman a la lista en vez de pasar a
+  // select('*') a propósito: este select acotado es lo que hay que imitar, no
+  // al revés.
+  //
+  // ⚠ Pedir columnas por nombre tiene un costo: si una no existe en la base,
+  // PostgREST devuelve 400 y ACÁ SE VE COMO "no encontramos este negocio", que
+  // no se parece en nada al problema real. Por eso la migración de intervalo_min
+  // tuvo que ir ANTES que este código, no después.
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono,intervalo_min').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
+  // Antes de initReservar(), que arma la grilla.
+  R_PASO_MIN = rIntervaloDe(barb);
   document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
   document.title = 'Mi Club VIP — ' + barb.nombre;
   configurarManifestDinamico(barb);

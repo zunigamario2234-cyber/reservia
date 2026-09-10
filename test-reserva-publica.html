@@ -147,34 +147,44 @@ function ahoraCon(fuente, nombre, isoUtc){
 var NOMBRES = {
   'reservar.html': {
     ahora:'ahoraEnChile',  anticip:'ANTICIPACION_MIN',
-    estado:'B',  base:'HORARIOS_BASE',   paso:'PASO_MIN',
+    estado:'B',  basePref:'',  paso:'PASO_MIN',
     fns:['timeToMin','minToTime','seSolapan','cierreDelDia','cabeEnLaJornada',
-         'bloqueoChocaCon','slotsParaDia']
+         'bloqueoChocaCon','generarSlots','horariosBase','slotsParaDia','intervaloDe']
   },
   'club.html': {
     ahora:'rAhoraEnChile', anticip:'R_ANTICIPACION_MIN',
-    estado:'RB', base:'R_HORARIOS_BASE', paso:'R_PASO_MIN',
+    estado:'RB', basePref:'R_', paso:'R_PASO_MIN',
     fns:['rTimeToMin','rMinToTime','rSeSolapan','rCierreDelDia','rCabeEnLaJornada',
-         'rBloqueoChocaCon','rSlotsParaDia']
+         'rBloqueoChocaCon','rGenerarSlots','rHorariosBase','rSlotsParaDia','rIntervaloDe']
   }
 };
 
-// El HORARIOS_BASE real del archivo, no una copia: el fallback tiene un hueco
-// implícito de almuerzo (12:30 → 14:00) y una copia desactualizada probaría otra
-// cosa que la que corre en producción.
-function horariosBase(js, nombre){
-  var m = new RegExp(nombre + '\\s*=\\s*\\[([^\\]]*)\\]').exec(js);
-  if(!m) return null;
-  var out = [], re = /'([^']+)'/g, x;
-  while((x = re.exec(m[1])) !== null) out.push(x[1]);
-  return out;
+// Los nombres con que este archivo llama a las funciones, en el MISMO orden que
+// cfg.fns. Las dos páginas son gemelas con prefijos distintos y acá se las trata
+// igual.
+var CANON = ['timeToMin','minToTime','seSolapan','cierreDelDia','cabeEnLaJornada',
+             'bloqueoChocaCon','generarSlots','horariosBase','slotsParaDia','intervaloDe'];
+
+// Las cuatro horas de la jornada por defecto, leídas del archivo real. Antes acá
+// se extraía el array literal HORARIOS_BASE; ahora esa lista se genera, así que
+// lo que se lee son las constantes que la definen. El criterio no cambió: si
+// alguien mueve la apertura en producción, este test tiene que verlo.
+function constanteHora(js, nombre){
+  var m = new RegExp(nombre + "\\s*=\\s*'([^']+)'").exec(js);
+  return m ? m[1] : null;
 }
 
 // Reconstruye las funciones REALES del archivo en un entorno controlado, para
 // poder correr el cálculo contra horarios y reservas inventados. Sin esto solo
 // se puede comprobar que el código "menciona" la duración, no que la use bien —
 // y esa diferencia es justamente la que dejó reservas encimadas en producción.
-function armarSandbox(js, cfg, horario){
+//
+// `pasoForzado` es lo que hace probable el intervalo configurable. En el archivo
+// el paso ya no es un literal: se declara en 30 y lo pisa init() con lo que
+// diga barberias.intervalo_min. Acá se inyecta el valor que se quiere probar y
+// se corre la MISMA grilla — sin esto, "cada 45 minutos" no estaría probado en
+// ninguna parte y el primero en descubrirlo sería un cliente.
+function armarSandbox(js, cfg, horario, pasoForzado){
   var fuentes = [];
   for(var i = 0; i < cfg.fns.length; i++){
     var f = extraerFuncion(js, cfg.fns[i]);
@@ -183,21 +193,26 @@ function armarSandbox(js, cfg, horario){
   }
   var mPaso = new RegExp('(?:const|let|var)\\s+' + cfg.paso + '\\s*=\\s*(\\d+)').exec(js);
   if(!mPaso) return null;
-  var base = horariosBase(js, cfg.base);
-  if(!base) return null;
-  var src = 'var ' + cfg.paso + ' = ' + mPaso[1] + ';\n' +
+  var paso = (pasoForzado === undefined) ? Number(mPaso[1]) : pasoForzado;
+
+  var nombres = ['BASE_APERTURA','BASE_CIERRE','BASE_COL_INI','BASE_COL_FIN'], decls = '';
+  for(var j = 0; j < nombres.length; j++){
+    var nom = cfg.basePref + nombres[j];
+    var val = constanteHora(js, nom);
+    if(val === null) return null;
+    decls += 'var ' + nom + " = '" + val + "';\n";
+  }
+
+  var src = 'var ' + cfg.paso + ' = ' + paso + ';\n' + decls +
             fuentes.join('\n') +
             '\nreturn [' + cfg.fns.join(',') + '];';
   var api;
   try {
-    api = new Function(cfg.estado, cfg.base, src)({ horario: horario }, base);
+    api = new Function(cfg.estado, src)({ horario: horario });
   } catch(e){ return null; }
-  return {
-    paso: Number(mPaso[1]),
-    timeToMin: api[0], minToTime: api[1], seSolapan: api[2],
-    cierreDelDia: api[3], cabeEnLaJornada: api[4],
-    bloqueoChocaCon: api[5], slotsParaDia: api[6]
-  };
+  var out = { paso: paso, pasoDeclarado: Number(mPaso[1]) };
+  for(var q = 0; q < CANON.length; q++) out[CANON[q]] = api[q];
+  return out;
 }
 
 // Horario de prueba. Los días existen para cubrir casos distintos, no para
@@ -213,7 +228,7 @@ var HORARIO_PRUEBA = {
   // Domingo cerrado.
   0: { hora_apertura:'09:00', hora_cierre:'19:00',
        hora_colacion_inicio:null, hora_colacion_fin:null, cerrado:true }
-  // El jueves (4) NO existe a propósito: es el fallback a HORARIOS_BASE.
+  // El jueves (4) NO existe a propósito: es el fallback a la jornada por defecto.
 };
 
 function correr(src){
@@ -400,8 +415,8 @@ function correr(src){
       check('cierre 19:20 — uno de 30 min a las 19:00 se pasaría, y se rechaza',
             S.cabeEnLaJornada(t('19:00'), 30, cMie, uMie), false);
 
-      //    FALLBACK HORARIOS_BASE (día sin fila configurada). No hay hora_cierre
-      //    que consultar, pero la lista trae su propio hueco de almuerzo.
+      //    FALLBACK a la jornada por defecto (día sin fila configurada). No hay
+      //    hora_cierre que consultar, pero trae su propio hueco de almuerzo.
       check('sin horario configurado hay slots igual', S.slotsParaDia(JUE).length > 0, true);
       check('sin horario configurado no hay cierre que consultar',
             S.cierreDelDia(JUE), null);
@@ -434,6 +449,93 @@ function correr(src){
             mar.indexOf('14:00') === -1 && mar.indexOf('14:30') === -1, true);
       check('la grilla del martes termina antes del cierre',
             mar[mar.length-1], '18:30');
+
+      // 9. INTERVALO CONFIGURABLE (barberias.intervalo_min).
+      //
+      //    El paso ya no está escrito a mano: se declara en 30 y lo pisa init()
+      //    con lo que diga la base. El 30 declarado no es decorativo — es lo
+      //    que corre si la columna no llegara — así que se comprueba aparte.
+      check('el paso declarado en el archivo sigue siendo 30', S.pasoDeclarado, 30);
+
+      //    Que generar la jornada por defecto no cambió lo que se veía: en 30
+      //    minutos tiene que dar EXACTAMENTE la lista que estuvo hardcodeada
+      //    hasta ahora. Esta copia literal es a propósito: es la lista vieja
+      //    congelada, no una copia de la nueva. Si fuera una copia de la nueva,
+      //    las dos se moverían juntas y el check no probaría nada.
+      var LISTA_VIEJA = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30',
+                         '14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30',
+                         '18:00','18:30'];
+      check('la jornada por defecto en 30 min da la lista de siempre',
+            S.horariosBase().join(','), LISTA_VIEJA.join(','));
+
+      //    La guarda de lo que llega de la base. El caso peligroso no es un
+      //    valor raro: es el 0 y el negativo, que cuelgan el navegador, porque
+      //    la grilla se arma con `for(m=ini; m<fin; m+=PASO)`.
+      check('intervalo 45 se respeta',              S.intervaloDe({intervalo_min:45}), 45);
+      check('intervalo 60 se respeta',              S.intervaloDe({intervalo_min:60}), 60);
+      check('intervalo que llega como texto sirve', S.intervaloDe({intervalo_min:'45'}), 45);
+      check('sin la columna vuelve a 30',           S.intervaloDe({}), 30);
+      check('negocio nulo vuelve a 30',             S.intervaloDe(null), 30);
+      check('intervalo 0 NO se usa: colgaría la grilla', S.intervaloDe({intervalo_min:0}), 30);
+      check('intervalo negativo NO se usa',         S.intervaloDe({intervalo_min:-30}), 30);
+      check('intervalo absurdo NO se usa',          S.intervaloDe({intervalo_min:5000}), 30);
+      check('intervalo basura vuelve a 30',         S.intervaloDe({intervalo_min:'media hora'}), 30);
+    }
+
+    // 10. La MISMA grilla real, corrida con los otros dos pasos que el dueño
+    //     puede elegir. Esto es lo que hace que el intervalo esté probado y no
+    //     solo escrito: sin esto, 45 y 60 se verían por primera vez en
+    //     producción.
+    var S45 = armarSandbox(js, N, HORARIO_PRUEBA, 45);
+    var S60 = armarSandbox(js, N, HORARIO_PRUEBA, 60);
+    check('se puede reconstruir la grilla con otro paso',
+          S45 !== null && S60 !== null, true);
+
+    if(S45 && S60){
+      var MAR2 = 2, JUE2 = 4;
+      var t45 = S45.timeToMin;
+      var g45 = S45.slotsParaDia(MAR2);   // martes: 09:00–19:00, colación 14:00–15:00
+
+      check('paso 45 — la grilla empieza a las 09:00', g45[0], '09:00');
+      check('paso 45 — la segunda hora es 09:45, no 09:30', g45[1], '09:45');
+      //     Con paso 45 la colación pisa una sola unidad, las 14:15. Que no esté
+      //     es lo que prueba que la exclusión se calcula y no viene de una lista.
+      check('paso 45 — las 14:15 caen en la colación y no se ofrecen',
+            g45.indexOf('14:15'), -1);
+      check('paso 45 — las 15:00 vuelven a ofrecerse',
+            g45.indexOf('15:00') !== -1, true);
+      check('paso 45 — la última hora ofrecida es 18:45', g45[g45.length-1], '18:45');
+
+      //     Y acá está el caso que solo aparece cuando el paso NO divide la
+      //     jornada: las 18:45 existen como unidad, pero un servicio de 30 min
+      //     ahí termina 19:15 y el negocio cierra 19:00. Sin el chequeo contra
+      //     el cierre, la grilla ofrecería una hora imposible.
+      var u45 = {}, i45;
+      for(i45=0;i45<g45.length;i45++) u45[t45(g45[i45])] = true;
+      var uni45 = { has:function(m){ return u45[m] === true; } };
+      check('paso 45 — un servicio de 30 min a las 18:45 se pasa del cierre',
+            S45.cabeEnLaJornada(t45('18:45'), 30, S45.cierreDelDia(MAR2), uni45), false);
+
+      var g60 = S60.slotsParaDia(MAR2);
+      check('paso 60 — la grilla empieza a las 09:00', g60[0], '09:00');
+      check('paso 60 — la segunda hora es 10:00', g60[1], '10:00');
+      check('paso 60 — no se ofrece ninguna media hora',
+            g60.join(',').indexOf(':30') === -1, true);
+      check('paso 60 — las 14:00 caen en la colación y no se ofrecen',
+            g60.indexOf('14:00'), -1);
+      check('paso 60 — la última hora ofrecida es 18:00', g60[g60.length-1], '18:00');
+
+      //     El día SIN configurar tiene que seguir el mismo paso. Mientras la
+      //     jornada por defecto era una lista literal cada 30 minutos, un
+      //     negocio en bloques de 60 veía las y media justo en los días que no
+      //     había configurado — que son los que más se olvidan.
+      var b60 = S60.horariosBase();
+      check('paso 60 — la jornada por defecto tampoco tiene medias horas',
+            b60.join(',').indexOf(':30') === -1, true);
+      check('paso 60 — el día sin configurar usa el mismo paso',
+            S60.slotsParaDia(JUE2).join(','), b60.join(','));
+      check('paso 45 — la jornada por defecto arranca 09:00 y sigue 09:45',
+            S45.horariosBase().slice(0,2).join(','), '09:00,09:45');
     }
 
     //    La consulta tiene que pedir la duración, y ya no filtrar por procesado:

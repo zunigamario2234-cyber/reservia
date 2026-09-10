@@ -708,6 +708,15 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card" style="margin-top:14px">
       <div class="card-hdr"><span class="card-title">Horario del negocio</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Define los días y horarios en que atiendes. El link público de reservas solo va a ofrecer horarios dentro de este rango.</div>
+      <div class="fg" style="margin-bottom:16px">
+        <label>Cada cuánto puede empezar una cita</label>
+        <select id="cfg-intervalo">
+          <option value="30">Cada 30 minutos</option>
+          <option value="45">Cada 45 minutos</option>
+          <option value="60">Cada 60 minutos (1 hora)</option>
+        </select>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6">Son las horas que ven tus clientes en tu link de reservas: con 60 minutos ven 09:00, 10:00, 11:00… y no las medias horas.<br>No cambia las reservas ya tomadas ni la agenda de este panel.</div>
+      </div>
       <div id="horario-dias"></div>
       <button class="btn btn-primary" id="btn-guardar-horario" style="margin-top:10px" onclick="guardarHorarioNegocio()">Guardar horario</button>
     </div>
@@ -3220,6 +3229,17 @@ async function guardarHorarioNegocio(){
     if(ini>=fin){ notify(DIAS_SEMANA[i]+': la colación tiene que empezar antes de terminar','warn'); return; }
   }
   btn.disabled=true;btn.textContent='Guardando...';
+  // El intervalo va en barberias, no en horario_negocio, así que son DOS
+  // escrituras. No son atómicas entre sí y no hace falta que lo sean: son dos
+  // ajustes independientes, y si una falla el dueño ve el error y vuelve a
+  // apretar. Va primero por ser la chica: si hubiera un problema de permisos
+  // sobre la columna, salta antes de reescribir los siete días.
+  const intervalo=parseInt(document.getElementById('cfg-intervalo').value,10)||30;
+  const {error:errInt}=await sb.from('barberias').update({intervalo_min:intervalo}).eq('id',S.barberia.id);
+  if(errInt){notify(errInt.message,'err');btn.disabled=false;btn.textContent='Guardar horario';return;}
+  // Releer en vez de asignar a mano: si la base hubiera rechazado o ajustado el
+  // valor, S.barberia tiene que reflejar lo GUARDADO, no lo que se mandó.
+  await sb.from('barberias').select('*').eq('id',S.barberia.id).single().then(({data})=>{ if(data) S.barberia=data; });
   const payload=DIAS_SEMANA.map((_,i)=>{
     const cerrado=document.getElementById('hn-cerrado-'+i).checked;
     return {
@@ -4804,6 +4824,12 @@ function renderConfig(){
     document.getElementById('cfg-setmore').value=S.barberia.link_setmore||'';
     document.getElementById('cfg-reviews').value=S.barberia.link_reviews||'';
     document.getElementById('cfg-modo-comision').value=S.barberia.modo_comision||'total';
+    // El <select> vive en la tarjeta del horario pero la columna es de
+    // barberias, así que se rellena acá con el resto de la configuración del
+    // negocio y lo guarda guardarHorarioNegocio(). Está FUERA de #horario-dias
+    // a propósito: renderHorarioNegocio() reescribe ese div entero después de
+    // guardar, y adentro el valor elegido se perdería.
+    document.getElementById('cfg-intervalo').value=String(S.barberia.intervalo_min||30);
     actualizarEjemploComision();
     document.getElementById('cfg-link-reservas').value=location.origin+'/reservar.html?id='+S.barberia.id;
     // Sin await a propósito: pide el token por RPC y rellena el campo cuando

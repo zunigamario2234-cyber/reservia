@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — intervalo de horarios configurable</title>
+
+<!--
+  Test de barberias.intervalo_min: cada cuánto puede empezar una cita en el
+  link público de reservas.
+
+  POR QUÉ EXISTE, Y POR QUÉ NO ALCANZA CON test-reserva-publica.html
+  Esa suite ya prueba el CÁLCULO: recompila las funciones reales y corre la
+  grilla en 30, 45 y 60. Lo que NO puede probar, por construcción, es el
+  cableado — porque le inyecta el paso a mano en vez de dejar que el archivo lo
+  saque de la base. Todo lo de abajo pasaría verde allá y estaría roto en
+  producción:
+
+   1. Que init() no asigne el paso. La grilla quedaría clavada en 30 para
+      siempre y NADIE vería un error: el dueño elige "cada 60 minutos", el
+      panel lo guarda bien, y el link público sigue mostrando las y media.
+
+   2. Que el paso vuelva a declararse `const`. Ahí sí hay error, pero peor:
+      la asignación tira TypeError, corta init() y la página se queda sin
+      calendario. Un `const` de más y el link de reservas deja de funcionar.
+
+   3. Que club.html no pida intervalo_min en su select. Pide columnas por
+      nombre, así que PostgREST devuelve 400 y la pantalla dice "No encontramos
+      este negocio" — un mensaje que no se parece en nada al problema real.
+
+   4. Que las opciones del <select> del panel y el CHECK de la base se
+      separen. El dueño elige 45, la base lo rechaza, y le aparece un error de
+      constraint en crudo que no le dice nada.
+
+   5. Que el <select> quede DENTRO de #horario-dias. renderHorarioNegocio()
+      reescribe ese div entero después de guardar, así que el campo
+      desaparecería de la pantalla al primer guardado.
+
+   6. Que la jornada por defecto vuelva a ser una lista literal cada 30
+      minutos. Se usa en los días que el negocio no configuró — los que más se
+      olvidan — y ahí el intervalo elegido se ignoraría en silencio.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES como texto: la migración, las dos páginas públicas y el
+  panel. No abre Supabase.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) En reservar.html, borrar `PASO_MIN = intervaloDe(barb);`
+      -> falla "reservar.html — init() asigna el paso desde el negocio".
+   b) En reservar.html, volver a `const PASO_MIN`
+      -> falla "reservar.html — el paso se declara con let, no const".
+   c) En club.html, sacar intervalo_min del select de barberias
+      -> falla "club.html — su select de barberias PIDE intervalo_min".
+   d) En club.html, asignar R_PASO_MIN DESPUÉS de initReservar()
+      -> falla "club.html — el paso se asigna antes de armar la grilla".
+   e) En app.html, cambiar una opción del <select> a 90
+      -> falla "las opciones del panel son exactamente las que acepta la base".
+   f) En la migración, sacar el 45 del CHECK
+      -> falla la misma comprobación, desde el otro lado.
+   g) En app.html, mover el <select> adentro de #horario-dias
+      -> falla "el campo vive FUERA del div que se reescribe al guardar".
+   h) En app.html, guardar el intervalo en horario_negocio en vez de barberias
+      -> falla "guardarHorarioNegocio() escribe el intervalo en barberias".
+   i) En reservar.html, cambiar BASE_COL_INI a otra hora
+      -> falla "las dos páginas usan la MISMA jornada por defecto".
+   j) En app.html, agregar intervalo_min al update de guardarConfig()
+      -> falla "guardarConfig() NO toca el intervalo".
+   k) En la migración, sacar el `not null default 30`
+      -> falla "la columna nace en 30 y no admite nulos".
+
+  Las once se corrieron y las once dieron rojo.
+
+  LO QUE ESTE TEST DEJA AFUERA A PROPÓSITO
+  La agenda del panel (AG_SLOT_MIN) sigue en bloques de 30 y eso está decidido:
+  tiene su propio cálculo de posiciones en píxeles. Hay un check que lo EXIGE,
+  para que el día que alguien la cablee al intervalo tenga que venir acá
+  primero y se acuerde del cálculo en píxeles antes de romperlo.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — intervalo de horarios configurable</h1>
+<p>Verifica el cableado de barberias.intervalo_min: que el paso salga de la base
+y llegue a las dos páginas públicas, y que el panel y el CHECK no se separen.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['reservar.html','club.html','app.html','migration_intervalo_horarios.sql'];
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function jsDe(html){ return sinComentarios(inlineScripts(html).join('\n')); }
+
+// El cuerpo de una función por nombre, cerrando las llaves de verdad. Sirve
+// para preguntar por el ORDEN de lo que pasa adentro, que es la mitad de lo
+// que este archivo vino a comprobar: "asigna el paso" y "lo asigna antes de
+// pintar la grilla" son dos cosas distintas.
+function cuerpoDe(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// ¿`antes` aparece antes que `despues` dentro de este texto? Devuelve false si
+// falta cualquiera de los dos, para que un renombre no dé verde por ausencia.
+function ocurreAntes(txt, antes, despues){
+  var a = txt.indexOf(antes), b = txt.indexOf(despues);
+  return a !== -1 && b !== -1 && a < b;
+}
+
+// Las cuatro horas de la jornada por defecto, tal como están escritas en el
+// archivo. Se comparan entre las dos páginas: son gemelas y separarse no daría
+// ningún error, solo dos negocios viendo horarios distintos según por dónde
+// entre el cliente.
+function jornadaBase(js, pref){
+  var out = {}, nombres = ['BASE_APERTURA','BASE_CIERRE','BASE_COL_INI','BASE_COL_FIN'];
+  for(var i = 0; i < nombres.length; i++){
+    var m = new RegExp(pref + nombres[i] + "\\s*=\\s*'([^']+)'").exec(js);
+    out[nombres[i]] = m ? m[1] : null;
+  }
+  return out;
+}
+
+// El objeto que se le pasa a un .update() sobre una tabla, cerrando las llaves
+// de verdad. Mirar por ventana fija se comería la llamada siguiente.
+function updatesDeTabla(js, tabla){
+  var re = new RegExp("from\\('" + tabla + "'\\)\\s*\\.update\\(\\{", 'g'), m, out = [];
+  while((m = re.exec(js)) !== null){
+    var i = re.lastIndex - 1, prof = 0, fin = -1;
+    for(var k = i; k < js.length; k++){
+      if(js[k] === '{') prof++;
+      else if(js[k] === '}'){ prof--; if(prof === 0){ fin = k; break; } }
+    }
+    out.push(fin === -1 ? '' : js.slice(i, fin + 1));
+  }
+  return out;
+}
+
+function correr(src){
+  var jsRes  = jsDe(src['reservar.html']);
+  var jsClub = jsDe(src['club.html']);
+  var jsApp  = jsDe(src['app.html']);
+  var htmlApp = src['app.html'];
+  var sql = sinComentariosSql(src['migration_intervalo_horarios.sql']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la migración');
+
+  check('agrega intervalo_min a barberias',
+        /alter table barberias\s+add column if not exists intervalo_min/i.test(sql), true);
+  check('la columna nace en 30 y no admite nulos',
+        /intervalo_min smallint not null default 30/i.test(sql), true);
+  check('define el CHECK con nombre propio',
+        /add constraint barberias_intervalo_min_valido/i.test(sql), true);
+  // Repetible: correrla dos veces no puede fallar por el constraint ya puesto.
+  check('el CHECK se puede volver a correr sin fallar',
+        /drop constraint if exists barberias_intervalo_min_valido/i.test(sql), true);
+
+  // La razón por la que esta migración PUEDE llevar begin;/commit;. Si algún
+  // día se le agrega una función, el dollar-quoting hace que el SQL Editor de
+  // Supabase falle en silencio devolviendo éxito, y el envoltorio pasa de ser
+  // correcto a ser una trampa.
+  check('no define funciones, así que el begin/commit es seguro',
+        /create\s+(or\s+replace\s+)?function/i.test(sql), false);
+  check('va envuelta en una transacción',
+        /^\s*begin\s*;/m.test(sql) && /^\s*commit\s*;/m.test(sql), true);
+
+  var mChk = /check \(intervalo_min in \(([^)]*)\)\)/i.exec(sql);
+  var permitidos = mChk ? mChk[1].split(',').map(function(x){ return x.trim(); }) : [];
+  check('los valores permitidos son 30, 45 y 60', permitidos, ['30','45','60']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('reservar.html — el paso sale de la base');
+
+  // `let` y no `const`: init() lo reasigna. Con const eso tira TypeError,
+  // corta init() y la página se queda sin calendario.
+  check('el paso se declara con let, no const',
+        /\blet\s+PASO_MIN\s*=\s*30\s*;/.test(jsRes), true);
+  check('  ...y no quedó ningún const PASO_MIN',
+        /\bconst\s+PASO_MIN\b/.test(jsRes), false);
+  check('existe la guarda intervaloDe()',
+        /function intervaloDe\s*\(/.test(jsRes), true);
+
+  var initRes = cuerpoDe(jsRes, 'init');
+  check('se puede leer el init()', initRes !== '', true);
+  check('init() asigna el paso desde el negocio',
+        /PASO_MIN\s*=\s*intervaloDe\(/.test(initRes), true);
+  // El orden importa: asignarlo después de pintar dejaría la primera grilla
+  // en 30 y sería invisible salvo que alguien mire el primer día que abre.
+  check('el paso se asigna antes de armar la grilla',
+        ocurreAntes(initRes, 'PASO_MIN = intervaloDe(', 'renderCalendario('), true);
+  // select('*') ya trae la columna. Si alguien acotara este select por
+  // performance, tiene que acordarse de incluirla.
+  check('lee el negocio con todas sus columnas',
+        /from\('barberias'\)\.select\('\*'\)/.test(jsRes) ||
+        /from\('barberias'\)\.select\('[^']*intervalo_min/.test(jsRes), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('club.html — el gemelo');
+
+  check('el paso se declara con let, no const',
+        /\blet\s+R_PASO_MIN\s*=\s*30\s*;/.test(jsClub), true);
+  check('  ...y no quedó ningún const R_PASO_MIN',
+        /\bconst\s+R_PASO_MIN\b/.test(jsClub), false);
+  check('existe la guarda rIntervaloDe()',
+        /function rIntervaloDe\s*\(/.test(jsClub), true);
+
+  // ESTE es el que rompe fuerte: club.html pide columnas por nombre, así que
+  // una que falte devuelve 400 y la pantalla dice "no encontramos este
+  // negocio", que manda a buscar el problema al lado equivocado.
+  check('su select de barberias PIDE intervalo_min',
+        /from\('barberias'\)\.select\('[^']*intervalo_min[^']*'\)/.test(jsClub), true);
+
+  var initClub = cuerpoDe(jsClub, 'init');
+  check('se puede leer el init()', initClub !== '', true);
+  check('init() asigna el paso desde el negocio',
+        /R_PASO_MIN\s*=\s*rIntervaloDe\(/.test(initClub), true);
+  check('el paso se asigna antes de armar la grilla',
+        ocurreAntes(initClub, 'R_PASO_MIN = rIntervaloDe(', 'initReservar('), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la jornada por defecto se genera, no se lista');
+
+  // Era una lista literal de 18 horas cada 30 minutos, duplicada en los dos
+  // archivos. Con el intervalo configurable esa lista pasaba a mentir en los
+  // días sin configurar.
+  var arrayDeHoras = /\[\s*'\d\d:\d\d'\s*,\s*'\d\d:\d\d'/;
+  check('reservar.html ya no tiene una lista literal de horarios',
+        arrayDeHoras.test(jsRes), false);
+  check('club.html ya no tiene una lista literal de horarios',
+        arrayDeHoras.test(jsClub), false);
+  check('reservar.html la genera con el paso vigente',
+        /function horariosBase\s*\(\)\s*\{\s*return generarSlots\(/.test(jsRes), true);
+  check('club.html la genera con el paso vigente',
+        /function rHorariosBase\s*\(\)\s*\{\s*return rGenerarSlots\(/.test(jsClub), true);
+
+  // Un solo recorrido para los dos caminos. Mientras el respaldo era una lista
+  // aparte, cambiar el paso arreglaba uno y dejaba el otro en 30.
+  check('reservar.html recorre la jornada en un solo lugar',
+        (jsRes.match(/for\s*\(\s*let m\s*=\s*ini;\s*m\s*<\s*fin;\s*m\s*\+=\s*PASO_MIN\s*\)/g) || []).length, 1);
+  check('club.html recorre la jornada en un solo lugar',
+        (jsClub.match(/for\s*\(\s*let m\s*=\s*ini;\s*m\s*<\s*fin;\s*m\s*\+=\s*R_PASO_MIN\s*\)/g) || []).length, 1);
+
+  var baseRes  = jornadaBase(jsRes, '');
+  var baseClub = jornadaBase(jsClub, 'R_');
+  check('reservar.html define las cuatro horas de la jornada por defecto',
+        baseRes, {BASE_APERTURA:'09:00', BASE_CIERRE:'19:00',
+                  BASE_COL_INI:'13:00', BASE_COL_FIN:'14:00'});
+  check('las dos páginas usan la MISMA jornada por defecto', baseClub, baseRes);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el panel — Config → Horario');
+
+  check('existe el selector de intervalo',
+        /<select id="cfg-intervalo">/.test(htmlApp), true);
+
+  var mSel = /<select id="cfg-intervalo">([\s\S]*?)<\/select>/.exec(htmlApp);
+  var opciones = [];
+  if(mSel){
+    var re = /value="(\d+)"/g, x;
+    while((x = re.exec(mSel[1])) !== null) opciones.push(x[1]);
+  }
+  // LA comprobación que evita la divergencia silenciosa: el dueño elige una
+  // opción que la base rechaza y le salta un error de constraint en crudo.
+  check('las opciones del panel son exactamente las que acepta la base',
+        opciones, permitidos);
+
+  // renderHorarioNegocio() reescribe #horario-dias entero después de guardar.
+  // Adentro, el campo desaparecería de la pantalla al primer guardado.
+  check('el campo vive FUERA del div que se reescribe al guardar',
+        /<div id="horario-dias"><\/div>/.test(htmlApp), true);
+  check('  ...y está antes de ese div',
+        ocurreAntes(htmlApp, 'id="cfg-intervalo"', 'id="horario-dias"'), true);
+
+  check('renderConfig() lo rellena con lo guardado',
+        /getElementById\('cfg-intervalo'\)\.value\s*=\s*String\(S\.barberia\.intervalo_min/.test(jsApp), true);
+
+  var guardarHorario = cuerpoDe(jsApp, 'guardarHorarioNegocio');
+  check('se puede leer guardarHorarioNegocio()', guardarHorario !== '', true);
+  check('lee el valor del selector',
+        /getElementById\('cfg-intervalo'\)\.value/.test(guardarHorario), true);
+  // La columna es de barberias. Mandarla en el upsert de horario_negocio la
+  // rechazaría con un error de columna inexistente.
+  check('guardarHorarioNegocio() escribe el intervalo en barberias',
+        updatesDeTabla(guardarHorario, 'barberias').some(function(o){
+          return /intervalo_min\s*:/.test(o);
+        }), true);
+  check('  ...y NO lo mete en el upsert de horario_negocio',
+        /horario_negocio'\)\.upsert[\s\S]*intervalo_min/.test(guardarHorario), false);
+
+  // Dos puertas escribiendo la misma columna es el patrón que ya dejó dos
+  // cobros distintos en este mismo repo. Acá hay una sola, a propósito.
+  var guardarConfig = cuerpoDe(jsApp, 'guardarConfig');
+  check('se puede leer guardarConfig()', guardarConfig !== '', true);
+  check('guardarConfig() NO toca el intervalo',
+        /intervalo_min/.test(guardarConfig), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('lo que queda afuera a propósito');
+
+  // La agenda del panel sigue en bloques de 30: tiene su propio cálculo de
+  // posiciones en píxeles (AG_PX_MIN) y arrastrarla no aporta nada, porque el
+  // dueño carga la hora a mano y nunca estuvo limitado a la grilla.
+  check('la agenda del panel sigue en bloques de 30',
+        /AG_SLOT_MIN\s*=\s*30/.test(jsApp), true);
+  check('  ...y no se cableó al intervalo del negocio',
+        /AG_SLOT_MIN\s*=\s*[^;]*intervalo_min/.test(jsApp), false);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
