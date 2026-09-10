@@ -3374,7 +3374,15 @@ function cobroProrratear(){
 function cobroRenderLineas(){
   const L=COBRO_CTX.lineas;
   const rep=cobroProrratear();
-  // La × solo con 2+: quitar la última dejaría un cobro sin nada que cobrar.
+  // Se puede quitar una reserva si quedan OTRAS reservas, o si hay productos
+  // que sostengan el cobro —eso lo convierte en una venta suelta, que es
+  // válida—. Lo único que no puede quedar es un cobro vacío.
+  //
+  // Tiene que decir lo MISMO que cobroQuitarLinea(): si el botón aparece y la
+  // función no deja, o al revés, el dueño ve una cosa y pasa otra. Ya ocurrió:
+  // la función se actualizó para permitirlo y este render siguió pidiendo 2+
+  // líneas, así que la × no aparecía nunca en ese caso.
+  const puedeQuitar = L.length>1 || (COBRO_CTX.productos||[]).length>0;
   document.getElementById('cob-lineas').innerHTML=L.map((l,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg2);border-radius:8px;margin-bottom:6px;font-size:12px">
       <div style="flex:1;min-width:0">
@@ -3382,7 +3390,7 @@ function cobroRenderLineas(){
         <span style="color:var(--text3);font-size:11px">${fmtHora(l.hora)} · ${escHtml(l.profesional||'—')}</span>
       </div>
       <span style="white-space:nowrap">${l.lista>0?fmt(l.lista):'<span style="color:#e0a030">sin precio</span>'}</span>
-      ${L.length>1?`<button type="button" class="btn btn-danger btn-sm" onclick="cobroQuitarLinea('${l.reservaId}')" title="Quitar del cobro">×</button>`:''}
+      ${puedeQuitar?`<button type="button" class="btn btn-danger btn-sm" onclick="cobroQuitarLinea('${l.reservaId}')" title="Quitar del cobro">×</button>`:''}
     </div>`).join('');
 
   // Las líneas de producto se ven distintas de las de reserva: llevan cantidad
@@ -3490,16 +3498,30 @@ function cobroAgregarProducto(id){
   if(ya)ya.cantidad++;
   else COBRO_CTX.productos.push({productoId:id,nombre:p.nombre,codigo:p.codigo||'',precio:p.precio_venta||0,cantidad:1,profesional:prof});
   closeM('m-cobro-prod');
-  cobroRenderLineas();
-  cobroRecalcular();
+  cobroTrasCambiarProductos();
   notify('Producto agregado ✓');
+}
+
+// Después de tocar los productos: en una VENTA SUELTA el precio final sale de
+// ellos, así que hay que recalcularlo — si no, queda en blanco y el modal
+// muestra el descuento entero y total $0, que es lo que pasaba al agregar el
+// primer producto desde Inventario.
+//
+// Con servicios NO se sincroniza: ahí el precio final es el de los servicios y
+// reescribirlo pisaría un monto que el dueño pudo haber editado a mano.
+function cobroTrasCambiarProductos(){
+  if(!COBRO_CTX.lineas.length){
+    cobroSincronizarPrecio();
+  } else {
+    cobroRenderLineas();
+    cobroRecalcular();
+  }
 }
 
 function cobroQuitarProducto(i){
   if(!COBRO_CTX||!COBRO_CTX.productos)return;
   COBRO_CTX.productos.splice(i,1);
-  cobroRenderLineas();
-  cobroRecalcular();
+  cobroTrasCambiarProductos();
 }
 
 function cobroCambiarCantidad(i,delta){
@@ -3514,8 +3536,7 @@ function cobroCambiarCantidad(i,delta){
   const otras=COBRO_CTX.productos.filter((x,j)=>j!==i&&x.productoId===l.productoId).reduce((s,x)=>s+x.cantidad,0);
   if(otras+nueva>(p?.stock||0)){ notify(`Solo hay ${p?.stock||0} de ${l.nombre}`,'warn'); return; }
   l.cantidad=nueva;
-  cobroRenderLineas();
-  cobroRecalcular();
+  cobroTrasCambiarProductos();
 }
 
 function abrirAgregarReserva(){
@@ -3676,13 +3697,19 @@ function cobroRecalcular(){
   const desc=Math.max(0,listaTotal-valor);
   const prodTotal=rep.prodTotal||0;
   document.getElementById('cob-desc-monto').textContent=desc>0?'−'+fmt(desc):'';
-  // El total incluye los productos, que van a precio lleno.
-  document.getElementById('cob-total').textContent=fmt(valor+prodTotal+propina);
+  // El MISMO total que se le declara a la RPC, no uno recalculado acá. Sumar
+  // valor+prodTotal a mano duplicaba el cobro en una venta suelta, donde el
+  // precio final YA son los productos: un producto de $9.000 mostraba $18.000
+  // en pantalla mientras la RPC recibía $9.000. Si estos dos números pueden
+  // discrepar, alguno miente.
+  document.getElementById('cob-total').textContent=fmt(rep.totalCobro);
 
   let html=`Servicios ${fmt(valor)} · IVA incluido ${fmt(ivaDe(valor))} · neto ${fmt(netoDe(valor))}`;
+  // En una venta suelta los servicios son $0 y esa línea no aporta nada.
+  if(rep.soloProductos)html='';
   if(prodTotal>0){
-    html+=`<br>Productos ${fmt(prodTotal)} · IVA incluido ${fmt(ivaDe(prodTotal))}`+
-          (desc>0?' — a precio lleno: el descuento se aplica solo a los servicios':'');
+    html+=(html?'<br>':'')+`Productos ${fmt(prodTotal)} · IVA incluido ${fmt(ivaDe(prodTotal))}`+
+          (desc>0&&!rep.soloProductos?' — a precio lleno: el descuento se aplica solo a los servicios':'');
   }
   // Con más de una línea se muestra el reparto ANTES de confirmar. Es plata de
   // otro: el profesional tiene que poder ver cuánto le tocó y por qué, y quien
@@ -3698,11 +3725,15 @@ function cobroRecalcular(){
     });
     // La comisión de producto usa comision_producto_pct, que arranca en 0: si
     // el dueño no lo configuró, acá se ve "comisión $0" y esa es la verdad.
-    (COBRO_CTX.productos||[]).forEach(p=>{
+    // Sobre lo que se va a COBRAR por ese producto, no sobre su precio de
+    // lista: en una venta suelta con descuento son distintos, y mostrar el de
+    // lista prometería una comisión mayor que la que se va a guardar.
+    (COBRO_CTX.productos||[]).forEach((p,i)=>{
       const bar=S.barberos.find(b=>b.nombre===p.profesional);
       const pct=bar?.comision_producto_pct||0;
-      const com=calcularComision(p.precio*p.cantidad,pct);
-      html+=`<br>· ${escHtml(p.profesional)} — 📦 ${escHtml(p.nombre)} x${p.cantidad}: ${fmt(p.precio*p.cantidad)}`+
+      const valorProd=rep.prodValores[i]??(p.precio*p.cantidad);
+      const com=calcularComision(valorProd,pct);
+      html+=`<br>· ${escHtml(p.profesional)} — 📦 ${escHtml(p.nombre)} x${p.cantidad}: ${fmt(valorProd)}`+
             ` · comisión ${fmt(com)} (${pct}%)`;
     });
   }

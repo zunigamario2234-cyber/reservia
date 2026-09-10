@@ -405,6 +405,135 @@ async function correr(src){
   check('  ...y la base descontable son los servicios', conServ.listaTotal, 20000);
   check('  ...no se marca como venta suelta', conServ.soloProductos, false);
 
+  // EL BUG QUE APARECIÓ AL PROBAR EN PANTALLA (2026-09-09).
+  // Al agregar el primer producto en una venta suelta, el precio final quedaba
+  // VACÍO: el modal mostraba "Precio de lista $9.000", el descuento entero
+  // (−$9.000) y "Total a cobrar $0". Los handlers de producto llamaban a
+  // cobroRenderLineas + cobroRecalcular, que PINTAN pero no recalculan el
+  // precio final — y en una venta suelta ese precio sale de los productos.
+  // Con reservas nunca se notó porque el precio lo fijaba abrirCobro().
+  var handlers = ['cobroAgregarProducto','cobroQuitarProducto','cobroCambiarCantidad'];
+  handlers.forEach(function(h){
+    var f = extraerFuncion(js,h);
+    check(h + ' recalcula el precio al terminar',
+          /cobroTrasCambiarProductos\(\)/.test(f), true);
+    check('  ...y ya no solo repinta',
+          /cobroRenderLineas\(\);\s*cobroRecalcular\(\);/.test(f), false);
+  });
+  var tras = extraerFuncion(js,'cobroTrasCambiarProductos');
+  check('sin servicios sincroniza el precio desde los productos',
+        /if\(!COBRO_CTX\.lineas\.length\)\{\s*cobroSincronizarPrecio\(\);/.test(tras), true);
+  // Con servicios NO debe sincronizar: reescribir el precio final pisaría un
+  // monto que el dueño pudo haber editado a mano.
+  check('  ...y con servicios NO lo pisa',
+        /else\s*\{\s*cobroRenderLineas\(\);\s*cobroRecalcular\(\);/.test(tras), true);
+
+  // El reparto mostraba el precio de LISTA del producto. En una venta suelta
+  // con descuento eso prometía una comisión mayor que la que se iba a guardar.
+  var rc = extraerFuncion(js,'cobroRecalcular');
+  check('el reparto usa el valor que se va a cobrar',
+        /const valorProd=rep\.prodValores\[i\]/.test(rc), true);
+  check('  ...y no el precio de lista',
+        /calcularComision\(p\.precio\*p\.cantidad,pct\)/.test(rc), false);
+
+  // Y la prueba EJECUTADA del mismo bug, que es la que vale: se corre el flujo
+  // real —venta suelta, se agrega un producto— y se mira el precio final que
+  // queda en el campo. Los checks de texto de arriba fijan el cableado; este
+  // fija el resultado.
+  var fuenteFlujo = ['repartirProporcional','cobroProrratear','cobroBaseDescontable',
+                     'cobroRenderLineas','cobroRecalcular','cobroSincronizarPrecio',
+                     'cobroTrasCambiarProductos']
+                    .map(function(n){ return extraerFuncion(js,n); }).join('\n');
+  function flujoVentaSuelta(descPct, final){
+    var doc = domFalso({'cob-final':final,'cob-propina':'0'});
+    var ctx = {lineas:[],productos:[{productoId:'p1',nombre:'After Shave',precio:9000,cantidad:1,profesional:'FELIPE'}],
+               descPct:descPct,propinaPct:null};
+    return intentar(function(){
+      new Function('document','COBRO_CTX','S','fmt','fmtHora','escHtml','ivaDe','netoDe','calcularComision',
+        fuenteFlujo + '\ncobroTrasCambiarProductos();')
+        (doc, ctx, {barberos:[{nombre:'FELIPE',comision_producto_pct:10}]},
+         function(n){ return '$'+n; }, function(h){ return h; }, function(s){ return s; },
+         function(b){ return Math.round(b*19/119); }, function(b){ return b-Math.round(b*19/119); },
+         function(v,p){ return Math.round((v-Math.round(v*19/119))*p/100); });
+      return { final: doc.getElementById('cob-final').value,
+               total: doc.getElementById('cob-total').textContent,
+               desc:  doc.getElementById('cob-desc-monto').textContent };
+    });
+  }
+  // El caso exacto reportado: producto de $9.000 sin descuento, agregado desde
+  // Inventario. Antes quedaba final vacío, descuento −$9.000 y total $0.
+  var f1 = flujoVentaSuelta(null, '');
+  check('agregar el producto llena el precio final', f1.final, 9000);
+  check('  ...el total es el precio del producto', f1.total, '$9000');
+  check('  ...y NO muestra un descuento fantasma', f1.desc, '');
+  // Con 10% sí tiene que haber descuento, y el total bajar.
+  var f2 = flujoVentaSuelta(10, '');
+  check('con 10% el precio final baja a 8.100', f2.final, 8100);
+  check('  ...el total acompaña', f2.total, '$8100');
+  check('  ...y el descuento se muestra', f2.desc, '−$900');
+
+  // QUITAR LA ÚLTIMA RESERVA DEJANDO EL PRODUCTO: el cobro deja de ser mixto y
+  // pasa a ser una venta suelta. El precio de lista tiene que dejar de ser el
+  // del servicio y pasar a ser el del producto, o el modal seguiría mostrando
+  // un monto que ya no corresponde a nada.
+  var fuenteQuitar = ['repartirProporcional','cobroProrratear','cobroBaseDescontable',
+                      'cobroRenderLineas','cobroRecalcular','cobroSincronizarPrecio',
+                      'cobroQuitarLinea']
+                     .map(function(n){ return extraerFuncion(js,n); }).join('\n');
+  var quitado = intentar(function(){
+    var doc = domFalso({'cob-final':'23400','cob-propina':'0'});
+    var ctx = {lineas:[{reservaId:'r1',lista:26000,nombre:'Matías',servicio:'Corte',profesional:'MARIO',hora:'10:00',sinPrecio:false,matchNormalizado:false}],
+               productos:[{productoId:'p1',nombre:'After Shave',precio:9000,cantidad:1,profesional:'MARIO'}],
+               descPct:null,propinaPct:null};
+    new Function('document','COBRO_CTX','S','fmt','fmtHora','escHtml','ivaDe','netoDe','calcularComision',
+      fuenteQuitar + '\ncobroQuitarLinea("r1");')
+      (doc, ctx, {barberos:[{nombre:'MARIO',comision_pct:50,comision_producto_pct:10}]},
+       function(n){ return '$'+n; }, function(h){ return h; }, function(s){ return s; },
+       function(b){ return Math.round(b*19/119); }, function(b){ return b-Math.round(b*19/119); },
+       function(v,p){ return Math.round((v-Math.round(v*19/119))*p/100); });
+    return { lineas: ctx.lineas.length, final: doc.getElementById('cob-final').value,
+             lista: doc.getElementById('cob-lista').value,
+             total: doc.getElementById('cob-total').textContent };
+  });
+  check('quitar la última reserva con productos SÍ se permite', quitado.lineas, 0);
+  check('  ...el precio de lista pasa a ser el del producto', quitado.lista, '$9000');
+  check('  ...y el precio final también', quitado.final, 9000);
+  check('  ...el total no arrastra el monto del servicio', quitado.total, '$9000');
+
+  // EL BOTÓN Y LA FUNCIÓN TIENEN QUE DECIR LO MISMO.
+  // Este bug llegó a pantalla: cobroQuitarLinea() se actualizó para permitir
+  // quitar la última reserva si quedan productos, pero el render siguió
+  // pidiendo 2+ líneas para dibujar la ×. La función lo permitía y el botón no
+  // existía, así que no había forma de hacerlo. Verificar la lógica sin
+  // verificar lo que se PINTA deja pasar exactamente esto.
+  var rl = extraerFuncion(js,'cobroRenderLineas');
+  check('el render decide la × mirando también los productos',
+        /const puedeQuitar = L\.length>1 \|\| \(COBRO_CTX\.productos\|\|\[\]\)\.length>0;/.test(rl), true);
+  check('  ...y ya no exige 2+ líneas a secas',
+        /\$\{L\.length>1\?`<button[^`]*cobroQuitarLinea/.test(rl), false);
+
+  // Ejecutado: con una reserva y un producto, la × TIENE que estar en la línea
+  // de la reserva.
+  function renderConProductos(productos){
+    var doc = domFalso({'cob-final':'26000','cob-propina':'0'});
+    return intentar(function(){
+      new Function('document','COBRO_CTX','S','fmt','fmtHora','escHtml','ivaDe','netoDe','calcularComision',
+        extraerFuncion(js,'repartirProporcional') + '\n' + extraerFuncion(js,'cobroProrratear') + '\n' +
+        extraerFuncion(js,'cobroRenderLineas') + '\ncobroRenderLineas();')
+        (doc, {lineas:[{reservaId:'r1',lista:26000,nombre:'Matías',servicio:'Corte',profesional:'MARIO',hora:'10:00',sinPrecio:false,matchNormalizado:false}],
+               productos:productos, descPct:null, propinaPct:null},
+         {barberos:[]}, function(n){ return '$'+n; }, function(h){ return h; }, function(s){ return s; },
+         function(b){ return Math.round(b*19/119); }, function(b){ return b-Math.round(b*19/119); },
+         function(v,p){ return Math.round(v*p/100); });
+      return doc.getElementById('cob-lineas').innerHTML;
+    });
+  }
+  check('con una reserva y un producto, la reserva se puede quitar',
+        /cobroQuitarLinea/.test(renderConProductos([{productoId:'p1',nombre:'X',precio:9000,cantidad:1,profesional:'MARIO'}])), true);
+  // Sin productos y con una sola reserva sigue sin poder quitarse: quedaría un
+  // cobro vacío.
+  check('con una reserva sola, no', /cobroQuitarLinea/.test(renderConProductos([])), false);
+
   // Las dos puertas de entrada.
   check('hay botón de vender en el inventario',
         /abrirVentaProducto\('\$\{p\.id\}'\)/.test(appHtml), true);
