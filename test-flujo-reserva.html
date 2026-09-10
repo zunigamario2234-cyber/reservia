@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — avanzar de paso al elegir servicio</title>
+
+<!--
+  Test de la navegación por pasos del flujo público de reservas, en las dos
+  páginas gemelas: reservar.html y la pestaña Reservar de club.html.
+
+  POR QUÉ EXISTE
+  Hasta ahora NINGUNA comprobación tocaba esta navegación — la suite de
+  reserva pública prueba el cálculo de horarios, no el paso a paso. Y el
+  cambio que la motivó (tocar un servicio avanza solo, sin botón "Continuar")
+  se rompe de maneras que no tiran ningún error:
+
+   1. Que el salto lea SALTAR_PROFESIONAL ANTES de que selServicio() la
+      corrija. La bandera se apaga cuando el profesional del link no hace el
+      servicio elegido; leyéndola antes, ese cliente aterriza en el paso 3 sin
+      profesional y la reserva recién muere en el resumen, tres pantallas
+      después, con "Falta elegir servicio, profesional, fecha u hora".
+
+   2. Que quede una referencia al botón que se eliminó. `btn-s1` nacía
+      deshabilitado y solo selServicio() lo habilitaba; ahora esa misma
+      función navega, así que el botón era inalcanzable. Un
+      getElementById('btn-s1').disabled sobre null corta la función entera.
+
+   3. Que desaparezca el "← Volver" del paso 2. Es la única salida para quien
+      se arrepiente del servicio DESPUÉS de haber saltado — antes podía
+      quedarse mirando la grilla y cambiar de opinión sin navegar.
+
+   4. Que el paso 2 deje de mostrar el servicio elegido. Es el reemplazo del
+      feedback perdido: antes la confirmación de haber tocado lo correcto era
+      la tarjeta iluminada, que seguías viendo mientras apretabas Continuar.
+      Con el salto automático esa señal dura un instante.
+
+   5. Que las dos páginas se separen. Es el mismo flujo para el mismo cliente
+      según entre por el link público o por su Club VIP.
+
+  QUÉ COMPRUEBA
+  EJECUTA las funciones reales contra un DOM falso y un irPaso() espía, así
+  que mira a qué paso se salta de verdad — no que el código "mencione"
+  irPaso. Esa diferencia es justo la del punto 1.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) Mover el irPaso() al principio de selServicio()
+      -> falla "el link de otro profesional cae en el paso 2, no en el 3".
+   b) Sacar el irPaso() del final de selServicio()
+      -> falla "tocar un servicio avanza al paso 2".
+   c) Saltar siempre a 2, ignorando SALTAR_PROFESIONAL
+      -> falla "con el profesional del link se salta directo al paso 3".
+   d) Sacar el "← Volver" del paso 2
+      -> falla "el paso 2 conserva la vuelta al paso 1".
+   e) No pintar el servicio elegido
+      -> falla "el paso 2 muestra el servicio elegido".
+   f) No escapar el nombre del servicio
+      -> falla "escapa el nombre del servicio".
+   g) Devolver un botón "Continuar" al paso 1
+      -> falla "el paso 1 ya no tiene botón Continuar".
+   h) En club.html, no saltar
+      -> falla su gemela de "tocar un servicio avanza al paso 2".
+
+  Las ocho se corrieron y las ocho dieron rojo.
+
+  ⚠ HUECO CONOCIDO, ANTERIOR A ESTE CAMBIO — NO ES UNA REGRESIÓN
+  Con un link `?profesional=Ana`, si el cliente elige un servicio que Ana no
+  hace y hay UN solo profesional que sí lo hace, renderProfesionals() lo
+  autoselecciona. Entonces la condición `SALTAR_PROFESIONAL && !SEL.profesional`
+  da falso —ya hay profesional— así que la bandera NO se apaga: se salta al
+  paso 3 sin mostrar el paso 2, y el banner sigue anunciando a Ana mientras la
+  reserva va con el otro.
+
+  Pasaba IGUAL antes, con el botón: su onclick evaluaba la misma bandera en el
+  mismo estado. Se ve recién en el resumen del paso 5, que sí muestra el
+  profesional real, así que el cliente puede notarlo antes de confirmar.
+
+  Hay un check abajo que fija este comportamiento TAL COMO ESTÁ HOY. No está
+  ahí porque esté bien: está para que arreglarlo sea una decisión explícita y
+  no un efecto colateral. Si algún día se arregla, ese check tiene que
+  cambiarse a mano, y su nombre lo dice.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — avanzar de paso al elegir servicio</h1>
+<p>Verifica que tocar un servicio salte al paso correcto en las dos páginas, que
+la vuelta atrás siga existiendo, y que el paso 2 muestre lo que se eligió.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['reservar.html','club.html'];
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// El bloque de un paso del flujo, para preguntarle qué botones tiene. Se corta
+// en el comentario del paso siguiente, que es lo que separa un step-content del
+// otro en los dos archivos.
+//
+// Y se le quitan los comentarios HTML, por lo mismo que sinComentarios() se los
+// quita al JS: el comentario que EXPLICA por qué ya no está el botón nombra al
+// botón. Sin esto, "el paso 1 ya no tiene Continuar" fallaba contra su propia
+// documentación — que fue exactamente lo que pasó al escribir este archivo.
+function bloquePaso(html, id){
+  var i = html.indexOf('id="' + id + '"');
+  if(i === -1) return '';
+  var j = html.indexOf('<!-- PASO', i);
+  return html.slice(i, j === -1 ? i + 2000 : j).replace(/<!--[\s\S]*?-->/g, '');
+}
+
+// DOM falso: guarda por id lo que se le escribe, para poder mirar después qué
+// se pintó de verdad en vez de confiar en que la función "hace algo".
+function domFalso(){
+  var campos = {};
+  function nuevo(){
+    return { value:'', textContent:'', innerHTML:'', style:{},
+             classList:{ add:function(){}, remove:function(){}, toggle:function(){},
+                         contains:function(){ return false; } } };
+  }
+  return {
+    getElementById: function(id){ if(!campos[id]) campos[id] = nuevo(); return campos[id]; },
+    querySelectorAll: function(){ return []; },
+    _campos: campos
+  };
+}
+
+// Corre selServicio() REAL de la página contra un estado inventado, con
+// irPaso() espiado. Devuelve a qué pasos se saltó, cómo quedó la bandera y qué
+// se pintó — que es lo único que distingue "llama a irPaso" de "llama a irPaso
+// con el número correcto".
+function correrEleccion(js, cfg, escenario){
+  var fuentes = [];
+  for(var i = 0; i < cfg.fns.length; i++){
+    var f = extraerFuncion(js, cfg.fns[i]);
+    if(f === '') return { error: 'no se pudo extraer ' + cfg.fns[i] };
+  fuentes.push(f);
+  }
+  var doc = domFalso();
+  var src =
+    'var ' + cfg.datos + ' = DATOS;\n' +
+    'var ' + cfg.sel + ' = ESTADO;\n' +
+    (cfg.bandera ? 'var ' + cfg.bandera + ' = BANDERA;\n' : '') +
+    'var saltos = [];\n' +
+    'function ' + cfg.ir + '(n){ saltos.push(n); }\n' +
+    'function ' + cfg.renderProf + '(){ AUTOSELECCION(' + cfg.sel + ', ' + cfg.datos + '); }\n' +
+    (cfg.perfil ? 'function ' + cfg.perfil + '(){}\n' : '') +
+    fuentes.join('\n') + '\n' +
+    cfg.selServicio + '(ID);\n' +
+    'return { saltos: saltos, sel: ' + cfg.sel + ',' +
+    (cfg.bandera ? ' bandera: ' + cfg.bandera + ',' : '') +
+    ' pintado: document.getElementById(PINTA).innerHTML,' +
+    ' oculto: document.getElementById(PINTA).style.display };';
+  try {
+    return new Function('document','DATOS','ESTADO','BANDERA','ID','PINTA','AUTOSELECCION','escapeHtml', src)(
+      doc, escenario.datos, escenario.estado, escenario.bandera, escenario.id, cfg.pinta,
+      escenario.autoseleccion || function(){}, function(s){ return String(s||''); });
+  } catch(e){ return { error: e.message }; }
+}
+
+// Un negocio de prueba: dos servicios y dos profesionales, cada uno con un
+// servicio distinto. Es lo mínimo para que "el profesional del link no hace
+// este servicio" sea un caso real y no una hipótesis.
+var CORTE = { id:'s1', nombre:'Corte', precio:12000, duracion_min:30 };
+var BARBA = { id:'s2', nombre:'Barba', precio:8000,  duracion_min:30 };
+var ANA   = { id:'p1', nombre:'Ana' };
+var BETO  = { id:'p2', nombre:'Beto' };
+var NEGOCIO = {
+  servicios: [CORTE, BARBA],
+  profesionals: [ANA, BETO],
+  profesionales: [ANA, BETO],
+  barberoServicios: [
+    { barbero_id:'p1', servicio_id:'s1' },   // Ana hace Corte
+    { barbero_id:'p2', servicio_id:'s2' }    // Beto hace Barba
+  ]
+};
+
+var CFG_RES = {
+  datos:'B', sel:'SEL', bandera:'SALTAR_PROFESIONAL', ir:'irPaso',
+  renderProf:'renderProfesionals', perfil:'renderPerfilProfesional',
+  selServicio:'selServicio', pinta:'servicio-elegido',
+  fns:['profesionalCalifica','renderServicioElegido','selServicio']
+};
+var CFG_CLUB = {
+  datos:'RB', sel:'RSEL', bandera:null, ir:'rIrPaso',
+  renderProf:'rRenderProfesionales', perfil:null,
+  selServicio:'rSelServicio', pinta:'r-servicio-elegido',
+  fns:['rRenderServicioElegido','rSelServicio']
+};
+
+function correr(src){
+  var htmlRes  = src['reservar.html'];
+  var htmlClub = src['club.html'];
+  var jsRes  = sinComentarios(inlineScripts(htmlRes).join('\n'));
+  var jsClub = sinComentarios(inlineScripts(htmlClub).join('\n'));
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('reservar.html — a qué paso se salta');
+
+  // Flujo normal: sin link de profesional, tocar un servicio lleva al paso 2.
+  var normal = correrEleccion(jsRes, CFG_RES, {
+    datos: NEGOCIO, estado: { servicio:null, profesional:null }, bandera: false, id: 's1'
+  });
+  check('se puede ejecutar la elección de servicio', normal.error || 'sin error', 'sin error');
+  check('tocar un servicio avanza al paso 2', normal.saltos, [2]);
+  check('  ...y deja el servicio elegido en el estado',
+        normal.sel && normal.sel.servicio && normal.sel.servicio.id, 's1');
+
+  // Con ?profesional=Ana y un servicio que Ana SÍ hace: se saltea el paso 2.
+  var conLink = correrEleccion(jsRes, CFG_RES, {
+    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true, id: 's1'
+  });
+  check('con el profesional del link se salta directo al paso 3', conLink.saltos, [3]);
+  check('  ...y el profesional del link sobrevive',
+        conLink.sel && conLink.sel.profesional && conLink.sel.profesional.id, 'p1');
+
+  // EL CASO QUE MOTIVÓ EL ORDEN. Link de Ana, servicio que Ana NO hace y nadie
+  // más queda autoseleccionado: la bandera se apaga y hay que caer en el paso 2.
+  // Leyendo la bandera antes de esa corrección, esto daría [3] y el cliente
+  // llegaría a elegir fecha sin profesional.
+  var linkNoCalifica = correrEleccion(jsRes, CFG_RES, {
+    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true, id: 's2'
+  });
+  check('el link de otro profesional cae en el paso 2, no en el 3',
+        linkNoCalifica.saltos, [2]);
+  check('  ...la bandera quedó apagada', linkNoCalifica.bandera, false);
+  check('  ...y el profesional que no califica se limpió',
+        linkNoCalifica.sel && linkNoCalifica.sel.profesional, null);
+
+  // ⚠ HUECO CONOCIDO, ANTERIOR A ESTE CAMBIO. Ver la nota del encabezado.
+  // Si renderProfesionals() autoselecciona a otro, la bandera NO se apaga y el
+  // paso 2 no se muestra. Este check FIJA el comportamiento de hoy: si algún
+  // día se arregla, hay que cambiarlo a mano y a propósito.
+  var conAutoseleccion = correrEleccion(jsRes, CFG_RES, {
+    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true, id: 's2',
+    autoseleccion: function(sel){ sel.profesional = BETO; }
+  });
+  check('HUECO CONOCIDO: si se autoselecciona a otro, hoy se saltea el paso 2',
+        conAutoseleccion.saltos, [3]);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('reservar.html — lo que se ve en el paso 2');
+
+  check('el paso 2 muestra el servicio elegido',
+        /Corte/.test(normal.pintado) && /12\.000/.test(normal.pintado) &&
+        /30 min/.test(normal.pintado), true);
+
+  var conSel = correrEleccion(jsRes, CFG_RES, {
+    datos: { servicios:[{ id:'s9', nombre:'<img src=x onerror=alert(1)>', precio:1000, duracion_min:30 }],
+             profesionals:[], barberoServicios:[] },
+    estado: { servicio:null, profesional:null }, bandera: false, id: 's9'
+  });
+  // escapeHtml se inyecta como identidad en el sandbox, así que este check no
+  // prueba que escape BIEN: prueba que la función lo LLAME. Que escape bien lo
+  // prueba el check de texto de más abajo, contra el archivo.
+  check('escapa el nombre del servicio',
+        /escapeHtml\(s\.nombre\)/.test(jsRes), true);
+  check('  ...y la función de escape existe en el archivo',
+        /function escapeHtml\(/.test(jsRes), true);
+
+  var sinServicio = intentar(function(){
+    var f = new Function('document','SEL','s',
+      extraerFuncion(jsRes,'renderServicioElegido') +
+      '\nreturn (function(){ renderServicioElegido(); return document.getElementById("servicio-elegido").style.display; })();');
+    return f(domFalso(), { servicio:null });
+  });
+  check('sin servicio elegido, la línea se esconde', sinServicio, 'none');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('reservar.html — el botón que se fue y el que se queda');
+
+  var paso1 = bloquePaso(htmlRes, 'sc-1');
+  check('se encuentra el bloque del paso 1', paso1 !== '', true);
+  check('el paso 1 ya no tiene botón Continuar', /<button[^>]*>[^<]*Continuar/.test(paso1), false);
+  check('no quedó ninguna referencia a btn-s1', /btn-s1/.test(htmlRes), false);
+
+  // La salida de emergencia: quien se arrepiente del servicio después de haber
+  // saltado solo tiene esta. Sin el botón anterior, perderla deja al cliente
+  // encerrado en el paso 2.
+  var paso2 = bloquePaso(htmlRes, 'sc-2');
+  check('el paso 2 conserva la vuelta al paso 1',
+        /onclick="irPaso\(1\)"[^>]*>[^<]*Volver/.test(paso2), true);
+  check('los pasos 3, 4 y 5 conservan su Volver',
+        (htmlRes.match(/←\s*Volver/g) || []).length, 4);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('club.html — la gemela');
+
+  var club = correrEleccion(jsClub, CFG_CLUB, {
+    datos: NEGOCIO, estado: { servicio:null, profesional:null }, bandera: false, id: 's1'
+  });
+  check('se puede ejecutar la elección de servicio', club.error || 'sin error', 'sin error');
+  check('tocar un servicio avanza al paso 2', club.saltos, [2]);
+  check('  ...y deja el servicio elegido en el estado',
+        club.sel && club.sel.servicio && club.sel.servicio.id, 's1');
+  check('el paso 2 muestra el servicio elegido',
+        /Corte/.test(club.pintado) && /12\.000/.test(club.pintado) &&
+        /30 min/.test(club.pintado), true);
+  check('escapa el nombre del servicio',
+        /escapeHtml\(s\.nombre\)/.test(jsClub), true);
+
+  var paso1c = bloquePaso(htmlClub, 'r-sc-1');
+  check('se encuentra el bloque del paso 1', paso1c !== '', true);
+  check('el paso 1 ya no tiene botón Continuar', /<button[^>]*>[^<]*Continuar/.test(paso1c), false);
+  check('no quedó ninguna referencia a r-btn-s1', /r-btn-s1/.test(htmlClub), false);
+
+  var paso2c = bloquePaso(htmlClub, 'r-sc-2');
+  check('el paso 2 conserva la vuelta al paso 1',
+        /onclick="rIrPaso\(1\)"[^>]*>[^<]*Volver/.test(paso2c), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las dos no se separaron');
+
+  // El mismo cliente, entrando por dos puertas, tiene que ver lo mismo. Esto
+  // se comprueba por comportamiento, no por parecido de texto.
+  check('las dos saltan al mismo paso al elegir servicio',
+        club.saltos, normal.saltos);
+  check('las dos pintan el mismo resumen del servicio',
+        club.pintado, normal.pintado);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>

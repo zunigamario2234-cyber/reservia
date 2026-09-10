@@ -73,6 +73,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .step-tab.done::before{background:#4caf87;color:#fff;content:'✓'}
 .step-content{display:none}.step-content.active{display:block}
 .servicio-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.servicio-elegido{font-size:12px;color:#888;margin:-4px 0 14px;padding:9px 11px;border-radius:8px;background:#151520;border:0.5px solid #2a2a2a}
+.servicio-elegido b{color:#e8e6e0;font-weight:600}
 .servicio-card{border:0.5px solid #2a2a2a;border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s}
 .servicio-card:hover{border-color:#555;background:#1a1a1a}
 .servicio-card.selected{border-color:#7c6af7;background:#1a1a18}
@@ -190,13 +192,15 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
         <div class="card-title">¿Qué servicio necesitas?</div>
         <div class="servicio-grid" id="r-lista-servicios"></div>
       </div>
-      <button class="btn btn-primary" id="r-btn-s1" onclick="rIrPaso(2)" disabled>Continuar →</button>
+      <!-- Sin "Continuar →", igual que reservar.html: tocar el servicio avanza. -->
     </div>
 
     <!-- PASO 2: Profesional -->
     <div class="step-content" id="r-sc-2">
       <div class="card">
         <div class="card-title">¿Con quién quieres atenderte?</div>
+        <!-- Gemelo de #servicio-elegido en reservar.html — ver ahí por qué. -->
+        <div class="servicio-elegido" id="r-servicio-elegido"></div>
         <div class="profesional-grid" id="r-lista-profesionales"></div>
       </div>
       <button class="btn btn-primary" id="r-btn-s2" onclick="rIrPaso(3)" disabled>Continuar →</button>
@@ -461,11 +465,24 @@ function rRenderServicios(){
     </div>`).join('') || '<p style="color:#555;font-size:13px">No hay servicios disponibles.</p>';
 }
 
+// Gemela de renderServicioElegido() en reservar.html.
+function rRenderServicioElegido(){
+  const el = document.getElementById('r-servicio-elegido');
+  const s = RSEL.servicio;
+  if(!el) return;
+  if(!s){ el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = `Servicio: <b>${escapeHtml(s.nombre)}</b> · $${s.precio.toLocaleString('es-CL')} · ${s.duracion_min} min`;
+}
+
 function rSelServicio(id){
   RSEL.servicio = RB.servicios.find(s=>s.id===id);
   document.querySelectorAll('#r-lista-servicios .servicio-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('r-sv-'+id).classList.add('selected');
-  document.getElementById('r-btn-s1').disabled = false;
+  rRenderServicioElegido();
+  // Acá el salto es directo: club.html no filtra profesionales por servicio y
+  // no tiene el flujo de ?profesional=, así que no hay bandera que consultar.
+  rIrPaso(2);
 }
 
 // YA NO EXISTE "Cualquier profesional", igual que en reservar.html: una
@@ -665,10 +682,13 @@ function rNuevaReserva(){
   document.querySelectorAll('#tab-reservar .step-tab').forEach(t=>{t.classList.remove('active','done');});
   document.getElementById('r-st-1').classList.add('active');
   document.querySelectorAll('#tab-reservar .servicio-card,#tab-reservar .profesional-card').forEach(c=>c.classList.remove('selected'));
-  document.getElementById('r-btn-s1').disabled = true;
+  // El paso 1 ya no tiene botón: se avanza tocando el servicio.
   document.getElementById('r-btn-s2').disabled = true;
   document.getElementById('r-btn-s3').disabled = true;
   document.getElementById('r-notas').value = '';
+  // RSEL.servicio quedó en null arriba, así que esto esconde la línea del
+  // servicio elegido en vez de dejar la de la reserva anterior.
+  rRenderServicioElegido();
   window.scrollTo(0,0);
 }
 

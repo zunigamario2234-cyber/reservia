@@ -41,6 +41,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .card{background:#0f1018;border:0.5px solid #222;border-radius:12px;padding:20px;margin-bottom:14px}
 .card-title{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:14px}
 .servicio-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.servicio-elegido{font-size:12px;color:#888;margin:-4px 0 14px;padding:9px 11px;border-radius:8px;background:#151520;border:0.5px solid #2a2a2a}
+.servicio-elegido b{color:#e8e6e0;font-weight:600}
 .servicio-card{border:0.5px solid #2a2a2a;border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s}
 .servicio-card:hover{border-color:#555;background:#1a1a1a}
 .servicio-card.selected{border-color:#7c6af7;background:#1a1a18}
@@ -146,13 +148,21 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
       <div class="card-title">¿Qué servicio necesitas?</div>
       <div class="servicio-grid" id="lista-servicios"></div>
     </div>
-    <button class="btn btn-primary" id="btn-s1" onclick="irPaso(SALTAR_PROFESIONAL?3:2)" disabled>Continuar →</button>
+    <!-- Acá había un "Continuar →". Ya no: tocar un servicio avanza solo, así
+         que el botón nacía deshabilitado y la única función que lo habilitaba
+         es la misma que ahora navega. Nadie podía llegar a tocarlo. -->
   </div>
 
   <!-- PASO 2: Profesional -->
   <div class="step-content" id="sc-2">
     <div class="card">
       <div class="card-title">¿Con quién quieres atenderte?</div>
+      <!-- El servicio elegido, acá. Es el reemplazo del feedback que se perdió
+           al sacar el "Continuar": antes la confirmación de haber tocado lo
+           correcto era la tarjeta iluminada, que seguías viendo mientras
+           apretabas el botón. Con el salto automático esa señal dura un
+           instante y esta pantalla no decía nada del servicio. -->
+      <div class="servicio-elegido" id="servicio-elegido"></div>
       <div class="profesional-grid" id="lista-profesionals"></div>
       <div class="perfil-profesional" id="perfil-profesional" style="display:none"></div>
     </div>
@@ -547,11 +557,30 @@ function profesionalCalifica(prof, servicio){
     bs.barbero_id===prof.id && bs.servicio_id===servicio.id));
 }
 
+// Gemela de la de club.html. OJO: el resto de este archivo interpola nombres de
+// servicio en innerHTML sin escapar (renderServicios, renderResumen). Son datos
+// del propio dueño, no de terceros, así que no es una inyección entre negocios
+// — pero acá se escapa igual, porque el hábito de interpolar crudo es el que
+// después se copia a un campo que sí viene de afuera.
+function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+// Pinta el servicio elegido arriba del paso 2. Ver el comentario del div en el
+// HTML: sustituye a la tarjeta iluminada, que con el salto automático dejó de
+// estar a la vista cuando el cliente decide si siguió bien.
+function renderServicioElegido(){
+  const el = document.getElementById('servicio-elegido');
+  const s = SEL.servicio;
+  if(!el) return;
+  if(!s){ el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = `Servicio: <b>${escapeHtml(s.nombre)}</b> · $${s.precio.toLocaleString('es-CL')} · ${s.duracion_min} min`;
+}
+
 function selServicio(id){
   SEL.servicio = B.servicios.find(s=>s.id===id);
   document.querySelectorAll('.servicio-card').forEach(c=>c.classList.remove('selected'));
   document.getElementById('sv-'+id).classList.add('selected');
-  document.getElementById('btn-s1').disabled = false;
+  renderServicioElegido();
   // El profesional elegido puede dejar de calificar para el nuevo servicio, así
   // que se limpia la selección y se re-renderiza la grilla filtrada.
   //
@@ -575,6 +604,11 @@ function selServicio(id){
     document.getElementById('st-2').style.display = '';
     document.getElementById('prof-preselec').style.display = 'none';
   }
+  // El salto va ACÁ, al final, y no antes: el bloque de arriba puede apagar
+  // SALTAR_PROFESIONAL cuando el profesional del link no hace este servicio.
+  // Leyendo la bandera antes, ese cliente aterrizaría en el paso 3 sin
+  // profesional elegido y la reserva moriría recién en el resumen.
+  irPaso(SALTAR_PROFESIONAL ? 3 : 2);
 }
 
 // Filtra por barbero_servicios: solo profesionales con ese servicio activo
@@ -875,11 +909,15 @@ function nuevaReserva(){
   document.querySelectorAll('.servicio-card,.profesional-card').forEach(c=>c.classList.remove('selected'));
   ['cl-nombre','cl-apellido','cl-wsp','cl-email','cl-notas'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   // Los "Continuar" vuelven a quedar deshabilitados hasta que se elija de nuevo
-  // servicio / profesional / hora. Sin esto quedaban habilitados de la reserva
-  // anterior y se podían saltar los pasos 1-3 con SEL ya en null, llegando al
-  // resumen con "undefined NaN de undefined" en la fecha (new Date("nullT12:00:00")
-  // es Invalid Date). Mismo reset que rNuevaReserva() en club.html.
-  ['btn-s1','btn-s2','btn-s3'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+  // profesional / hora. Sin esto quedaban habilitados de la reserva anterior y
+  // se podían saltar los pasos con SEL ya en null, llegando al resumen con
+  // "undefined NaN de undefined" en la fecha (new Date("nullT12:00:00") es
+  // Invalid Date). Mismo reset que rNuevaReserva() en club.html.
+  // El paso 1 ya no tiene botón: se avanza tocando el servicio.
+  ['btn-s2','btn-s3'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+  // SEL.servicio quedó en null arriba, así que esto esconde la línea del
+  // servicio elegido en vez de dejar la de la reserva anterior.
+  renderServicioElegido();
   document.getElementById('card-horarios').style.display='none';
   window.scrollTo(0,0);
 }
