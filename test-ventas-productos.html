@@ -367,6 +367,69 @@ async function correr(src){
         capt.args.p_total_declarado, 28000);
 
   // ───────────────────────────────────────────────────────────────
+  titulo('venta de productos SIN reserva');
+
+  // Recompila el prorrateo real y lo corre con un contexto dado.
+  function prorratearCon(ctx, final, propina){
+    var fuente = extraerFuncion(js,'repartirProporcional') + '\n' +
+                 extraerFuncion(js,'cobroProrratear');
+    return intentar(function(){
+      return new Function('document','COBRO_CTX', fuente + '\nreturn cobroProrratear();')
+        (domFalso({'cob-final':final,'cob-propina':propina}), ctx);
+    });
+  }
+  var unProd = [{productoId:'p1',precio:10000,cantidad:1,profesional:'Ana'}];
+
+  // EL RIESGO MÁS CARO DE ESTE CAMBIO: sin servicios, el precio final del modal
+  // YA son los productos. Si totalCobro los sumara otra vez, el cobro saldría
+  // al doble y el cliente pagaría de más.
+  var soloP = prorratearCon({lineas:[],productos:unProd,descPct:null,propinaPct:null},'10000','0');
+  check('sin servicios el total no duplica los productos', soloP.totalCobro, 10000);
+  check('  ...y se reconoce como venta suelta', soloP.soloProductos, true);
+
+  // Con descuento: el producto sí lo absorbe, porque no hay servicios que
+  // puedan hacerlo.
+  var soloPDesc = prorratearCon({lineas:[],productos:unProd,descPct:10,propinaPct:null},'9000','0');
+  check('sin servicios el descuento baja el producto', soloPDesc.prodValores, [9000]);
+  check('  ...y el total es el precio con descuento', soloPDesc.totalCobro, 9000);
+  check('la base descontable son los productos', soloPDesc.listaTotal, 10000);
+
+  // CON servicios NADA cambia: el producto sigue a precio lleno. Es la
+  // regresión que protege la decisión del dueño — que nadie subsidie con su
+  // comisión el descuento de un producto que no vendió.
+  var conServ = prorratearCon(
+    {lineas:[{reservaId:'r1',lista:20000}],productos:unProd,descPct:10,propinaPct:null},'18000','0');
+  check('con servicios el producto sigue a precio lleno', conServ.prodValores, [10000]);
+  check('  ...el servicio absorbe el descuento', conServ.valores, [18000]);
+  check('  ...el total suma las dos cosas', conServ.totalCobro, 28000);
+  check('  ...y la base descontable son los servicios', conServ.listaTotal, 20000);
+  check('  ...no se marca como venta suelta', conServ.soloProductos, false);
+
+  // Las dos puertas de entrada.
+  check('hay botón de vender en el inventario',
+        /abrirVentaProducto\('\$\{p\.id\}'\)/.test(appHtml), true);
+  check('  ...deshabilitado sin stock',
+        /abrirVentaProducto[^>]*\$\{p\.stock<=0\?'disabled':''\}/.test(appHtml), true);
+  check('hay botón de venta sin reserva en Reservas',
+        /onclick="abrirVentaProducto\(\)"/.test(appHtml), true);
+
+  var avp = extraerFuncion(js,'abrirVentaProducto');
+  check('la venta suelta arranca sin líneas de servicio',
+        /COBRO_CTX=\{lineas:\[\],productos:\[\]/.test(avp), true);
+  check('  ...y abre el buscador de productos', /abrirAgregarProducto\(\)/.test(avp), true);
+
+  // Con cero líneas, montar el modal no puede leer lineas[0] a ciegas.
+  var mm = extraerFuncion(js,'cobroMontarModal');
+  check('montar el modal tolera cero líneas',
+        /COBRO_CTX\.lineas\.reduce\(/.test(mm) && !/lineas\[0\]\./.test(mm), true);
+
+  // Quitar la última reserva es válido SI quedan productos: deja una venta
+  // suelta, que ahora es un cobro legítimo.
+  var ql = extraerFuncion(js,'cobroQuitarLinea');
+  check('se puede quitar la última reserva si quedan productos',
+        /lineas\.length<=1 && !\(COBRO_CTX\.productos\|\|\[\]\)\.length/.test(ql), true);
+
+  // ───────────────────────────────────────────────────────────────
   titulo('el dueño puede configurar la comisión de productos');
 
   // Sin esto la feature queda inconfigurable: la columna existe con default 0,

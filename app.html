@@ -506,8 +506,11 @@ input[readonly]{background:#111;color:#666;cursor:default}
 <!-- RESERVAS -->
 <div id="p-reservas" class="page">
   <div class="alert al-info" style="margin-bottom:14px">Reservas manuales o desde tu link público de reservas. Pagarlas crea la cita y el cliente automáticamente.</div>
-  <div style="display:flex;gap:8px;margin-bottom:14px">
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button class="btn btn-primary" onclick="openM('m-reserva')">+ Nueva reserva</button>
+    <!-- Segunda puerta a la venta de productos: acá es donde ya se vive el
+         flujo de cobro. La otra está en Inventario, por producto. -->
+    <button class="btn btn-ghost" onclick="abrirVentaProducto()">📦 Venta sin reserva</button>
   </div>
   <div class="card">
     <div class="tbl-wrap">
@@ -3330,21 +3333,42 @@ function repartirProporcional(total, pesos){
 // La propina se prorratea por valor cobrado (decisión del dueño 2026-08-05).
 // Efecto secundario feliz: propina_i = valor_i * pct / 100, así que
 // propina_pct sigue siendo cierto en cada visita sin cambiarle el significado.
+// LA BASE DESCONTABLE: los servicios si hay alguno, los productos si no.
+//
+// Con al menos un servicio todo funciona como siempre: el descuento se imputa
+// SOLO a los servicios y los productos van a precio lleno, para que ningún
+// profesional vea bajar su comisión por el descuento de un producto que no
+// vendió (decisión del dueño, 2026-08-05).
+//
+// En una venta de SOLO productos esa regla dejaría el cobro sin nada
+// descontable —no habría forma de hacer ni una rebaja de $500—, así que ahí el
+// descuento sí se reparte entre los productos. No rompe la protección de
+// nadie: no hay comisión de servicio en juego, y la de producto baja solo para
+// quien vendió ese producto.
 function cobroProrratear(){
   const L=COBRO_CTX.lineas;
+  const prods=COBRO_CTX.productos||[];
+  const soloProductos = L.length===0 && prods.length>0;
   const valorTotal=Math.max(0,Math.round(parseFloat(document.getElementById('cob-final').value)||0));
   const propinaTotal=Math.max(0,Math.round(parseFloat(document.getElementById('cob-propina').value)||0));
   const valores=repartirProporcional(valorTotal,L.map(l=>l.lista));
   const propinas=repartirProporcional(propinaTotal,valores);
-  // Los productos NO entran al prorrateo: van a precio lleno, por decisión del
-  // dueño. Así ningún profesional ve bajar su comisión por el descuento de un
-  // producto que no vendió. Y como quedan fuera, el descuento nunca puede
-  // exceder lo que hay para descontar.
-  const prods=COBRO_CTX.productos||[];
-  const prodTotal=prods.reduce((s,p)=>s+p.precio*p.cantidad,0);
-  return {valores,propinas,valorTotal,propinaTotal,prodTotal,
-          listaTotal:L.reduce((s,l)=>s+l.lista,0),
-          totalCobro:valorTotal+prodTotal+propinaTotal};
+
+  const prodLista=prods.reduce((s,p)=>s+p.precio*p.cantidad,0);
+  // Con servicios, cada producto cobra su precio de lista. Sin servicios, el
+  // precio final del modal ES el de los productos y se reparte entre ellos.
+  const prodValores = soloProductos
+    ? repartirProporcional(valorTotal, prods.map(p=>p.precio*p.cantidad))
+    : prods.map(p=>p.precio*p.cantidad);
+  const prodTotal=prodValores.reduce((s,v)=>s+v,0);
+
+  return {valores,propinas,valorTotal,propinaTotal,prodTotal,prodValores,prodLista,soloProductos,
+          // Lo que el descuento puede morder: servicios, o productos si no hay
+          // servicios. De acá sale el "Precio de lista" que se muestra.
+          listaTotal: soloProductos ? prodLista : L.reduce((s,l)=>s+l.lista,0),
+          // Sin servicios el valorTotal YA son los productos: sumarlos otra vez
+          // duplicaría el cobro.
+          totalCobro: soloProductos ? valorTotal+propinaTotal : valorTotal+prodTotal+propinaTotal};
 }
 
 function cobroRenderLineas(){
@@ -3407,7 +3431,10 @@ function cobroRenderLineas(){
 // —el caso real es un padre y un hijo con apellidos distintos—, así que no se
 // filtra por nombre.
 function cobroReservasDisponibles(){
-  const fecha=COBRO_CTX.lineas[0]?.fecha;
+  // Sin líneas —una venta que arrancó como solo productos— la fecha de
+  // referencia es hoy, así que se le puede sumar una reserva del día. Va por
+  // ahoraEnChile y no por new Date(): es el mismo "hoy" que usa el resto.
+  const fecha=COBRO_CTX.lineas[0]?.fecha||ahoraEnChile().fecha;
   const yaEstan=new Set(COBRO_CTX.lineas.map(l=>l.reservaId));
   return S.reservas.filter(r=>r.fecha===fecha&&!r.procesado&&!yaEstan.has(r.id))
                    .sort((a,b)=>String(a.hora).localeCompare(String(b.hora)));
@@ -3496,7 +3523,7 @@ function abrirAgregarReserva(){
   const libres=cobroReservasDisponibles();
   openM('m-cobro-add');
   document.getElementById('cobadd-sub').textContent=
-    'Reservas sin cobrar del '+(COBRO_CTX.lineas[0]?.fecha||'')+'. Solo del mismo día.';
+    'Reservas sin cobrar del '+(COBRO_CTX.lineas[0]?.fecha||ahoraEnChile().fecha)+'. Solo del mismo día.';
   document.getElementById('cobadd-lista').innerHTML=libres.length?libres.map(r=>{
     const l=cobroLineaDesde(r);
     return `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:0.5px solid var(--border);font-size:12px">
@@ -3522,9 +3549,23 @@ function cobroAgregarReserva(id){
 }
 
 function cobroQuitarLinea(id){
-  if(!COBRO_CTX||COBRO_CTX.lineas.length<=1)return;
+  // Se puede quitar la última SI quedan productos: eso deja una venta suelta,
+  // que ahora es un cobro válido. Lo que no puede quedar es un cobro vacío.
+  if(!COBRO_CTX)return;
+  if(COBRO_CTX.lineas.length<=1 && !(COBRO_CTX.productos||[]).length)return;
   COBRO_CTX.lineas=COBRO_CTX.lineas.filter(l=>l.reservaId!==id);
   cobroSincronizarPrecio();
+}
+
+// Sobre qué monto muerde el descuento: los servicios si hay alguno, los
+// productos si el cobro es solo de productos. Un único lugar que lo decide,
+// para que el % de los botones, el precio final y el prorrateo no puedan
+// discrepar entre sí.
+function cobroBaseDescontable(){
+  const L=COBRO_CTX.lineas, P=COBRO_CTX.productos||[];
+  return L.length
+    ? L.reduce((s,l)=>s+l.lista,0)
+    : P.reduce((s,p)=>s+p.precio*p.cantidad,0);
 }
 
 // Al cambiar las líneas, el precio final se reescribe desde el nuevo total de
@@ -3532,7 +3573,7 @@ function cobroQuitarLinea(id){
 // (descPct null) igual se reescribe: ese monto describía OTRO conjunto de
 // líneas, dejarlo ahí sería cobrar un número que ya no corresponde a nada.
 function cobroSincronizarPrecio(){
-  const listaTotal=COBRO_CTX.lineas.reduce((s,l)=>s+l.lista,0);
+  const listaTotal=cobroBaseDescontable();
   const pct=COBRO_CTX.descPct||0;
   document.getElementById('cob-final').value=Math.max(0,listaTotal-Math.round(listaTotal*pct/100))||'';
   if(COBRO_CTX.propinaPct!=null){
@@ -3547,11 +3588,39 @@ function abrirCobro(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   if(r.procesado){notify('Esta reserva ya fue cobrada','warn');return;}
   COBRO_CTX={lineas:[cobroLineaDesde(r)],productos:[],descPct:null,propinaPct:null};
-  const lista=COBRO_CTX.lineas[0].lista;
+  cobroMontarModal(`Cobro del <strong>${r.fecha}</strong>`);
+}
+
+// Venta de productos SIN ninguna reserva: alguien entra, compra un shampoo y
+// se va. El cobro arranca con cero líneas de servicio.
+//
+// La RPC ya lo soportaba desde f418dc9 (sin reservas, la fecha la pone ella),
+// pero no había puerta de entrada en la pantalla. Ojo: esa rama de la RPC
+// nunca se había ejecutado, y al despertarla apareció que usaba current_date
+// —UTC— en vez de la hora de Chile. Corregido en
+// migration_venta_sin_reserva.sql antes de abrir este flujo.
+//
+// Si viene un producto, se abre además el buscador ya filtrado por su código:
+// el profesional sigue siendo obligatorio, así que hay que pasar por ahí igual.
+function abrirVentaProducto(productoId){
+  COBRO_CTX={lineas:[],productos:[],descPct:null,propinaPct:null};
+  cobroMontarModal(`Venta directa — <strong>${ahoraEnChile().fecha}</strong>`);
+  abrirAgregarProducto();
+  if(productoId){
+    const p=S.inventario.find(x=>x.id===productoId);
+    if(p){
+      document.getElementById('cobprod-q').value=p.codigo||p.nombre;
+      renderBuscadorProductos();
+    }
+  }
+}
+
+// Lo común a las dos puertas de entrada. Antes vivía dentro de abrirCobro() y
+// leía COBRO_CTX.lineas[0] sin guardia: con cero líneas reventaba.
+function cobroMontarModal(resumenHtml){
+  const lista=COBRO_CTX.lineas.reduce((s,l)=>s+l.lista,0);
   openM('m-cobro');
-
-  document.getElementById('cob-resumen').innerHTML=`Cobro del <strong>${r.fecha}</strong>`;
-
+  document.getElementById('cob-resumen').innerHTML=resumenHtml;
   document.getElementById('cob-desc-pct').value='';
   document.getElementById('cob-final').value=lista||'';
   document.getElementById('cob-propina').value='';
@@ -3574,7 +3643,7 @@ function cobroDescuentoEditado(){
   if(!COBRO_CTX)return;
   const pct=parseFloat(document.getElementById('cob-desc-pct').value)||0;
   COBRO_CTX.descPct=pct>0?pct:null;
-  const listaTotal=COBRO_CTX.lineas.reduce((s,l)=>s+l.lista,0);
+  const listaTotal=cobroBaseDescontable();
   document.getElementById('cob-final').value=Math.max(0,listaTotal-Math.round(listaTotal*pct/100));
   cobroRecalcular();
 }
@@ -3672,7 +3741,7 @@ async function confirmarCobro(){
     descuento_monto: l.lista>0?Math.max(0,l.lista-rep.valores[i]):null,
     propina: rep.propinas[i],
     propina_pct: COBRO_CTX.propinaPct
-  })).concat((COBRO_CTX.productos||[]).map(p=>({
+  })).concat((COBRO_CTX.productos||[]).map((p,i)=>({
     // Los productos viajan en el MISMO array con su discriminador: por eso la
     // firma de la RPC no cambió y el frontend viejo pudo seguir cobrando
     // mientras se desplegaba esto.
@@ -3680,9 +3749,11 @@ async function confirmarCobro(){
     producto_id: p.productoId,
     cantidad: p.cantidad,
     precio_unitario: p.precio,
-    // A precio lleno: el descuento se imputa solo a los servicios.
-    valor: p.precio*p.cantidad,
-    descuento_monto: 0,
+    // Con servicios en el cobro, el producto va a precio lleno y el descuento
+    // se imputa solo a ellos. En una venta de SOLO productos no hay servicios
+    // que absorban nada, así que ahí sí llevan su parte del descuento.
+    valor: rep.prodValores[i],
+    descuento_monto: Math.max(0, p.precio*p.cantidad - rep.prodValores[i]),
     barbero_nombre: p.profesional
   })));
 
@@ -4490,7 +4561,12 @@ function renderInventario(){
     <td data-label="Mín" style="color:var(--text3)">${p.stock_min}</td><td data-label="Máx" style="color:var(--text3)">${p.stock_max}</td>
     <td data-label="Estado"><span class="badge ${eb}">${est}</span></td>
     <td data-label="Costo">${fmt(p.costo_unitario)}</td><td data-label="Precio">${fmt(p.precio_venta)}</td>
-    <td data-label=""><button class="btn btn-danger btn-sm" onclick="eliminar('inventario','${p.id}',loadInventario,renderInventario)">×</button></td></tr>`;
+    <td data-label="" style="white-space:nowrap">
+      <!-- La puerta principal a la venta suelta: acá ya estás viendo el stock
+           y el precio, y el producto entra preseleccionado al buscador. Se
+           deshabilita sin stock, igual que en el buscador del cobro. -->
+      <button class="btn btn-primary btn-sm" onclick="abrirVentaProducto('${p.id}')" ${p.stock<=0?'disabled':''} title="${p.stock<=0?'Sin stock':'Vender este producto'}">💵 Vender</button>
+      <button class="btn btn-danger btn-sm" onclick="eliminar('inventario','${p.id}',loadInventario,renderInventario)">×</button></td></tr>`;
   }).join('');
 }
 

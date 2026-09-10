@@ -479,8 +479,12 @@ async function correr(src){
   check('procesarReserva ya no existe', /async function procesarReserva\(/.test(js), false);
   check('abrirCobro arranca con una línea',
         /COBRO_CTX=\{lineas:\[cobroLineaDesde\(r\)\]/.test(js), true);
-  check('la × de quitar exige más de una línea',
-        /COBRO_CTX\.lineas\.length<=1\)return/.test(extraerFuncion(js,'cobroQuitarLinea')), true);
+  // Antes la regla era "nunca quitar la última línea". Con la venta de
+  // productos sin reserva eso cambió: quitar la última reserva es válido SI
+  // quedan productos, porque deja una venta suelta, que es un cobro legítimo.
+  // Lo que sigue prohibido es dejar el cobro completamente vacío.
+  check('no se puede dejar el cobro sin nada que cobrar',
+        /lineas\.length<=1 && !\(COBRO_CTX\.productos\|\|\[\]\)\.length\)return/.test(extraerFuncion(js,'cobroQuitarLinea')), true);
 
   // Solo el mismo día, y de cualquier cliente: el caso real es un padre y un
   // hijo con apellidos distintos, así que NO se puede filtrar por nombre.

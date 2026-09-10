@@ -1,5 +1,13 @@
 -- Entrega 2: productos del inventario en el mismo cobro que las reservas.
 --
+-- ⚠ LA FUNCIÓN DE ESTE ARCHIVO YA NO ES LA VIGENTE.
+-- registrar_cobro_conjunto() se redefinió en migration_venta_sin_reserva.sql
+-- para corregir la fecha de un cobro SIN reservas (usaba current_date, que es
+-- UTC y va adelante de Chile). Todo lo demás de este archivo —la tabla
+-- cobro_productos, comision_producto_pct y el índice de código— sigue vigente
+-- y no se tocó. Si hay que volver a tocar la función, hacerlo sobre el archivo
+-- nuevo, no sobre este.
+--
 -- Continúa migration_cobro_conjunto.sql (Entrega 1), que ya dejó visitas.cobro_id
 -- y registrar_cobro_conjunto(). Acá se agregan los productos, su comisión y el
 -- descuento de stock.

@@ -118,8 +118,11 @@ function correr(html){
   // repartirProporcional y cobroProrratear entraron con el cobro conjunto:
   // cobroRecalcular() ahora lee el reparto en vez de un único monto, así que
   // sin ellas la recompilación tira y esta suite queda muda.
+  // cobroBaseDescontable entró con la venta de productos sin reserva: decide
+  // si el descuento muerde los servicios o los productos, y la llaman los dos
+  // handlers del descuento. Sin ella, la recompilación tira y la suite se cae.
   var FN=['ivaPctNegocio','ivaDe','netoDe','fmt','resolveServicioPrecio',
-          'repartirProporcional','cobroProrratear',
+          'repartirProporcional','cobroProrratear','cobroBaseDescontable',
           'cobroDescuento','cobroDescuentoEditado','cobroPrecioEditado',
           'cobroPropina','cobroPropinaEditada','cobroRecalcular'];
   var fuente=FN.map(function(n){
