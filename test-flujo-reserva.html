@@ -67,22 +67,24 @@
 
   Las ocho se corrieron y las ocho dieron rojo.
 
-  ⚠ HUECO CONOCIDO, ANTERIOR A ESTE CAMBIO — NO ES UNA REGRESIÓN
-  Con un link `?profesional=Ana`, si el cliente elige un servicio que Ana no
-  hace y hay UN solo profesional que sí lo hace, renderProfesionals() lo
-  autoselecciona. Entonces la condición `SALTAR_PROFESIONAL && !SEL.profesional`
-  da falso —ya hay profesional— así que la bandera NO se apaga: se salta al
-  paso 3 sin mostrar el paso 2, y el banner sigue anunciando a Ana mientras la
-  reserva va con el otro.
+  EL BANNER QUE MENTÍA — DETECTADO ACÁ, ARREGLADO DESPUÉS
+  Con un link `?profesional=Ana`, si el cliente elegía un servicio que Ana no
+  hace y había UN solo profesional que sí, renderProfesionals() lo
+  autoseleccionaba. La condición de entonces —`SALTAR_PROFESIONAL &&
+  !SEL.profesional`— daba falso porque ya había profesional, así que la bandera
+  no se apagaba: se salteaba el paso 2 y el banner seguía anunciando a Ana
+  mientras la reserva iba con el otro. El cliente lo veía recién en el resumen
+  del paso 5.
 
-  Pasaba IGUAL antes, con el botón: su onclick evaluaba la misma bandera en el
-  mismo estado. Se ve recién en el resumen del paso 5, que sí muestra el
-  profesional real, así que el cliente puede notarlo antes de confirmar.
+  Existía desde antes del salto automático: el onclick del botón evaluaba la
+  misma bandera en el mismo estado.
 
-  Hay un check abajo que fija este comportamiento TAL COMO ESTÁ HOY. No está
-  ahí porque esté bien: está para que arreglarlo sea una decisión explícita y
-  no un efecto colateral. Si algún día se arregla, ese check tiene que
-  cambiarse a mano, y su nombre lo dice.
+  Se fijó primero con un check que documentaba el comportamiento ROTO —para que
+  arreglarlo fuera una decisión explícita y no un efecto colateral— y se
+  arregló después guardando en PROF_LINK QUIÉN era el profesional del link.
+  Ahora se le pregunta a él si hace el servicio elegido, en vez de mirar si
+  quedó alguien elegido. Ese check esperaba [3] mientras documentaba el hueco;
+  ahora espera [2], y hay dos más que cubren el caso.
 -->
 <style>
 body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
@@ -200,6 +202,7 @@ function correrEleccion(js, cfg, escenario){
     'var ' + cfg.datos + ' = DATOS;\n' +
     'var ' + cfg.sel + ' = ESTADO;\n' +
     (cfg.bandera ? 'var ' + cfg.bandera + ' = BANDERA;\n' : '') +
+    (cfg.link ? 'var ' + cfg.link + ' = LINK;\n' : '') +
     'var saltos = [];\n' +
     'function ' + cfg.ir + '(n){ saltos.push(n); }\n' +
     'function ' + cfg.renderProf + '(){ AUTOSELECCION(' + cfg.sel + ', ' + cfg.datos + '); }\n' +
@@ -211,8 +214,9 @@ function correrEleccion(js, cfg, escenario){
     ' pintado: document.getElementById(PINTA).innerHTML,' +
     ' oculto: document.getElementById(PINTA).style.display };';
   try {
-    return new Function('document','DATOS','ESTADO','BANDERA','ID','PINTA','AUTOSELECCION','escapeHtml', src)(
-      doc, escenario.datos, escenario.estado, escenario.bandera, escenario.id, cfg.pinta,
+    return new Function('document','DATOS','ESTADO','BANDERA','LINK','ID','PINTA','AUTOSELECCION','escapeHtml', src)(
+      doc, escenario.datos, escenario.estado, escenario.bandera, escenario.link || null,
+      escenario.id, cfg.pinta,
       escenario.autoseleccion || function(){}, function(s){ return String(s||''); });
   } catch(e){ return { error: e.message }; }
 }
@@ -235,13 +239,13 @@ var NEGOCIO = {
 };
 
 var CFG_RES = {
-  datos:'B', sel:'SEL', bandera:'SALTAR_PROFESIONAL', ir:'irPaso',
+  datos:'B', sel:'SEL', bandera:'SALTAR_PROFESIONAL', link:'PROF_LINK', ir:'irPaso',
   renderProf:'renderProfesionals', perfil:'renderPerfilProfesional',
   selServicio:'selServicio', pinta:'servicio-elegido',
   fns:['profesionalCalifica','renderServicioElegido','selServicio']
 };
 var CFG_CLUB = {
-  datos:'RB', sel:'RSEL', bandera:null, ir:'rIrPaso',
+  datos:'RB', sel:'RSEL', bandera:null, link:null, ir:'rIrPaso',
   renderProf:'rRenderProfesionales', perfil:null,
   selServicio:'rSelServicio', pinta:'r-servicio-elegido',
   fns:['rRenderServicioElegido','rSelServicio']
@@ -267,7 +271,8 @@ function correr(src){
 
   // Con ?profesional=Ana y un servicio que Ana SÍ hace: se saltea el paso 2.
   var conLink = correrEleccion(jsRes, CFG_RES, {
-    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true, id: 's1'
+    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true,
+    link: 'p1', id: 's1'
   });
   check('con el profesional del link se salta directo al paso 3', conLink.saltos, [3]);
   check('  ...y el profesional del link sobrevive',
@@ -278,7 +283,8 @@ function correr(src){
   // Leyendo la bandera antes de esa corrección, esto daría [3] y el cliente
   // llegaría a elegir fecha sin profesional.
   var linkNoCalifica = correrEleccion(jsRes, CFG_RES, {
-    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true, id: 's2'
+    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true,
+    link: 'p1', id: 's2'
   });
   check('el link de otro profesional cae en el paso 2, no en el 3',
         linkNoCalifica.saltos, [2]);
@@ -286,16 +292,48 @@ function correr(src){
   check('  ...y el profesional que no califica se limpió',
         linkNoCalifica.sel && linkNoCalifica.sel.profesional, null);
 
-  // ⚠ HUECO CONOCIDO, ANTERIOR A ESTE CAMBIO. Ver la nota del encabezado.
-  // Si renderProfesionals() autoselecciona a otro, la bandera NO se apaga y el
-  // paso 2 no se muestra. Este check FIJA el comportamiento de hoy: si algún
-  // día se arregla, hay que cambiarlo a mano y a propósito.
+  // EL HUECO QUE ESTE ARCHIVO FIJÓ PRIMERO Y AHORA VERIFICA ARREGLADO.
+  //
+  // renderProfesionals() autoselecciona cuando UN solo profesional califica.
+  // Con la condición vieja —`SALTAR_PROFESIONAL && !SEL.profesional`— eso
+  // dejaba la bandera encendida: se salteaba el paso 2 y el banner seguía
+  // anunciando a Ana mientras la reserva iba con Beto.
+  //
+  // Ahora se le pregunta al profesional DEL LINK si hace el servicio, así que
+  // la autoselección de otro ya no tapa nada. Este check valía [3] cuando
+  // documentaba el hueco; vale [2] desde que está arreglado.
   var conAutoseleccion = correrEleccion(jsRes, CFG_RES, {
-    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true, id: 's2',
+    datos: NEGOCIO, estado: { servicio:null, profesional:ANA }, bandera: true,
+    link: 'p1', id: 's2',
     autoseleccion: function(sel){ sel.profesional = BETO; }
   });
-  check('HUECO CONOCIDO: si se autoselecciona a otro, hoy se saltea el paso 2',
-        conAutoseleccion.saltos, [3]);
+  check('si se autoselecciona a otro, IGUAL se muestra el paso 2',
+        conAutoseleccion.saltos, [2]);
+  check('  ...la bandera se apaga aunque haya profesional elegido',
+        conAutoseleccion.bandera, false);
+  // Y el que cierra el caso: con la condición vieja, este escenario daba [3].
+  // Que dé [2] es lo que distingue el arreglo de su ausencia.
+  check('  ...y el que quedó elegido es el autoseleccionado, a la vista',
+        conAutoseleccion.sel && conAutoseleccion.sel.profesional &&
+        conAutoseleccion.sel.profesional.id, 'p2');
+
+  // EL CABLEADO, que el sandbox no puede ver: le inyecta PROF_LINK, así que
+  // nunca ejercita init(). Sin esta comprobación, borrar la asignación pasa
+  // desapercibido — y el efecto es que el link ?profesional= deja de saltear
+  // el paso 2 para siempre, en silencio: PROF_LINK queda null, nadie califica,
+  // y la bandera se apaga en cuanto se elige cualquier servicio.
+  // Comprobado con una mutación: sin este check, borrar la línea daba verde.
+  var initRes = extraerFuncion(jsRes, 'init');
+  check('se puede leer el init() de reservar.html', initRes !== '', true);
+  check('init() guarda quién era el profesional del link',
+        /PROF_LINK\s*=\s*profParam/.test(initRes), true);
+  // Las dos van juntas: encender la bandera sin guardar a quién apunta deja la
+  // condición preguntándole a `undefined`, que nunca califica.
+  check('  ...junto con encender la bandera',
+        /SALTAR_PROFESIONAL\s*=\s*true/.test(initRes) &&
+        /PROF_LINK\s*=\s*profParam/.test(initRes), true);
+  check('  ...y se declara con let, para poder reasignarla',
+        /\blet\s+PROF_LINK\b/.test(jsRes), true);
 
   // ───────────────────────────────────────────────────────────────
   titulo('reservar.html — lo que se ve en el paso 2');

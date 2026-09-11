@@ -258,6 +258,10 @@ let SEL = { servicio:null, profesional:null, fecha:null, hora:null };
 let calMes = new Date();
 let ULTIMO_NOMBRE = '';
 let SALTAR_PROFESIONAL = false;
+// QUIÉN era el profesional del link `?profesional=`. Se guarda porque hace
+// falta preguntarle a ÉL si hace el servicio elegido — no alcanza con mirar si
+// quedó alguien seleccionado. Ver selServicio().
+let PROF_LINK = null;
 let CLIENTE_CLUB_ID = null; // id del cliente ya resuelto (buscar_o_crear_cliente_club) — para armar el link de Club VIP en la pantalla de éxito
 
 // Jornada por defecto para el día que el negocio todavía no configuró.
@@ -526,6 +530,7 @@ async function init(){
     // el banner (siempre visible, arriba de los pasos) las incluye directo.
     selProfesional(profParam);
     SALTAR_PROFESIONAL = true;
+    PROF_LINK = profParam;
     document.getElementById('st-2').style.display = 'none';
     const banner = document.getElementById('prof-preselec');
     banner.innerHTML = `
@@ -599,7 +604,22 @@ function selServicio(id){
   // Si el profesional del link no hace este servicio no se puede seguir
   // saltando el paso 2: se restaura el flujo normal para que el cliente elija,
   // y se baja el banner, que quedaría anunciando a alguien que ya no es.
-  if(SALTAR_PROFESIONAL && !SEL.profesional){
+  // Se le pregunta al profesional DEL LINK si hace este servicio, no si quedó
+  // alguien elegido.
+  //
+  // La condición anterior era `SALTAR_PROFESIONAL && !SEL.profesional`, y tenía
+  // un agujero: renderProfesionals() autoselecciona cuando UN solo profesional
+  // califica. Entonces, si el cliente entraba con el link de Ana y elegía un
+  // servicio que Ana no hace pero Beto sí —y Beto era el único—, quedaba
+  // profesional elegido, la bandera NO se apagaba, se salteaba el paso 2, y el
+  // banner seguía anunciando a Ana mientras la reserva iba con Beto. El cliente
+  // recién lo veía en el resumen del paso 5.
+  //
+  // Preguntando por PROF_LINK eso no puede pasar: si el del link no califica,
+  // se muestra el paso 2 aunque haya otro autoseleccionado. Y se muestra CON
+  // esa autoselección visible, que es la diferencia — el cliente ve con quién
+  // va a quedar en vez de enterarse tres pantallas después.
+  if(SALTAR_PROFESIONAL && !profesionalCalifica(B.profesionals.find(b=>b.id===PROF_LINK), SEL.servicio)){
     SALTAR_PROFESIONAL = false;
     document.getElementById('st-2').style.display = '';
     document.getElementById('prof-preselec').style.display = 'none';
