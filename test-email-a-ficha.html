@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — el correo del cliente llega a su ficha</title>
+
+<!--
+  Test del cruce reserva → ficha, en sus DOS mitades:
+  migration_email_a_ficha.sql (las tres RPCs, hacia adelante) y
+  migration_backfill_email_ficha.sql (lo ya perdido, hacia atrás).
+
+  POR QUÉ EXISTE
+  reservar.html hace el correo obligatorio y lo guarda en
+  reservas.email_cliente, pero las tres RPCs que resuelven la ficha lo tiraban.
+  El dato estaba en la base desde el primer día y la ficha figuraba vacía — que
+  es lo que dejaba sin canal a la encuesta de satisfacción.
+
+  Arreglado eso, la regla que lo sostiene ("rellenar solo si está vacío, NUNCA
+  sobrescribir") pasa a vivir en DOS lugares que nadie ata:
+
+    · decidirEmailFicha() en app.html — la reserva manual del panel
+    · la condición coalesce(btrim(email),'') = '' en las tres RPCs
+
+  Este repo ya tuvo la misma regla en su cuarta y quinta copia, y cuando se
+  separan nadie se entera: cada copia sigue funcionando, solo que distinto.
+  Este archivo es lo que las ata.
+
+  LO QUE SE ROMPE SIN ERROR
+   1. Que alguna RPC pierda la guarda del WHERE. Ahí deja de rellenar y pasa a
+      PISAR: el correo que el cliente escribió en el link público lo borra uno
+      dictado por teléfono y mal tipeado. No hay historial en `clientes` — ese
+      dato no vuelve.
+   2. Que la guarda se mueva a un `if` previo. Funciona en las pruebas y falla
+      en producción: entre leer y escribir, otra transacción puede haber
+      cargado el correo, y se pisa justo en el caso que la regla protege.
+   3. Que un insert vuelva a quedarse sin la columna email. Silencioso: la
+      ficha se crea igual, solo que vacía. Es el bug original.
+   4. Que la lista de correos excluidos del backfill quede en dos de sus tres
+      consultas. El ensayo mostraría una cosa y el update haría otra.
+   5. Que el archivo de las RPCs lleve begin;/commit;. Con dollar-quoting el
+      SQL Editor de Supabase devuelve ÉXITO sin haber aplicado nada.
+
+  QUÉ COMPRUEBA
+  Los ARCHIVOS REALES: ejecuta la decidirEmailFicha() de app.html contra casos
+  límite, y lee las dos migraciones como texto. No abre Supabase.
+
+  ⚠ LO QUE ESTE TEST NO PUEDE HACER: ejecutar el SQL. Que las funciones se
+  comporten como dicen se verifica en la base, con los pasos 3 y 5 de
+  migration_email_a_ficha.sql — el 5 crea una ficha con correo, corre la misma
+  sentencia con otro, y comprueba que conservó el suyo, todo en
+  begin;/rollback;. Este archivo comprueba que la REGLA esté escrita en los dos
+  lados y diga lo mismo; aquel comprueba que haga lo que dice.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) En decidirEmailFicha(), devolver 'escribir' cuando la ficha ya tiene otro
+      correo -> falla "con otro correo cargado NO escribe".
+   b) Sacarle el chequeo de whatsapp distinto
+      -> falla "si el WhatsApp ya no coincide, no toca la ficha".
+   c) Quitar la guarda del WHERE en una de las tres RPCs
+      -> falla "las tres RPCs rellenan solo si la ficha está vacía".
+   d) Sacar `email` de un insert into clientes
+      -> falla "ningún insert a clientes se queda sin el correo".
+   e) Envolver migration_email_a_ficha.sql en begin;/commit;
+      -> falla "la migración de funciones NO lleva transacción a mano".
+   f) Sacar la exclusión de una de las tres consultas del backfill
+      -> falla "la lista de excluidos es la misma en las tres consultas".
+   g) Cambiar el helper para que acepte un texto sin arroba
+      -> falla "el helper exige una arroba que no esté al principio".
+   h) Publicar el helper (borrar el revoke)
+      -> falla "el helper no queda publicado como endpoint".
+
+  Las ocho se corrieron y las ocho dieron rojo.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — el correo del cliente llega a su ficha</h1>
+<p>Verifica que las tres puertas copien el correo de la reserva, y que la regla
+"rellenar solo si está vacío, nunca sobrescribir" diga lo mismo en el panel y en
+la base.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html',
+                'migration_email_a_ficha.sql',
+                'migration_backfill_email_ficha.sql'];
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+// Los comentarios de estas migraciones EXPLICAN la regla, así que nombran
+// literalmente lo que se busca. Sin sacarlos, varios checks darían verde
+// contra su propia documentación en vez de contra el SQL. Ya pasó en
+// test-flujo-reserva.html con un botón que el comentario mencionaba.
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// El cuerpo de una función plpgsql del archivo, entre su CREATE y su cierre.
+// Se usa para preguntarle a CADA UNA por separado si tiene la guarda: contar
+// ocurrencias en todo el archivo daría verde con dos de tres.
+function cuerpoSql(sql, nombre){
+  var re = new RegExp('CREATE OR REPLACE FUNCTION public\\.' + nombre + '\\b', 'i');
+  var m = re.exec(sql);
+  if(!m) return '';
+  var fin = sql.indexOf('$function$;', m.index);
+  return fin === -1 ? '' : sql.slice(m.index, fin);
+}
+
+var RPCS = ['buscar_o_crear_cliente_club',
+            'mi_agenda_procesar_pago',
+            'registrar_cobro_conjunto'];
+
+function correr(src){
+  var jsApp = sinComentarios(inlineScripts(src['app.html']).join('\n'));
+  var sqlFn = sinComentariosSql(src['migration_email_a_ficha.sql']);
+  // El backfill se mira de las DOS formas, y la distinción es el punto:
+  //   · sqlBf      — solo lo que se EJECUTA. En ese archivo es únicamente el
+  //                  PASO 4: el ensayo y las verificaciones van comentados a
+  //                  propósito, para que correr el archivo no dispare nada
+  //                  que no sea el update.
+  //   · sqlBfCrudo — el texto completo, comentarios incluidos. Es donde viven
+  //                  el ensayo y los pasos de verificación, que son código
+  //                  real aunque estén comentados: el dueño los descomenta y
+  //                  los corre. Si se separan del update, el ensayo deja de
+  //                  predecir lo que va a pasar.
+  var sqlBf = sinComentariosSql(src['migration_backfill_email_ficha.sql']);
+  var sqlBfCrudo = src['migration_backfill_email_ficha.sql'];
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la regla en el panel — decidirEmailFicha() ejecutándose');
+
+  var fuente = extraerFuncion(jsApp, 'decidirEmailFicha');
+  check('se puede extraer decidirEmailFicha()', fuente !== '', true);
+
+  var decidir = intentar(function(){
+    return new Function(fuente + '\nreturn decidirEmailFicha;')();
+  });
+  check('se puede ejecutar', typeof decidir, 'function');
+
+  if(typeof decidir === 'function'){
+    var W = '+56 9 1111 2222';
+    // El caso que motivó todo: ficha vacía, el cliente dio su correo.
+    check('ficha vacía y correo nuevo: escribe',
+          decidir(W, '', W, 'juan@correo.cl'), 'escribir');
+    check('ficha en null también cuenta como vacía',
+          decidir(W, null, W, 'juan@correo.cl'), 'escribir');
+    check('ficha con solo espacios también',
+          decidir(W, '   ', W, 'juan@correo.cl'), 'escribir');
+
+    // LA REGLA QUE DUELE SI SE ROMPE. No hay historial en `clientes`: si esto
+    // devuelve 'escribir', el correo que el cliente escribió se pierde.
+    check('con otro correo cargado NO escribe',
+          decidir(W, 'elsuyo@correo.cl', W, 'otro@correo.cl'), 'distinto');
+    check('con el MISMO correo no hace nada',
+          decidir(W, 'juan@correo.cl', W, 'juan@correo.cl'), 'nada');
+
+    // Si el dueño corrigió el WhatsApp a mano después de elegir la ficha en el
+    // autocompletar, la reserva ya puede ser de otra persona.
+    check('si el WhatsApp ya no coincide, no toca la ficha',
+          decidir(W, '', '+56 9 3333 4444', 'juan@correo.cl'), 'nada');
+    check('  ...ni siquiera con la ficha vacía y correo válido',
+          decidir(W, null, '+56 9 3333 4444', 'juan@correo.cl'), 'nada');
+
+    check('sin correo nuevo no hay nada que hacer',
+          decidir(W, '', W, ''), 'nada');
+    check('  ...ni con correo nuevo nulo',
+          decidir(W, '', W, null), 'nada');
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la misma regla en la base — las tres RPCs');
+
+  check('la migración define las tres funciones',
+        RPCS.filter(function(n){ return cuerpoSql(sqlFn, n) !== ''; }).length, 3);
+
+  // Se pregunta por CADA función, no se cuenta en todo el archivo: con dos de
+  // tres, un conteo global daría verde igual.
+  var sinGuarda = RPCS.filter(function(n){
+    return !/coalesce\(btrim\(email\), ''\) = ''/.test(cuerpoSql(sqlFn, n));
+  });
+  check('las tres RPCs rellenan solo si la ficha está vacía', sinGuarda, []);
+
+  // La guarda tiene que estar en el WHERE del update, no en un `if` previo:
+  // entre leer y escribir, otra transacción puede haber cargado el correo.
+  var sinUpdate = RPCS.filter(function(n){
+    return !/update clientes[\s\S]{0,400}?where[\s\S]{0,400}?coalesce\(btrim\(email\), ''\) = ''/.test(cuerpoSql(sqlFn, n));
+  });
+  check('la guarda va en el WHERE del update, no en un if', sinUpdate, []);
+
+  // El bug original: el insert de seis columnas, sin email.
+  var insertsSinEmail = (sqlFn.match(/insert into clientes \(barberia_id, nombre, whatsapp, cumpleanos/g) || []).length;
+  check('ningún insert a clientes se queda sin el correo', insertsSinEmail, 0);
+  var insertsConEmail = (sqlFn.match(/insert into clientes \(barberia_id, nombre, whatsapp, email,/g) || []).length;
+  check('los tres inserts llevan la columna email', insertsConEmail, 3);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el helper, que existe para no tener una cuarta copia');
+
+  check('define email_para_ficha()',
+        /create or replace function email_para_ficha\(p_email text\)/i.test(sqlFn), true);
+  check('el helper exige una arroba que no esté al principio',
+        /position\('@' in coalesce\(btrim\(p_email\), ''\)\) > 1/.test(sqlFn), true);
+  check('es immutable', /returns text\s+language sql\s+immutable/i.test(sqlFn), true);
+  // PostgREST publica toda función del esquema public como endpoint, y en
+  // Supabase NO alcanza con quitarle el permiso a PUBLIC: los default
+  // privileges le dan EXECUTE a anon y authenticated por separado, como grant
+  // explícito de cada rol. Verificado en la base el 2026-09-11: con solo el
+  // revoke a public, anon seguía pudiendo llamarla.
+  // Por eso se exigen los DOS revokes: con uno solo, la función sigue
+  // publicada y el check daría verde igual.
+  check('el helper no queda publicado a PUBLIC',
+        /revoke execute on function email_para_ficha\(text\) from public/i.test(sqlFn), true);
+  check('  ...ni a anon y authenticated, que lo reciben por default privileges',
+        /revoke execute on function email_para_ficha\(text\) from anon, authenticated/i.test(sqlFn), true);
+  // Las tres lo usan: si una se quedara con su propia condición, la regla
+  // volvería a tener copias.
+  var sinHelper = RPCS.filter(function(n){
+    return !/email_para_ficha\(v_reserva\.email_cliente\)/.test(cuerpoSql(sqlFn, n));
+  });
+  check('las tres usan el helper en vez de su propia condición', sinHelper, []);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la trampa del SQL Editor');
+
+  // Con dollar-quoting adentro, el editor devuelve ÉXITO sin aplicar nada.
+  check('la migración de funciones NO lleva transacción a mano',
+        /^\s*(begin|commit)\s*;/m.test(sqlFn), false);
+  // El backfill no define funciones, así que ahí sí corresponde.
+  check('el backfill SÍ va en transacción',
+        /^\s*begin\s*;/m.test(sqlBf) && /^\s*commit\s*;/m.test(sqlBf), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el backfill — que el ensayo prediga el update');
+
+  // LA COMPROBACIÓN CENTRAL DE ESTE ARCHIVO PARA EL BACKFILL.
+  //
+  // La lista de excluidos está en las TRES consultas que eligen candidatos: el
+  // ensayo (PASO 1), el conteo (PASO 2) y el update (PASO 4). Las dos primeras
+  // van comentadas porque no deben ejecutarse al correr el archivo — pero son
+  // código real: el dueño las descomenta y las corre para decidir si sigue.
+  //
+  // Si una se edita y otra no, el ensayo muestra una cosa y el update hace
+  // otra, EN SILENCIO. El 2026-09-11 este desfase se sospechó durante un rato
+  // largo (resultó ser dato previo, no un desfase), y esta comprobación es lo
+  // que lo habría descartado en un segundo.
+  //
+  // Por eso se mira el texto CRUDO: en el comentado hay una sola.
+  //
+  // El regex exige una cadena entre comillas adentro del array. Sin eso
+  // matcheaba también el comentario del encabezado, que NOMBRA la construcción
+  // ("está en un `<> all (array[...])` repetido en cada paso") — el check daba
+  // rojo contra su propia documentación. Tercera vez que pasa en este repo.
+  var exclusiones = (sqlBfCrudo.match(/<> all \(array\['[^']*'\]\)/g) || []);
+  check('la lista de excluidos está en las tres consultas de candidatos',
+        exclusiones.length, 3);
+  check('  ...y las tres listas son idénticas',
+        exclusiones.filter(function(x){ return x !== exclusiones[0]; }), []);
+  // Y que solo UNA se ejecute: si el ensayo dejara de estar comentado, correr
+  // el archivo escupiría filas en vez de escribir, o al revés.
+  check('  ...pero solo una se ejecuta al correr el archivo',
+        (sqlBf.match(/<> all \(array\[[^\]]*\]\)/g) || []).length, 1);
+
+  // El mismo filtro de basura que el helper, para que el pasado y el futuro
+  // usen el mismo criterio de "esto es un correo".
+  check('usa el mismo criterio de arroba que el helper',
+        (sqlBfCrudo.match(/position\('@' in btrim\(r\.email_cliente\)\) > 1/g) || []).length, 3);
+
+  // Teléfonos compartidos entre personas distintas: el correo de una no puede
+  // terminar en la ficha de la otra. Primer nombre, no nombre completo — el
+  // completo bloquearía las fichas duplicadas de la MISMA persona.
+  check('compara el primer nombre, no el completo',
+        /split_part\(btrim\(r\.nombre_cliente\)/.test(sqlBf), true);
+  check('  ...y nunca el nombre entero',
+        /r\.nombre_cliente\s*=\s*[a-z_.]*nombre\b/.test(sqlBf), false);
+
+  // Scoping por negocio: sin esto, un teléfono repetido entre dos negocios
+  // distintos cruzaría correos entre ellos — que es exactamente la forma de
+  // los casos de prueba del dueño (zbarber / Sintonía Salón compartiendo
+  // números). En las tres consultas, y en la que se ejecuta también.
+  // No se cuenta un número fijo: se exige que TODO join por teléfono venga
+  // acompañado de su scoping por negocio. Así el check sigue valiendo si
+  // mañana se agrega otra consulta al archivo — un número fijo habría que
+  // recordar actualizarlo, y nadie lo recuerda.
+  var joinsPorTelefono = (sqlBfCrudo.match(/r\.whatsapp_norm = f\.whatsapp_norm/g) || []).length;
+  var joinsPorNegocio  = (sqlBfCrudo.match(/r\.barberia_id = f\.barberia_id/g) || []).length;
+  check('hay joins por teléfono que verificar', joinsPorTelefono > 0, true);
+  check('todo cruce por teléfono está acotado al mismo negocio',
+        joinsPorNegocio, joinsPorTelefono);
+  check('  ...incluida la consulta que se ejecuta',
+        /r\.barberia_id = f\.barberia_id/.test(sqlBf), true);
+
+  // La guarda en el UPDATE, no solo en la CTE.
+  check('el update no puede pisar un correo cargado',
+        /update clientes c[\s\S]*?where[\s\S]*?coalesce\(btrim\(c\.email\), ''\) = ''\s*;/.test(sqlBf), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las dos mitades no se contradicen');
+
+  // El panel decide en JS y la base decide en SQL. Los dos tienen que tratar
+  // "vacío" igual: null, '' y solo espacios son lo mismo.
+  check('el panel trata null, vacío y espacios como vacío',
+        typeof decidir === 'function' &&
+        decidir('x', null, 'x', 'a@b.cl') === 'escribir' &&
+        decidir('x', '',   'x', 'a@b.cl') === 'escribir' &&
+        decidir('x', '  ', 'x', 'a@b.cl') === 'escribir', true);
+  check('la base también, con coalesce + btrim',
+        /coalesce\(btrim\(email\), ''\) = ''/.test(sqlFn), true);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
