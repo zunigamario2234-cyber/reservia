@@ -96,18 +96,20 @@ as $$
    -- TELÉFONOS COMPARTIDOS ENTRE PERSONAS DISTINTAS.
    -- Como `reservas` no tiene cliente_id y se empareja por teléfono, dos fichas
    -- con nombres distintos y el mismo número se ven las reservas entre sí. En
-   -- la base real hay dos casos (verificado 2026-09-08): Mario/Luis Silva y
-   -- juan/Ian Zuñiga. Ahí falla el razonamiento con el que se aceptó un link
-   -- sin token —"la cita ya la conoce quien la coordinó"—, porque el que la ve
-   -- NO es quien la coordinó.
+   -- la base real hay dos casos (verificado 2026-09-08) de personas DISTINTAS
+   -- compartiendo número. Ahí falla el razonamiento con el que se aceptó un
+   -- link sin token —"la cita ya la conoce quien la coordinó"—, porque el que
+   -- la ve NO es quien la coordinó.
    --
    -- Ante la duda no se muestra nada: esas personas no ven sus reservas, que es
    -- una molestia, en vez de ver las de otro, que es una filtración.
    --
-   -- Compara el PRIMER nombre y no el completo, a propósito: "Felipe Guerra" y
-   -- "Felipe" son la misma persona con la ficha duplicada y tienen que seguir
-   -- viendo lo suyo; "Mario" y "Luis Silva" no. Con el nombre completo, todos
-   -- los duplicados benignos —que son la mayoría— quedarían bloqueados de más.
+   -- Compara el PRIMER nombre y no el completo, a propósito. Dos fichas de la
+   -- MISMA persona escrita distinto —el nombre solo en una y nombre+apellido en
+   -- la otra— son la mayoría de los casos de número repetido, y tienen que
+   -- seguir viendo lo suyo. Dos personas distintas con el mismo número no. Con
+   -- el nombre completo, todos los duplicados benignos quedarían bloqueados de
+   -- más.
    --
    -- El arreglo de fondo es reservas.cliente_id, que elimina la adivinanza por
    -- teléfono. Es otra tarea: columna, backfill y poblarla en las tres puertas
@@ -235,8 +237,8 @@ grant execute on function get_proximas_reservas_publico(uuid, uuid) to anon, aut
 -- where c1.whatsapp_norm <> ''
 --   and lower(split_part(trim(c1.nombre),' ',1)) <> lower(split_part(trim(c2.nombre),' ',1));
 --
--- En la base del 2026-09-08 esto devuelve los pares Mario/Luis Silva y
--- juan/Ian Zuñiga. Y ahora, que NINGUNO de ellos vea nada:
+-- En la base del 2026-09-08 esto devuelve DOS pares de personas distintas
+-- compartiendo número. Y ahora, que NINGUNO de ellos vea nada:
 --
 -- select c.nombre,
 --        (select count(*) from get_proximas_reservas_publico(c.barberia_id, c.id)) as ve
@@ -255,15 +257,26 @@ grant execute on function get_proximas_reservas_publico(uuid, uuid) to anon, aut
 -- (misma persona, ficha repetida) tienen que seguir viendo lo suyo. Sin esto,
 -- un filtro demasiado ancho se ve igual que uno correcto.
 --
+-- Los números salen de la consulta de arriba invertida: los que comparten
+-- teléfono Y comparten el primer nombre. Se buscan en el momento en vez de
+-- dejarlos escritos acá — este archivo es público y son datos de contacto de
+-- personas reales.
+--
 -- select c.nombre,
 --        (select count(*) from get_proximas_reservas_publico(c.barberia_id, c.id)) as ve
 -- from clientes c
--- where c.whatsapp_norm in ('971037106','940920177','994652022')
+-- where c.whatsapp_norm <> ''
+--   and exists (
+--     select 1 from clientes c2
+--     where c2.barberia_id = c.barberia_id and c2.whatsapp_norm = c.whatsapp_norm
+--       and c2.id <> c.id
+--       and lower(split_part(trim(c2.nombre),' ',1)) = lower(split_part(trim(c.nombre),' ',1))
+--   )
 -- order by c.nombre;
 --
--- Felipe Guerra / Felipe, Felipe / Felipe Ramirez y Jorge Duarte ×2 comparten
--- el primer nombre, así que NO tienen que quedar bloqueados: si tienen
--- reservas futuras, las siguen viendo.
+-- Son fichas duplicadas de la MISMA persona —el nombre solo en una y
+-- nombre+apellido en la otra— así que NO tienen que quedar bloqueadas: si
+-- tienen reservas futuras, las siguen viendo.
 --
 -- =============================================================================
 -- PASO 7 — EL AGUJERO DE LAS FICHAS SIN TELÉFONO (el más importante)

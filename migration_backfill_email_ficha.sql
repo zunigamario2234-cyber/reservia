@@ -37,19 +37,23 @@
 --    eso no es un dato mal puesto, es mandarle a una persona los correos de
 --    otra. Se compara el PRIMER nombre, mismo criterio que
 --    get_proximas_reservas_publico: el nombre completo bloquearía también a
---    todas las fichas duplicadas de la MISMA persona ("Felipe Guerra" /
---    "Felipe"), que son la mayoría de los casos de teléfono repetido.
+--    todas las fichas duplicadas de la MISMA persona (el nombre solo
+--    en una ficha y nombre+apellido en la otra), que son la mayoría de los
+--    casos de teléfono repetido.
 --
 -- 3. VARIOS CORREOS PARA EL MISMO TELÉFONO. La persona cambió de correo, o se
 --    equivocó una vez. Se toma el MÁS RECIENTE no vacío, por fecha y hora de
 --    la reserva.
 --
 -- 4. CORREOS DE PRUEBA DE OTRAS CUENTAS. Detectado en el ensayo del 2026-09-10:
---    'sintoniasalon@gmail.com' aparecía en las reservas de "leandro martinez",
---    "luis vera" y "pruba 2" — datos de prueba del dueño desde otras cuentas
---    suyas, no el correo de esas personas. Se excluye LA DIRECCIÓN, no los tres
---    clientes: así una cuarta reserva con ese mismo correo, hoy o mañana, queda
---    afuera sola.
+--    la dirección de abajo aparecía en las reservas de TRES fichas de prueba
+--    del dueño, cargadas desde otras cuentas suyas — no era el correo de esas
+--    personas. Se excluye LA DIRECCIÓN, no las tres fichas: así una cuarta
+--    reserva con ese mismo correo, hoy o mañana, queda afuera sola.
+--
+--    (Esa dirección es una cuenta del propio dueño, no de un cliente, y queda
+--    escrita en el SQL porque es lo que de verdad se ejecutó. Las tres fichas
+--    se borraron el 2026-09-11 — ver limpieza_datos_prueba.sql.)
 --
 --    La lista está en un `<> all (array[...])` repetido en cada paso. Agregar
 --    otra dirección es un elemento más, pero HAY QUE AGREGARLA EN TODOS LOS
@@ -57,8 +61,8 @@
 --    de verificación existe justamente para cazar esa divergencia.
 --
 --    NO se usa la regla general que parece obvia —"un correo en varias fichas
---    distintas es sospechoso"—: en el mismo ensayo apareció Bruno Otarola con
---    el correo de su mamá, que agendó por él. Es correcto y tiene que entrar.
+--    distintas es sospechoso"—: en el mismo ensayo apareció un cliente con
+--    el correo de un familiar que agendó por él. Es correcto y tiene que entrar.
 --    Un correo compartido entre familiares es normal; esa heurística lo
 --    rompería.
 --
@@ -202,8 +206,8 @@ candidatos as (
    and lower(btrim(r.email_cliente)) <> all (array['sintoniasalon@gmail.com'])
    -- Teléfono compartido entre personas distintas. Ver la trampa 2 arriba.
    -- OJO: esto NO bloquea el correo de un familiar que agenda por otro. En el
-   -- ensayo apareció Bruno Otarola con el correo de su mamá, que reservó a su
-   -- nombre: el nombre de la reserva es el de Bruno, así que pasa el filtro y
+   -- ensayo apareció un cliente con el correo de un familiar, que reservó a su
+   -- nombre: el nombre de la reserva es el del cliente, así que pasa el filtro y
    -- entra. Está bien que entre — es el correo por el que se le llega.
    and lower(split_part(btrim(r.nombre_cliente), ' ', 1)) = f.primer_nombre
 )
@@ -243,8 +247,9 @@ commit;
 -- ⚠ ESTE PASO NO ES UNA ALARMA, y su primera versión decía que sí. Marca las
 -- fichas cuyo correo difiere de ALGUNA de sus reservas, que es lo normal en
 -- cuanto alguien cambia de correo entre una cita y otra. El 2026-09-11
--- devolvió filas esperables — Luis Silva entre ellas, porque su ficha quedó
--- con el correo de una reserva y otra suya tiene el que excluimos. Nosotros lo
+-- devolvió filas esperables: una ficha de prueba entre ellas, porque quedó
+-- con el correo de una reserva mientras otra suya tiene el que excluimos.
+-- Nosotros lo
 -- pusimos ahí a propósito.
 --
 -- Sirve para mirar la lista, no para contar filas. La alarma de verdad es el
@@ -296,8 +301,8 @@ commit;
 --
 -- ⚠ LEER ESTO ANTES DE ALARMARSE. La primera versión de este paso buscaba
 -- CUALQUIER ficha con el correo excluido y decía "esperado: cero filas". Está
--- mal, y el 2026-09-11 costó un rato largo: devolvió 3 fichas (Ian Zuñiga,
--- marcelo, Luis Silva) que YA tenían ese correo de una carga manual anterior.
+-- mal, y el 2026-09-11 costó un rato largo: devolvió 3 fichas que YA tenían
+-- ese correo de una carga manual anterior.
 -- El backfill no las había tocado. La consulta confundía "el update escribió
 -- algo indebido" con "este correo existe en la base por cualquier motivo".
 --
@@ -341,7 +346,20 @@ commit;
 -- Si alguna quedó con correo, mira CUÁL es antes de borrarlo — podría ser uno
 -- legítimo que ya tenía de antes y que este backfill no tocó.
 --
--- select nombre, coalesce(nullif(btrim(email),''), '(vacío)') as email
--- from clientes
--- where lower(btrim(nombre)) in ('leandro martinez', 'luis vera', 'pruba 2')
--- order by nombre;
+-- ⚠ 2026-09-11 — ESTE PASO YA NO APLICA, y se deja escrito por qué.
+--
+-- La consulta que estaba acá buscaba por NOMBRE las tres fichas de prueba
+-- donde apareció el correo excluido, para verificar que siguieran sin correo.
+-- Se sacó por dos razones, y las dos valen para cualquier paso que se escriba
+-- en este archivo de acá en adelante:
+--
+--  · Las tres fichas se borraron ese mismo día (ver limpieza_datos_prueba.sql),
+--    así que devolvía cero filas y el "esperado: las tres filas" pasaba a ser
+--    una falsa alarma más — la cuarta de este archivo.
+--
+--  · Este repositorio es PÚBLICO. Los nombres de las fichas son nombres de
+--    personas, y no hacen falta para explicar nada: un ejemplo genérico enseña
+--    lo mismo. Al escribir un paso nuevo, describir el CASO, no a la persona.
+--
+-- El PASO 8b cubre lo que este cubría, y lo hace por dirección de correo en
+-- vez de por nombre.
