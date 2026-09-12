@@ -432,6 +432,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="mc vip-only"><div class="mc-label">Clientes VIP</div><div class="mc-val gold" id="d-vip">—</div><div class="mc-sub" id="d-vip-sub">—</div></div>
   </div>
   <div class="g4">
+    <div class="mc" onclick="irAEncuestas()" style="cursor:pointer"><div class="mc-label">Encuestas sin leer</div><div class="mc-val" id="d-enc-nuevas">—</div><div class="mc-sub" id="d-enc-nuevas-sub">Respuestas nuevas</div></div>
+    <div class="mc"><div class="mc-label">Satisfacción del mes</div><div class="mc-val" id="d-enc-prom">—</div><div class="mc-sub" id="d-enc-prom-sub">—</div></div>
     <div class="mc"><div class="mc-label">Inactivos +30d</div><div class="mc-val down" id="d-inactivos">—</div><div class="mc-sub">Sin citar</div></div>
     <div class="mc"><div class="mc-label">Cumpleaños próx.</div><div class="mc-val" id="d-cumples">—</div><div class="mc-sub">Próximos 7 días</div></div>
     <div class="mc"><div class="mc-label" id="d-ticket-label">Ticket promedio</div><div class="mc-val" id="d-ticket">—</div><div class="mc-sub" id="d-ticket-sub">—</div></div>
@@ -559,12 +561,19 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab active" onclick="switchTab(this,'tm-cumple')">🎂 Cumpleaños</div>
     <div class="tab" onclick="switchTab(this,'tm-confirm')">✅ Confirmaciones</div>
     <div class="tab" onclick="switchTab(this,'tm-inact')">👋 Inactivos</div>
+    <div class="tab" onclick="switchTab(this,'tm-encuesta')">⭐ Encuestas</div>
     <div class="tab vip-only" onclick="switchTab(this,'tm-vip')">⭐ VIP</div>
     <div class="tab" onclick="switchTab(this,'tm-plantillas')">📝 Plantillas</div>
   </div>
   <div id="tm-cumple"><div id="l-cumples"></div></div>
   <div id="tm-confirm" style="display:none"><div id="l-confirm"></div></div>
   <div id="tm-inact" style="display:none"><div id="l-inact"></div></div>
+  <div id="tm-encuesta" style="display:none">
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Por enviar por WhatsApp — clientes sin correo en su ficha.</div>
+    <div id="l-enc-pend"></div>
+    <div style="font-size:12px;color:var(--text2);margin:18px 0 10px">Respuestas recibidas</div>
+    <div id="l-enc-resp"></div>
+  </div>
   <div id="tm-vip" class="vip-only" style="display:none"><div id="l-vip-msg"></div></div>
   <div id="tm-plantillas" style="display:none"><div id="l-plantillas"></div></div>
 </div>
@@ -1441,7 +1450,11 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // `barberoServicios` no tiene ese problema hoy —solo se lee en un render, ya
 // terminada la carga— pero queda declarada por la misma razón: la próxima vez
 // que alguien la lea durante loadAll, no debería enterarse por un panel caído.
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[] };
+let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[] };
+// ⚠ `encuestas:[]` DECLARADO ACÁ, no agregado al vuelo. Omitir una clave ya
+// tiró el panel entero en producción una vez: loadAll() carga en paralelo y
+// cualquier render que corra antes encuentra `undefined` y muere en `.filter`
+// o `.map`. Toda clave nueva de S nace declarada y vacía.
 const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
@@ -1499,7 +1512,7 @@ async function loadAll(){
   S.barberia = b;
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadHorarioNegocio(),loadBloqueos()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
   // Después de las dos fuentes, nunca antes: S.ventas es derivado.
@@ -1573,8 +1586,37 @@ async function loadHorarioNegocio(){
 }
 async function loadBloqueos(){ const {data}=await sb.from('bloqueos_profesional').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.bloqueos=data||[]; }
 async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').eq('barberia_id',S.barberia.id).order('evento'); S.plantillas=data||[]; }
+// Encuestas de los últimos 60 días. El corte no es por performance: una
+// encuesta sin enviar de hace tres meses ya no sirve para nada —el cliente no
+// se acuerda de esa visita— y en la lista solo sería ruido que tapa las de
+// esta semana. El promedio del dashboard es mensual, así que 60 días alcanza.
+async function loadEncuestas(){
+  const desde=new Date(); desde.setDate(desde.getDate()-60);
+  const {data}=await sb.from('encuestas').select('*')
+    .eq('barberia_id',S.barberia.id)
+    .gte('created_at',desde.toISOString())
+    .order('created_at',{ascending:false});
+  S.encuestas=data||[];
+}
 
 // ─── HELPERS ───
+// Escapa lo que se pinta con innerHTML.
+//
+// ⚠ EL PANEL RECIBE TEXTO DE DESCONOCIDOS, y cada vez más. El comentario de la
+// encuesta lo escribe el CLIENTE en encuesta.html, una página pública sin
+// sesión, y se muestra acá — en la pantalla del dueño, que es la que puede
+// cobrar, ver toda la base de clientes y cambiar la configuración del negocio.
+// Lo mismo vale para el nombre y las notas que llegan del formulario público
+// de reservas.
+//
+// El mismo agujero existía en mi-agenda.html y se cerró el 2026-09-12; acá se
+// agrega antes de que exista, no después.
+function escapeHtml(s){
+  return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[c]);
+}
+
 function notify(msg,type='ok'){
   const n=document.getElementById('notif');
   n.textContent=msg; n.className='notif '+type; n.classList.add('show');
@@ -1894,6 +1936,26 @@ function buildMsg(evento, vars={}){
 // Devuelve la fecha 'YYYY-MM-DD' y los minutos desde medianoche, las dos de la
 // misma fuente. Para convertir un Date cualquiera a texto está fmtDateLocal();
 // esta es solo para "ahora".
+// El mes 'YYYY-MM' de un timestamp, EN HORA DE CHILE.
+//
+// ⚠ NO usar `iso.slice(0,7)` sobre una columna timestamptz. Supabase las
+// devuelve en UTC, que va adelante de Chile: algo ocurrido a las 21:00 del 30
+// de septiembre chileno vuelve como 1 de octubre, y ese slice lo pone en el
+// mes equivocado. Es el mismo bug de las noches que ya movió el IVA y las
+// comisiones un mes entero, solo que entrando por otro lado.
+//
+// Para columnas `date` (fecha de una visita, de una reserva) el slice SÍ sirve:
+// ahí no hay hora ni zona, son fechas de pared chilenas.
+function mesChileDe(iso){
+  if(!iso) return '';
+  try{
+    const p={};
+    new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit'})
+      .formatToParts(new Date(iso)).forEach(x=>{ p[x.type]=x.value; });
+    return `${p.year}-${p.month}`;
+  }catch(e){ return String(iso).slice(0,7); }
+}
+
 function ahoraEnChile(){
   try{
     const p = {};
@@ -3810,7 +3872,11 @@ async function confirmarCobro(){
 
   const btn=document.getElementById('cob-btn');
   btn.disabled=true;btn.textContent='Registrando...';
-  const {error}=await sb.rpc('registrar_cobro_conjunto',{
+  // `data` es el cobro_id que devuelve la RPC. Antes se descartaba; ahora hace
+  // falta para disparar la encuesta de satisfacción — un cobro puede tener
+  // reservas de VARIAS personas, y el endpoint resuelve una encuesta por
+  // cliente a partir de ese id.
+  const {data:cobroId,error}=await sb.rpc('registrar_cobro_conjunto',{
     p_lineas:lineas,
     p_metodo_pago:document.getElementById('cob-metodo').value,
     // La RPC compara esto contra la suma de las líneas y rechaza el cobro si no
@@ -3819,6 +3885,18 @@ async function confirmarCobro(){
   });
   btn.disabled=false;btn.textContent='Registrar cobro';
   if(error){notify(error.message,'err');return;}
+
+  // Encuesta de satisfacción. Sin await y con catch vacío a propósito, igual
+  // que el correo de confirmación: el cobro YA está registrado y es lo único
+  // que importa acá. Si el correo falla, la encuesta queda con enviada_at en
+  // null y aparece en la lista de WhatsApp de Mensajes — no se pierde.
+  //
+  // Las filas de `encuestas` no las crea esto: las crea un trigger sobre
+  // `visitas` cuando la RPC las inserta. Este fetch solo dispara el ENVÍO.
+  if(cobroId){
+    fetch('/api/enviar-encuesta',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({cobroId})}).catch(()=>{});
+  }
 
   // loadCobroProductos también: si no, S.ventas queda sin la venta recién
   // hecha y el IVA de esta pantalla muestra menos de lo que entró. Y el
@@ -4077,6 +4155,39 @@ function renderDashboard(){
   document.getElementById('d-ventas-neto').innerHTML='Neto: '+fmt(ventas-iva)+' · '+deltaHtml(ventas,ventasPrev,range.nombrePrev);
   document.getElementById('d-vip').textContent=fmtN(vips);
   document.getElementById('d-vip-sub').textContent=nivelesOrdenados().map(nv=>nv.nombre).join(' · ')||'Sin niveles configurados';
+  // ── Encuestas ──────────────────────────────────────────────────────────
+  // Dos números, y son distintos a propósito:
+  //   · SIN LEER es accionable — respuestas que el dueño todavía no miró. Baja
+  //     cuando aprieta "Marcar vista", así que puede llegar a cero.
+  //   · EL PROMEDIO es del MES CORRIDO y no del período elegido arriba: es una
+  //     medida de cómo va el negocio ahora, no una comparación. Mezclarla con
+  //     el selector de período la volvería otra cosa cada vez que se toca.
+  const sinLeer=(S.encuestas||[]).filter(e=>e.respondida_at&&!e.vista_at);
+  const malasSinLeer=sinLeer.filter(e=>e.puntaje<=3).length;
+  document.getElementById('d-enc-nuevas').textContent=fmtN(sinLeer.length);
+  // Las malas se nombran aparte: 3 respuestas de las que 2 son malas no es lo
+  // mismo que 3 buenas, y el número solo no lo distingue.
+  document.getElementById('d-enc-nuevas-sub').textContent=
+    malasSinLeer>0?`${malasSinLeer} para contactar`:'Respuestas nuevas';
+  document.getElementById('d-enc-nuevas').className='mc-val'+(malasSinLeer>0?' down':'');
+
+  const mesActualStr=ahoraEnChile().fecha.slice(0,7);
+  // mesChileDe y no .slice(0,7): respondida_at es timestamptz y vuelve en UTC.
+  const delMes=(S.encuestas||[]).filter(e=>e.respondida_at&&e.puntaje
+                                        &&mesChileDe(e.respondida_at)===mesActualStr);
+  const elProm=document.getElementById('d-enc-prom');
+  if(delMes.length){
+    const prom=delMes.reduce((s,e)=>s+e.puntaje,0)/delMes.length;
+    elProm.textContent=prom.toFixed(1)+' ★';
+    // El "de N" no es decoración: un 5,0 de una respuesta y un 4,6 de treinta
+    // no dicen lo mismo, y sin el N el promedio se lee como si dijeran igual.
+    document.getElementById('d-enc-prom-sub').textContent=
+      `de ${delMes.length} respuesta${delMes.length>1?'s':''}`;
+  }else{
+    elProm.textContent='—';
+    document.getElementById('d-enc-prom-sub').textContent='Sin respuestas este mes';
+  }
+
   document.getElementById('d-inactivos').textContent=fmtN(inact);
   document.getElementById('d-cumples').textContent=fmtN(cumples);
   document.getElementById('d-ticket').textContent=fmt(ticket);
@@ -4530,6 +4641,86 @@ function renderVIP(){
   </tr>`).join('');
 }
 
+// ─── ENCUESTAS ───────────────────────────────────────────────────────────
+// El link personal de una encuesta. Mismo formato que arma el endpoint del
+// correo (api/enviar-encuesta.js): si se cambia uno, hay que cambiar el otro
+// — test-encuesta.html compara los dos y falla si se separan.
+function linkEncuesta(e){
+  return S.barberia?.id&&e?.visita_id
+    ? location.origin+'/encuesta.html?b='+S.barberia.id+'&v='+e.visita_id : '';
+}
+
+// Marca la encuesta como enviada por WhatsApp y abre el chat. El orden importa:
+// primero se abre WhatsApp y después se marca. Al revés, si el navegador
+// bloqueara la ventana emergente, la encuesta quedaría marcada como enviada
+// sin haberse enviado, y desaparecería de la lista para siempre.
+async function enviarEncuestaWA(id){
+  const e=S.encuestas.find(x=>x.id===id); if(!e)return;
+  const c=S.clientes.find(x=>x.id===e.cliente_id);
+  if(!c?.whatsapp){ notify('Ese cliente no tiene WhatsApp en su ficha','warn'); return; }
+  const msg=buildMsg('Encuesta',{nombre:c.nombre,link_encuesta:linkEncuesta(e)});
+  if(!msg){ notify('Falta la plantilla "Encuesta" en Mensajes → Plantillas','warn'); return; }
+  abrirWA(c.whatsapp,msg);
+  const {error}=await sb.from('encuestas')
+    .update({canal:'whatsapp',enviada_at:new Date().toISOString()}).eq('id',id);
+  if(error){ notify(error.message,'err'); return; }
+  await loadEncuestas(); renderMensajes(); renderDashboard();
+}
+
+async function marcarEncuestaVista(id){
+  const {error}=await sb.from('encuestas')
+    .update({vista_at:new Date().toISOString()}).eq('id',id);
+  if(error){ notify(error.message,'err'); return; }
+  await loadEncuestas(); renderMensajes(); renderDashboard();
+}
+
+// La tarjeta del dashboard lleva a la pestaña, no solo informa. Un número
+// accionable que no se puede tocar obliga a buscar dónde estaba.
+function irAEncuestas(){
+  nav('mensajes');
+  const tab=document.querySelector('#p-mensajes .tab[onclick*="tm-encuesta"]');
+  if(tab)switchTab(tab,'tm-encuesta');
+}
+
+function renderEncuestas(){
+  const nombreDe=e=>{
+    const c=S.clientes.find(x=>x.id===e.cliente_id);
+    return c?[c.nombre,c.apellido].filter(Boolean).join(' '):'Cliente';
+  };
+  const servicioDe=e=>(S.visitas.find(v=>v.id===e.visita_id)||{}).servicio||'';
+
+  // Pendientes: nunca enviadas. Son las del 12% sin correo — el endpoint les
+  // puso canal='whatsapp' y dejó enviada_at en null a propósito.
+  const pend=S.encuestas.filter(e=>!e.enviada_at&&!e.respondida_at);
+  document.getElementById('l-enc-pend').innerHTML=pend.length?pend.map(e=>{
+    const c=S.clientes.find(x=>x.id===e.cliente_id);
+    return`<div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div><strong style="color:var(--text)">${escapeHtml(nombreDe(e))}</strong><br>
+        <span style="font-size:11px;color:var(--text3)">${escapeHtml(servicioDe(e))} · ${escapeHtml(c?.whatsapp||'sin WhatsApp')}</span></div>
+      ${c?.whatsapp?`<button class="btn-wa" onclick="enviarEncuestaWA('${e.id}')">📱 Enviar encuesta</button>`:''}
+    </div>`;}).join(''):'<div class="empty">Nada por enviar a mano ✓</div>';
+
+  // Respuestas. Las bajas primero y sin leer arriba: son las accionables.
+  const resp=S.encuestas.filter(e=>e.respondida_at)
+    .sort((a,b)=>(!!a.vista_at-!!b.vista_at)||(a.puntaje-b.puntaje)
+                 ||(new Date(b.respondida_at)-new Date(a.respondida_at)));
+  document.getElementById('l-enc-resp').innerHTML=resp.length?resp.map(e=>{
+    const mala=e.puntaje<=3;
+    const c=S.clientes.find(x=>x.id===e.cliente_id);
+    return`<div class="card" style="margin-bottom:10px;${!e.vista_at?'border-color:'+(mala?'#e05050':'#2a2a50'):''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><strong style="color:var(--text)">${escapeHtml(nombreDe(e))}</strong>
+          <span style="color:#e0a850;margin-left:8px">${'★'.repeat(e.puntaje||0)}${'☆'.repeat(5-(e.puntaje||0))}</span><br>
+          <span style="font-size:11px;color:var(--text3)">${escapeHtml(servicioDe(e))} · ${e.respondida_at.slice(0,10)}</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${mala&&c?.whatsapp?`<a class="btn-wa" href="https://wa.me/${(c.whatsapp||'').replace(/\D/g,'')}" target="_blank" rel="noopener">📱 Contactar</a>`:''}
+          ${!e.vista_at?`<button class="btn btn-ghost btn-sm" onclick="marcarEncuestaVista('${e.id}')">Marcar vista</button>`:''}
+        </div>
+      </div>
+      ${e.comentario?`<div style="margin-top:10px;padding-left:10px;border-left:2px solid ${mala?'#e05050':'#2a2a50'};font-size:13px;color:var(--text2);line-height:1.6">${escapeHtml(e.comentario)}</div>`:''}
+    </div>`;}).join(''):'<div class="empty">Todavía no hay respuestas.</div>';
+}
+
 function renderMensajes(){
   const hoy=new Date();
   // Cumpleaños
@@ -4582,8 +4773,10 @@ function renderMensajes(){
         </label>
       </div>
       <textarea style="width:100%;height:72px;font-size:11px" onchange="editPlantilla('${p.id}',this.value)">${p.mensaje}</textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px">Variables: {nombre} {barberia} {link_reservas} {link_club} {reviews} {fecha} {hora} {servicio} {profesional} {dias} {direccion}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Variables: {nombre} {barberia} {link_reservas} {link_club} {link_encuesta} {reviews} {fecha} {hora} {servicio} {profesional} {dias} {direccion}</div>
     </div>`).join('');
+
+  renderEncuestas();
 }
 
 async function marcarVIPMsg(id){

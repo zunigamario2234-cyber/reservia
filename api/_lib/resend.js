@@ -34,6 +34,38 @@ async function supabaseGet(path) {
   return res.json();
 }
 
+// Escribe con la service_role key, igual que supabaseGet lee con ella. Se usa
+// para marcar en la base lo que la función serverless ya hizo — por ejemplo
+// que una encuesta se envió — porque eso no lo puede escribir el navegador:
+// diría "la mandé" sin que nadie lo verifique.
+//
+// `path` lleva su propio filtro PostgREST (ej. 'encuestas?id=eq.<uuid>'). Se
+// exige que traiga un `=eq.` o algún filtro: un PATCH sin where en PostgREST
+// actualiza LA TABLA ENTERA, y ese error no avisa, solo destruye.
+async function supabasePatch(path, body) {
+  if (!SUPABASE_SERVICE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY no configurada en el servidor');
+  }
+  if (!/[?&][a-z_]+=(eq|in|is)\./i.test(path)) {
+    throw new Error(`supabasePatch sin filtro: "${path}" actualizaría la tabla entera`);
+  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const detalle = await res.text();
+    throw new Error(`Supabase PATCH ${path} respondió ${res.status}: ${detalle}`);
+  }
+  return res.json();
+}
+
 async function enviarEmail({ to, subject, html }) {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY no configurada en el servidor');
@@ -73,4 +105,4 @@ function emailShell({ nombreNegocio, contenidoHtml }) {
 </html>`;
 }
 
-module.exports = { SUPABASE_URL, supabaseGet, enviarEmail, emailShell };
+module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, enviarEmail, emailShell };

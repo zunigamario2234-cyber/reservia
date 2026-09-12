@@ -200,8 +200,24 @@ function correr(src){
   var appJs = sinComentarios(inlineScripts(src['app.html']).join('\n'));
 
   // El bug exacto: la fecha de HOY sacada de UTC.
+  //
+  // ⚠ SE EXCLUYEN los usos que ESCRIBEN un instante en una columna timestamptz
+  // (`algo_at: new Date().toISOString()`). Ahí toISOString es lo correcto: un
+  // timestamptz es un momento absoluto y Postgres lo guarda bien. El bug que
+  // este check persigue es DERIVAR UN DÍA DE CALENDARIO desde UTC, que es otra
+  // cosa. Sin la exclusión, el check obligaría a evitar la forma correcta de
+  // escribir una marca de tiempo.
+  var appSinInstantes = appJs.replace(
+    /[A-Za-z_]+_at\s*:\s*new\s+Date\(\s*\)\.toISOString\(\)/g, '');
   check('no usa new Date().toISOString() para sacar la fecha',
-        /new\s+Date\(\s*\)\s*\.toISOString\(\)/.test(appJs), false);
+        /new\s+Date\(\s*\)\s*\.toISOString\(\)/.test(appSinInstantes), false);
+  // Y la contracara, que es donde estaba el bug de verdad el 2026-09-12:
+  // comparar el MES de un timestamptz con .slice(0,7) lo lee en UTC, así que
+  // algo respondido a las 21:00 del día 30 cae en el mes siguiente.
+  check('el mes de un timestamptz se saca en hora de Chile',
+        /function mesChileDe\(/.test(appJs), true);
+  check('  ...y el promedio de encuestas la usa',
+        /mesChileDe\(e\.respondida_at\)/.test(appJs), true);
   // Y la variante sobre un Date cualquiera, que tiene el mismo defecto: para
   // eso está fmtDateLocal().
   check('no usa .toISOString().split para sacar la fecha',

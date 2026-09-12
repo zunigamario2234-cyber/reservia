@@ -484,8 +484,18 @@ function togglePagoMiAgenda(id){
 }
 
 async function pagarCitaMiAgenda(id,metodo){
-  const {error}=await sb.rpc('mi_agenda_procesar_pago',{p_reserva_id:id,p_metodo_pago:metodo});
+  // `data` es el visita_id que devuelve la RPC. Antes se descartaba; ahora
+  // dispara la encuesta de satisfacción de esa visita.
+  const {data:visitaId,error}=await sb.rpc('mi_agenda_procesar_pago',{p_reserva_id:id,p_metodo_pago:metodo});
   if(error){ alert('Error: '+error.message); return; }
+
+  // Sin await y con catch vacío, igual que el correo de confirmación: el pago
+  // ya está registrado. Si el correo falla, la encuesta queda pendiente y el
+  // dueño la ve en la lista de WhatsApp de Mensajes.
+  if(visitaId){
+    fetch('/api/enviar-encuesta',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({visitaId})}).catch(()=>{});
+  }
   PAGO_ABIERTO_MIAGENDA=null;
   cargarAgenda();
 }

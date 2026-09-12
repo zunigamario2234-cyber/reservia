@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>¿Cómo fue tu visita?</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.wrap{width:100%;max-width:420px}
+.card{background:#0f1018;border:0.5px solid #222;border-radius:16px;padding:26px 22px}
+h1{font-size:18px;font-weight:600;line-height:1.4;margin-bottom:6px}
+.sub{font-size:13px;color:#777;line-height:1.6;margin-bottom:24px}
+.estrellas{display:flex;justify-content:center;gap:6px;margin-bottom:6px}
+/* 44px de lado: es el mínimo cómodo para el pulgar. Con estrellas chicas la
+   gente toca la de al lado y manda un puntaje que no quiso dar. */
+.estrella{width:44px;height:44px;border:none;background:none;cursor:pointer;font-size:32px;line-height:1;padding:0;color:#2a2a2a;transition:color 0.12s,transform 0.12s}
+.estrella:hover{transform:scale(1.12)}
+.estrella.on{color:#e0a850}
+.escala{display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:20px;padding:0 4px}
+.campo{display:none;margin-bottom:16px}
+.campo.ver{display:block}
+label{display:block;font-size:12px;color:#888;margin-bottom:6px;line-height:1.5}
+textarea{width:100%;background:#161616;border:0.5px solid #252525;border-radius:10px;color:#e8e6e0;padding:12px;font-size:14px;font-family:inherit;resize:vertical;min-height:96px}
+textarea:focus{outline:none;border-color:#7c6af7}
+.btn{width:100%;padding:14px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;border:none;font-family:inherit;background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
+.btn:disabled{opacity:0.45;cursor:not-allowed}
+.btn-google{display:block;text-align:center;text-decoration:none;background:#fff;color:#1a1a1a;margin-top:18px}
+.aviso{font-size:12px;border-radius:10px;padding:11px 13px;margin-bottom:16px;line-height:1.55;display:none}
+.aviso.ver{display:block}
+.aviso.err{background:#2a0f0f;border:0.5px solid #e05050;color:#e0a0a0}
+.centro{text-align:center}
+.emoji{font-size:44px;line-height:1;margin-bottom:14px}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="card" id="card">
+    <div id="cargando" class="centro" style="color:#555;font-size:13px;padding:30px 0">Cargando…</div>
+
+    <div id="formulario" style="display:none">
+      <h1 id="titulo"></h1>
+      <div class="sub" id="detalle"></div>
+
+      <div class="aviso err" id="error"></div>
+
+      <div class="estrellas" id="estrellas"></div>
+      <div class="escala"><span>Muy mala</span><span>Excelente</span></div>
+
+      <div class="campo" id="campo-comentario">
+        <label id="label-comentario"></label>
+        <textarea id="comentario" placeholder="Escribe acá…"></textarea>
+      </div>
+
+      <button class="btn" id="btn-enviar" onclick="enviar()" disabled>Enviar</button>
+    </div>
+
+    <div id="gracias" style="display:none" class="centro">
+      <div class="emoji" id="gracias-emoji"></div>
+      <h1 id="gracias-titulo"></h1>
+      <div class="sub" id="gracias-texto" style="margin-bottom:0"></div>
+      <a class="btn btn-google" id="btn-google" target="_blank" rel="noopener" style="display:none">Dejar mi reseña en Google</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// Mismo guardia que club.html y reservar.html: sin las credenciales, la página
+// quedaría viva pero inservible —entera en pantalla, congelada en "Cargando…"—
+// y el cliente creería que el negocio no funciona. Se corta acá y se avisa.
+if (typeof SUPABASE_URL === 'undefined') {
+  console.error('supabase-config.js no cargó: SUPABASE_URL y SUPABASE_KEY no están definidas.');
+  document.body.innerHTML = '<div style="font-family:system-ui,-apple-system,sans-serif;color:#e8e6e0;background:#08090d;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;text-align:center;line-height:1.6">No pudimos cargar la página. Intenta de nuevo en unos minutos.</div>';
+  throw new Error('supabase-config.js no cargó');
+}
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// El link es `encuesta.html?b=<barberia>&v=<visita>`: dos uuid, sin token, con
+// el mismo criterio aceptado para el Club VIP. Las dos RPC exigen los DOS ids,
+// así que tener uno solo no alcanza para nada.
+const params = new URLSearchParams(window.location.search);
+const BARBERIA_ID = params.get('b');
+const VISITA_ID = params.get('v');
+
+// El umbral vive en la RPC, no acá: ella decide si devuelve el link de Google.
+// Esta constante es SOLO para saber cuándo pedir el comentario, y el servidor
+// lo revalida igual — si las dos se separan, la que manda es la de la base.
+const PUNTAJE_BAJO_MAX = 3;
+
+let PUNTAJE = 0;
+let ENVIANDO = false;
+
+function escapeHtml(s){
+  return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[c]);
+}
+
+function verError(msg){
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.classList.add('ver');
+}
+function limpiarError(){ document.getElementById('error').classList.remove('ver'); }
+
+function pantallaFinal({emoji, titulo, texto, link}){
+  document.getElementById('formulario').style.display = 'none';
+  document.getElementById('cargando').style.display = 'none';
+  document.getElementById('gracias').style.display = '';
+  document.getElementById('gracias-emoji').textContent = emoji;
+  document.getElementById('gracias-titulo').textContent = titulo;
+  document.getElementById('gracias-texto').textContent = texto;
+  if(link){
+    const a = document.getElementById('btn-google');
+    a.href = link;
+    a.style.display = '';
+  }
+}
+
+function renderEstrellas(){
+  document.getElementById('estrellas').innerHTML = [1,2,3,4,5].map(n=>
+    `<button class="estrella${n<=PUNTAJE?' on':''}" onclick="elegir(${n})"
+             aria-label="${n} de 5">★</button>`).join('');
+}
+
+function elegir(n){
+  PUNTAJE = n;
+  renderEstrellas();
+  limpiarError();
+
+  // El comentario aparece SIEMPRE, no solo con puntaje bajo: quien quedó
+  // contento también puede tener algo que decir, y esconderle el campo sería
+  // pedirle opinión solo cuando se queja. Lo que cambia es si es obligatorio.
+  const bajo = PUNTAJE <= PUNTAJE_BAJO_MAX;
+  document.getElementById('campo-comentario').classList.add('ver');
+  document.getElementById('label-comentario').textContent = bajo
+    ? 'Cuéntanos qué pasó, así podemos resolverlo *'
+    : '¿Algo que quieras contarnos? (opcional)';
+  document.getElementById('btn-enviar').disabled = false;
+}
+
+async function enviar(){
+  // Sin esta guarda, un doble toque manda dos veces. La base rechaza la
+  // segunda —respondida_at ya no es null— pero el cliente vería un error
+  // después de haber respondido bien, que es peor que no hacer nada.
+  if(ENVIANDO || !PUNTAJE) return;
+  limpiarError();
+
+  const comentario = document.getElementById('comentario').value.trim();
+  if(PUNTAJE <= PUNTAJE_BAJO_MAX && !comentario){
+    verError('Cuéntanos qué pasó, así podemos resolverlo.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-enviar');
+  ENVIANDO = true;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Enviando…';
+
+  const {data, error} = await sb.rpc('responder_encuesta_publico', {
+    p_barberia_id: BARBERIA_ID,
+    p_visita_id: VISITA_ID,
+    p_puntaje: PUNTAJE,
+    p_comentario: comentario || null
+  });
+
+  // La RPC devuelve una fila: {ok, link_reviews, mensaje}.
+  const r = Array.isArray(data) ? data[0] : data;
+
+  if(error || !r || !r.ok){
+    ENVIANDO = false;
+    btn.disabled = false;
+    btn.textContent = 'Enviar';
+    // El mensaje de la RPC está escrito para el cliente; el de Supabase no.
+    verError(r?.mensaje || 'No pudimos guardar tu respuesta. Intenta de nuevo.');
+    return;
+  }
+
+  if(PUNTAJE <= PUNTAJE_BAJO_MAX){
+    // Avisarle al dueño. Sin await y con catch vacío: la respuesta del cliente
+    // YA quedó guardada y es lo único que no se puede perder. Si el aviso
+    // falla, la respuesta igual aparece en el panel — el correo es el canal
+    // rápido, no el único.
+    //
+    // El endpoint no le cree nada a esto: relee la encuesta de la base y
+    // comprueba que esté respondida, que el puntaje sea bajo de verdad y que
+    // no se haya avisado antes. Acá solo se le dice CUÁL mirar.
+    fetch('/api/avisar-encuesta-mala',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({barberiaId:BARBERIA_ID, visitaId:VISITA_ID})}).catch(()=>{});
+
+    pantallaFinal({
+      emoji: '🙏',
+      titulo: 'Gracias por contárnoslo',
+      texto: 'Lamentamos que no haya salido como esperabas. Vamos a leer tu comentario y nos vamos a contactar contigo.'
+    });
+  }else{
+    pantallaFinal({
+      emoji: '🎉',
+      titulo: '¡Gracias!',
+      texto: r.link_reviews
+        ? 'Nos alegra mucho. Si tienes un minuto, contarlo en Google nos ayuda un montón.'
+        : 'Nos alegra mucho que lo hayas pasado bien. ¡Te esperamos!',
+      link: r.link_reviews || null
+    });
+  }
+}
+
+async function init(){
+  if(!BARBERIA_ID || !VISITA_ID){
+    pantallaFinal({emoji:'🔗', titulo:'Este link no es válido',
+      texto:'Puede que se haya cortado al copiarlo. Si te llegó por correo o WhatsApp, prueba abrirlo desde ahí.'});
+    return;
+  }
+
+  const {data, error} = await sb.rpc('get_encuesta_publico', {
+    p_barberia_id: BARBERIA_ID,
+    p_visita_id: VISITA_ID
+  });
+  const e = Array.isArray(data) ? data[0] : data;
+
+  if(error || !e){
+    // No se distingue "no existe" de "es de otro negocio", igual que en la RPC:
+    // con un link sin token, precisar cuál de las dos le confirma a un
+    // desconocido que esa visita existe.
+    pantallaFinal({emoji:'🔗', titulo:'No encontramos esta encuesta',
+      texto:'Puede que el link haya expirado o esté incompleto.'});
+    return;
+  }
+
+  if(e.ya_respondida){
+    pantallaFinal({emoji:'✅', titulo:'Ya nos respondiste',
+      texto:'Gracias por tomarte el tiempo. Tu respuesta ya quedó registrada.'});
+    return;
+  }
+
+  document.title = '¿Cómo fue tu visita a ' + (e.negocio || 'tu barbería') + '?';
+  document.getElementById('titulo').textContent =
+    '¿Cómo fue tu visita a ' + (e.negocio || 'nosotros') + '?';
+
+  // El servicio y la fecha existen para que el cliente sepa DE QUÉ visita le
+  // están preguntando — si va seguido, "¿cómo estuvo?" a secas es ambiguo.
+  const partes = [];
+  if(e.servicio) partes.push(escapeHtml(e.servicio));
+  if(e.fecha){
+    const d = new Date(e.fecha + 'T12:00:00');
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                   'agosto','septiembre','octubre','noviembre','diciembre'];
+    if(!isNaN(d)) partes.push(d.getDate() + ' de ' + meses[d.getMonth()]);
+  }
+  document.getElementById('detalle').innerHTML =
+    partes.join(' · ') + (partes.length ? '<br>' : '') + 'Nos toma menos de un minuto.';
+
+  renderEstrellas();
+  document.getElementById('cargando').style.display = 'none';
+  document.getElementById('formulario').style.display = '';
+}
+
+init();
+</script>
+</body>
+</html>

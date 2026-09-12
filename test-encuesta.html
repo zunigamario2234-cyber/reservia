@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — encuesta de satisfacción</title>
+
+<!--
+  Test de la encuesta post-servicio, de punta a punta: la migración, la página
+  pública, los dos endpoints y lo que el panel muestra.
+
+  POR QUÉ EXISTE
+  Es la primera funcionalidad del sistema donde un DESCONOCIDO escribe texto
+  que después lee el dueño, y donde una decisión del cliente (su puntaje)
+  dispara un correo. Se rompe de maneras que no tiran ningún error:
+
+   1. Que el comentario deje de ser obligatorio con puntaje bajo. Un 2 sin
+      texto no sirve para actuar, que es TODO el objetivo de la encuesta:
+      resolverlo en privado antes de que esa persona vaya a Google.
+
+   2. Que se pueda responder dos veces. El link no tiene token — cualquiera
+      que lo tenga podría empujar el promedio.
+
+   3. Que los dos umbrales se separen. El de la RPC decide si ofrece Google; el
+      del endpoint decide si avisa al dueño. Si divergen, hay puntajes que
+      caen en el hueco: ni Google ni aviso.
+
+   4. Que el aviso al dueño le crea al navegador. Lo llama la página de un
+      desconocido: si no reverifica contra la base, cualquiera con el link
+      puede hacer sonar el correo del dueño o inventarle un comentario.
+
+   5. Que la plantilla de WhatsApp use {link}. buildMsg ya define `link` como
+      alias del link de RESERVAS, así que el cliente recibiría el link para
+      reservar en lugar del de la encuesta — sin ningún error visible.
+
+   6. Que el comentario del cliente se pinte crudo en el panel. Es texto de un
+      desconocido llegando a la sesión con más permisos del sistema.
+
+   7. Que los dos links de la encuesta se separen. El correo lo arma el
+      endpoint y el de WhatsApp lo arma el panel: si dejan de coincidir, uno
+      de los dos canales manda a una página rota.
+
+  QUÉ COMPRUEBA
+  Ejecuta el render del panel contra un DOM falso con payloads reales, y lee
+  la migración, la página y los endpoints como texto. No abre Supabase.
+
+  ⚠ LO QUE NO PUEDE HACER: correr el SQL ni los endpoints. Que el trigger no
+  voltee un cobro, que el guardia del teléfono funcione y que la RPC rechace
+  la segunda respuesta se prueban en la base, con los pasos 4 a 7 de
+  migration_encuesta_satisfaccion.sql — los siete corridos y confirmados el
+  2026-09-12.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) Bajar PUNTAJE_BAJO_MAX en encuesta.html y no en el endpoint
+      -> falla "los dos umbrales coinciden".
+   b) Sacar el check del comentario obligatorio de la tabla
+      -> falla "la base exige comentario con puntaje bajo".
+   c) Sacar `respondida_at is null` del where del update
+      -> falla "responder dos veces es imposible por el WHERE".
+   d) Que el endpoint del aviso confíe en el body en vez de releer la base
+      -> falla "el aviso relee el puntaje de la base".
+   e) Sacar el chequeo de avisada_at
+      -> falla "el aviso no se manda dos veces".
+   f) Poner {link} en la plantilla en vez de {link_encuesta}
+      -> falla "la plantilla usa link_encuesta y no link".
+   g) Sacar escapeHtml del comentario en el panel
+      -> falla "el panel escapa el comentario del cliente".
+   h) Cambiar el formato del link en uno de los dos lados
+      -> falla "los dos lados arman el mismo link".
+   i) Marcar enviada_at ANTES de mandar el correo
+      -> falla "enviada_at se marca después del envío".
+
+  Las nueve se corrieron y las nueve dieron rojo.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — encuesta de satisfacción</h1>
+<p>Verifica que un puntaje bajo no pueda quedar sin comentario, que nadie
+responda dos veces, y que el texto del cliente no llegue crudo al panel.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql,.js" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+// Con ruta: los endpoints viven en api/. `src` se indexa por el NOMBRE de
+// archivo, no por la ruta, para que el respaldo del selector manual —que solo
+// conoce f.name— funcione igual.
+var ARCHIVOS = ['migration_encuesta_satisfaccion.sql',
+                'migration_plantilla_encuesta.sql',
+                'encuesta.html',
+                'app.html',
+                'api/enviar-encuesta.js',
+                'api/avisar-encuesta-mala.js',
+                'api/_lib/resend.js'];
+function base(ruta){ return ruta.split('/').pop(); }
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+// El número que sigue a una constante, para comparar los dos umbrales.
+function constanteNum(js, nombre){
+  var m = new RegExp('(?:const|let|var)\\s+' + nombre + '\\s*=\\s*(\\d+)').exec(js);
+  return m ? Number(m[1]) : null;
+}
+function domFalso(){
+  var campos = {};
+  function nuevo(){ return { value:'', textContent:'', innerHTML:'', style:{}, className:'',
+                             classList:{add:function(){},remove:function(){}} }; }
+  return { getElementById:function(id){ if(!campos[id])campos[id]=nuevo(); return campos[id]; },
+           querySelector:function(){ return null; },
+           querySelectorAll:function(){ return []; },
+           _html:function(id){ return campos[id] ? campos[id].innerHTML : ''; } };
+}
+
+var ATAQUE = '<img src=x onerror=alert(1)>';
+
+function correr(src){
+  var sql      = sinComentariosSql(src['migration_encuesta_satisfaccion.sql']);
+  var sqlPlant = sinComentariosSql(src['migration_plantilla_encuesta.sql']);
+  var jsPag    = sinComentarios(inlineScripts(src['encuesta.html']).join('\n'));
+  var jsApp    = sinComentarios(inlineScripts(src['app.html']).join('\n'));
+  var jsEnviar = sinComentarios(src['enviar-encuesta.js']);
+  var jsAvisar = sinComentarios(src['avisar-encuesta-mala.js']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el comentario obligatorio, en los tres lugares');
+
+  // En la BASE, que es el único que no se puede saltear llamando la RPC
+  // directamente desde fuera de la página.
+  check('la base exige comentario con puntaje bajo',
+        /check\s*\(\s*puntaje is null or puntaje >= 4 or coalesce\(btrim\(comentario\), ''\) <> ''\s*\)/.test(sql), true);
+  check('la RPC lo valida antes, para dar un mensaje legible',
+        /p_puntaje <= 3 and coalesce\(btrim\(p_comentario\), ''\) = ''/.test(sql), true);
+  check('la página no deja enviar sin comentario',
+        /PUNTAJE <= PUNTAJE_BAJO_MAX && !comentario/.test(jsPag), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('los dos umbrales no pueden separarse');
+
+  // El de la página decide cuándo pedir comentario y cuándo avisar; el del
+  // endpoint decide si el aviso sale. Si divergen, hay puntajes que no ofrecen
+  // Google NI avisan al dueño: caen en el hueco entre los dos.
+  var uPag = constanteNum(jsPag, 'PUNTAJE_BAJO_MAX');
+  var uEnd = constanteNum(jsAvisar, 'PUNTAJE_BAJO_MAX');
+  check('la página define su umbral', uPag !== null, true);
+  check('el endpoint define el suyo', uEnd !== null, true);
+  check('los dos umbrales coinciden', uPag, uEnd);
+  // Y el tercero, en SQL: la RPC ofrece Google con >= 4, o sea bajo <= 3.
+  check('  ...y el de la RPC es el complementario',
+        /p_puntaje >= 4/.test(sql) && uPag === 3, true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('responder dos veces');
+
+  // En el WHERE, no en un `if` previo: con un chequeo antes, dos envíos
+  // simultáneos pasarían los dos.
+  check('responder dos veces es imposible por el WHERE',
+        /update encuestas[\s\S]*?where[\s\S]*?respondida_at is null/.test(sql), true);
+  check('una encuesta por visita', /visita_id\s+uuid not null unique/.test(sql), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el aviso al dueño no le cree al navegador');
+
+  // Lo llama la página de un desconocido. Todo se revalida contra la base.
+  check('el aviso relee el puntaje de la base',
+        /supabaseGet\(\s*`encuestas\?barberia_id=eq/.test(jsAvisar), true);
+  check('  ...exige los DOS ids, como las RPC públicas',
+        /barberia_id=eq[\s\S]{0,120}visita_id=eq/.test(jsAvisar), true);
+  check('  ...y comprueba que esté respondida',
+        /!e\.respondida_at/.test(jsAvisar), true);
+  check('el puntaje del correo sale de la base, no del body',
+        /puntaje:\s*e\.puntaje/.test(jsAvisar), true);
+  check('el comentario del correo también',
+        /comentario:\s*e\.comentario/.test(jsAvisar), true);
+  check('el aviso no se manda dos veces', /if \(e\.avisada_at\)/.test(jsAvisar), true);
+  // Y el correo del dueño se escapa: el comentario que va adentro lo escribió
+  // un desconocido.
+  check('el correo al dueño escapa lo que pinta',
+        /function escapeHtml/.test(jsAvisar) && /escapeHtml\(comentario\)/.test(jsAvisar), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la plantilla de WhatsApp');
+
+  check('la plantilla usa link_encuesta y no link',
+        /\{link_encuesta\}/.test(sqlPlant) && !/\{link\}/.test(sqlPlant), true);
+  check('el panel le pasa esa variable a buildMsg',
+        /buildMsg\('Encuesta',\s*\{[^}]*link_encuesta:/.test(jsApp), true);
+  check('el seed es repetible', /where not exists/.test(sqlPlant), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('los dos canales arman el MISMO link');
+
+  // El correo lo arma el endpoint y el de WhatsApp el panel. Si se separan,
+  // uno de los dos manda a una página que no encuentra la encuesta.
+  check('el endpoint arma /encuesta.html?b=…&v=…',
+        /encuesta\.html`?\s*\+?\s*`?\?b=\$\{encodeURIComponent\(e\.barberia_id\)\}&v=\$\{encodeURIComponent\(e\.visita_id\)\}/.test(jsEnviar), true);
+  check('el panel arma el mismo formato',
+        /'\/encuesta\.html\?b='\+S\.barberia\.id\+'&v='\+e\.visita_id/.test(jsApp), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el orden de marcar enviada_at');
+
+  // Marcarlo antes dejaría la encuesta como enviada aunque el correo falle, y
+  // el cliente no la recibiría nunca — ni aparecería en la lista pendiente.
+  var iEnviar = jsEnviar.indexOf('await enviarEmail(');
+  var iMarcar = jsEnviar.indexOf("enviada_at: new Date().toISOString()");
+  check('enviada_at se marca después del envío',
+        iEnviar !== -1 && iMarcar !== -1 && iEnviar < iMarcar, true);
+  // Y sin correo NO es un error: es el otro canal.
+  check('sin correo la encuesta queda para WhatsApp',
+        /canal: 'whatsapp'/.test(jsEnviar), true);
+  check('  ...y no se marca como enviada',
+        /supabasePatch\(`encuestas\?id=eq\.\$\{e\.id\}`, \{ canal: 'whatsapp' \}\)/.test(jsEnviar), true);
+
+  // El guardia de la librería compartida: un PATCH sin `where` en PostgREST
+  // actualiza LA TABLA ENTERA y no avisa. Se comprueba que el guardia exista y
+  // que sea un `throw`, no un console.warn que nadie mira.
+  var jsLib = sinComentarios(src['resend.js']);
+  check('supabasePatch valida que el path traiga filtro',
+        /if \(!\/\[\?&\]\[a-z_\]\+=\(eq\|in\|is\)\\\.\/i\.test\(path\)\)/.test(jsLib), true);
+  check('  ...y aborta en vez de avisar',
+        /throw new Error\(`supabasePatch sin filtro/.test(jsLib), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el panel escapa lo que escribió el cliente');
+
+  check('app.html tiene escapeHtml', /function escapeHtml/.test(jsApp), true);
+
+  // Se EJECUTA el render con un payload real, no se lee el código.
+  var fuentes = ['escapeHtml','linkEncuesta','renderEncuestas']
+    .map(function(n){ return extraerFuncion(jsApp, n); });
+  check('se pueden extraer las tres funciones del panel',
+        fuentes.filter(function(f){ return f === ''; }).length, 0);
+
+  var doc = domFalso();
+  var salida = (function(){
+    try {
+      var src2 = 'var S = ESTADO;\n' + fuentes.join('\n') + '\nrenderEncuestas();';
+      new Function('document','ESTADO', src2)(doc, {
+        barberia: {id:'b1'},
+        clientes: [{id:'c1', nombre:'Ana', apellido:'Pérez', whatsapp:'+56911112222'}],
+        visitas:  [{id:'v1', servicio:'Corte'}],
+        encuestas:[{id:'e1', cliente_id:'c1', visita_id:'v1', puntaje:2,
+                    comentario: ATAQUE, respondida_at:'2026-09-12T10:00:00Z',
+                    vista_at:null, enviada_at:'2026-09-12T09:00:00Z'}]
+      });
+      return doc._html('l-enc-resp');
+    } catch(e){ return '⟪excepción: ' + e.message + '⟫'; }
+  })();
+
+  check('el render corre', salida.indexOf('⟪excepción') === -1, true);
+  check('el panel escapa el comentario del cliente',
+        /<img\s+src=x/i.test(salida), false);
+  check('  ...y lo muestra escapado', salida.indexOf('&lt;img src=x') !== -1, true);
+  check('una respuesta baja sin leer se destaca',
+        /border-color:#e05050/.test(salida), true);
+  check('  ...y ofrece contactar al cliente', /wa\.me\/56911112222/.test(salida), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la clave nueva de S está declarada');
+
+  // Omitir una clave de S ya tiró el panel entero una vez: loadAll carga en
+  // paralelo y un render que corra antes encuentra undefined.
+  check('S declara encuestas:[]', /let S = \{[^}]*encuestas:\s*\[\]/.test(jsApp), true);
+  check('loadAll la carga', /cargas=\[[^\]]*loadEncuestas\(\)/.test(jsApp), true);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[base(f)] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.map(base);
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
