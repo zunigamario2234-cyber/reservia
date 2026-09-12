@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — Mi Agenda: escape y las dos notas</title>
+
+<!--
+  Test de lo que pinta mi-agenda.html, y de la nota del cliente en
+  migration_notas_cliente_agenda.sql.
+
+  POR QUÉ EXISTE — Y POR QUÉ LLEGA TARDE
+  Hasta el 2026-09-11 NINGUNA suite tocaba mi-agenda.html. Por eso vivió ahí un
+  XSS almacenado sin que nadie lo notara: el formulario público de reservas
+  tiene un campo de notas abierto —su placeholder dice "Ej: corte específico,
+  alergias..."— y el nombre del cliente también lo escribe quien reserva. Los
+  dos llegaban a la tarjeta de la cita y se pintaban CRUDOS con innerHTML.
+
+  Cualquiera que reservara por el link público podía escribir
+  `<img src=x onerror="...">` y ese código se ejecutaba en la sesión del
+  profesional: la que puede cobrar, cancelar citas y ver datos de clientes.
+
+  LO QUE SE ROMPE SIN ERROR VISIBLE
+
+   1. Que alguna interpolación vuelva a quedar sin escapar. No falla, no avisa:
+      simplemente ejecuta lo que le mandaron. Y ahora hay un campo MÁS jugoso
+      que antes — la nota del cliente, que escribe el dueño y puede tener
+      cualquier cosa.
+
+   2. Que las dos notas se confundan. `notas` es de ESTE turno; `cliente_notas`
+      es de la PERSONA. Si se ven iguales, el profesional lee "alérgico al
+      tinte" creyendo que es un pedido de hoy, o al revés ignora una alergia
+      creyéndola una nota vieja del turno.
+
+   3. Que la nota del cliente se pinte cuando no corresponde. La RPC la resuelve
+      cruzando por teléfono, y hay personas distintas con el mismo número. Ahí
+      el error no es de privacidad: es mostrarle al profesional una alergia
+      que es de otro.
+
+   4. Que el DROP de la RPC se lleve el revoke a PUBLIC. Postgres otorga
+      EXECUTE a PUBLIC por defecto al crear una función; la migración original
+      lo revocaba y el drop+create lo devolvió. Pasó de verdad ese día.
+
+  QUÉ COMPRUEBA
+  EJECUTA renderCitas() real contra un DOM falso, con payloads maliciosos, y
+  mira el HTML que sale. Y lee la migración como texto. No abre Supabase.
+
+  ⚠ LO QUE NO PUEDE HACER: correr el SQL. Que el guardia del teléfono
+  compartido funcione se prueba en la base, con el PASO 4 de la migración —
+  fabrica dos personas distintas con el mismo número y comprueba que no se
+  muestre ninguna nota. Acá solo se verifica que las tres capas del guardia
+  estén escritas.
+
+  CÓMO SE CORRE EN HEADLESS
+  Ver README.md. Y para leer el resultado: mirar class="ok"/"fail" del <pre>,
+  NO buscar ">>> TODO OK" en la salida — ese literal está en el código de este
+  mismo script y da verde siempre.
+
+  PRUEBA DE MUTACIÓN
+  Cada edición tiene que poner el test en rojo:
+   a) Sacar escapeHtml de c.notas        -> falla "escapa la nota de la cita".
+   b) Sacar escapeHtml de c.cliente_notas-> falla "escapa la nota del cliente".
+   c) Sacar escapeHtml de c.nombre_cliente -> falla "escapa el nombre".
+   d) Pintar la nota del cliente con la clase de la nota de la cita
+      -> falla "las dos notas usan cajas distintas".
+   e) Mover la nota del cliente debajo del servicio
+      -> falla "la nota del cliente va pegada al nombre".
+   f) Sacar la etiqueta "Del cliente:"   -> falla "dice de quién es la nota".
+   g) Volver a JSON.stringify en el onclick del buscador
+      -> falla "el buscador escapa la comilla simple del atributo".
+   h) Sacar el `count(*) = 1` de la migración
+      -> falla "ante dos fichas con nota no muestra ninguna".
+   i) Sacar el revoke a public de la migración
+      -> falla "le quita a PUBLIC el permiso que Postgres otorga solo".
+
+  Las nueve se corrieron y las nueve dieron rojo.
+-->
+<style>
+body{background:#0f1018;color:#e8e6e0;font:13px/1.7 ui-monospace,Consolas,monospace;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:15px;font-family:system-ui,sans-serif;color:#e8e6e0}
+p{color:#888;font-family:system-ui,sans-serif;font-size:12px}
+#resultado{white-space:pre-wrap;word-break:break-all}
+.ok{color:#4ade80}.fail{color:#f87171}
+#manual{display:none;margin:16px 0;padding:14px;border:0.5px solid #2a2a2a;border-radius:10px}
+</style>
+
+<h1>Test — Mi Agenda: escape y las dos notas</h1>
+<p>Verifica que nada de lo que escribe un desconocido se pinte crudo, y que la
+nota del cliente no se confunda con la nota de la cita.</p>
+
+<div id="manual">
+  <p style="margin-top:0">El navegador no me deja leer los archivos por mi cuenta.
+  Pásamelos todos juntos y sigo:</p>
+  <input type="file" id="archivo" accept=".html,.sql" multiple>
+</div>
+
+<pre id="resultado">corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['mi-agenda.html','migration_notas_cliente_agenda.sql'];
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+// Los comentarios de la migración explican el guardia, así que nombran lo que
+// se busca. Sin sacarlos, varios checks darían verde contra la documentación.
+function sinComentariosSql(sql){ return sql.replace(/^\s*--.*$/gm, ''); }
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+
+// DOM falso mínimo: guarda lo que se le escribe a cada id.
+function domFalso(){
+  var campos = {};
+  function nuevo(){
+    return { value:'', textContent:'', innerHTML:'', style:{},
+             classList:{ add:function(){}, remove:function(){}, toggle:function(){} } };
+  }
+  return {
+    getElementById: function(id){ if(!campos[id]) campos[id] = nuevo(); return campos[id]; },
+    _html: function(id){ return campos[id] ? campos[id].innerHTML : ''; }
+  };
+}
+
+// Corre renderCitas() REAL contra un DOM falso y devuelve el HTML pintado.
+// Es la única forma de comprobar el escape: mirar el código como texto diría
+// que "menciona escapeHtml", no que lo aplique a cada campo.
+function pintarCitas(js, citas){
+  var necesarias = ['escapeHtml','jsonAttr','fmt','fmtHora','estadoBadge','renderCitas'];
+  var fuentes = [];
+  for(var i = 0; i < necesarias.length; i++){
+    var f = extraerFuncion(js, necesarias[i]);
+    if(f === '') return { error: 'no se pudo extraer ' + necesarias[i] };
+    fuentes.push(f);
+  }
+  var doc = domFalso();
+  var src = 'var BARBERO = {puede_procesar_pagos:true};\n' +
+            'var PAGO_ABIERTO_MIAGENDA = null;\n' +
+            'var METODOS_PAGO_MIAGENDA = ["Efectivo"];\n' +
+            fuentes.join('\n') + '\n' +
+            'renderCitas(CITAS);';
+  try {
+    new Function('document','CITAS', src)(doc, citas);
+    return { html: doc._html('citas-lista') };
+  } catch(e){ return { error: e.message }; }
+}
+
+// El payload: si sale crudo, el navegador lo ejecutaría.
+var ATAQUE = '<img src=x onerror=alert(1)>';
+
+function correr(src){
+  var js  = sinComentarios(inlineScripts(src['mi-agenda.html']).join('\n'));
+  var css = src['mi-agenda.html'];
+  var sql = sinComentariosSql(src['migration_notas_cliente_agenda.sql']);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el escape, ejecutando el render con payloads reales');
+
+  var r = pintarCitas(js, [{
+    id:'r1', tipo:'reserva', hora:'09:00:00', estado:'Pendiente',
+    nombre_cliente: ATAQUE, servicio: ATAQUE,
+    notas: ATAQUE, cliente_notas: ATAQUE,
+    whatsapp_cliente:'+56 9 1111 1111', valor:null
+  }]);
+  check('se puede ejecutar renderCitas()', r.error || 'sin error', 'sin error');
+
+  var html = r.html || '';
+
+  // La comprobación que importa: el payload NO puede aparecer como ETIQUETA.
+  //
+  // ⚠ Se sacan antes los atributos onclick='...', y no es para hacer pasar el
+  // check: ahí el payload viaja adentro de jsonAttr(c), que serializa la cita
+  // entera. Dentro de un valor de atributo, `<` y `>` NO se parsean como
+  // marcado — y jsonAttr escapa la comilla simple, que es lo único que podría
+  // cerrar el atributo antes de tiempo. Llega como string de JS, no crea
+  // ningún elemento.
+  //
+  // Sin esta exclusión el check daba rojo contra código sano. Si algún día se
+  // saca el jsonAttr de ahí, el check de la comilla simple más abajo es el que
+  // lo caza.
+  var sinAtributos = html.replace(/onclick='[^']*'/g, '');
+  check('no queda ningún <img ejecutable fuera de los atributos',
+        /<img\s+src=x/i.test(sinAtributos), false);
+  check('escapa el nombre del cliente',
+        html.indexOf('&lt;img src=x onerror=alert(1)&gt;') !== -1, true);
+  // Cuatro campos, cuatro veces el payload escapado: nombre, servicio, nota de
+  // la cita y nota del cliente. Contar es lo que impide que uno solo escapado
+  // haga pasar el check.
+  check('escapa los CUATRO campos, no solo uno',
+        (html.match(/&lt;img src=x onerror=alert\(1\)&gt;/g) || []).length, 4);
+  check('escapa la nota de la cita',
+        /📝 &lt;img/.test(html), true);
+  check('escapa la nota del cliente',
+        /Del cliente:<\/b> &lt;img/.test(html), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las dos notas se distinguen');
+
+  var r2 = pintarCitas(js, [{
+    id:'r2', tipo:'reserva', hora:'10:00:00', estado:'Confirmada',
+    nombre_cliente:'Juan', servicio:'Corte',
+    notas:'NOTA-DE-LA-CITA', cliente_notas:'NOTA-DEL-CLIENTE',
+    whatsapp_cliente:'', valor:null
+  }]);
+  var h2 = r2.html || '';
+  check('se puede ejecutar con las dos notas', r2.error || 'sin error', 'sin error');
+
+  check('las dos notas usan cajas distintas',
+        /class="cita-nota-cliente"[^>]*>[\s\S]*?NOTA-DEL-CLIENTE/.test(h2) &&
+        /class="cita-detalle">📝 NOTA-DE-LA-CITA/.test(h2), true);
+  check('dice de quién es la nota', /<b>Del cliente:<\/b>/.test(h2), true);
+
+  // POSICIÓN: la del cliente va pegada al nombre (habla de la persona), la de
+  // la cita queda bajo el servicio (habla del turno). Si se invierten, las dos
+  // señales visuales se contradicen.
+  var iNombre = h2.indexOf('Juan');
+  var iCliNota = h2.indexOf('NOTA-DEL-CLIENTE');
+  var iServicio = h2.indexOf('Corte');
+  var iCitaNota = h2.indexOf('NOTA-DE-LA-CITA');
+  check('la nota del cliente va pegada al nombre, antes del servicio',
+        iNombre < iCliNota && iCliNota < iServicio, true);
+  check('la nota de la cita queda después del servicio',
+        iServicio < iCitaNota, true);
+
+  // Sin nota de cliente no aparece la caja: una caja vacía llamaría la
+  // atención sobre nada.
+  var r3 = pintarCitas(js, [{
+    id:'r3', tipo:'reserva', hora:'11:00:00', estado:'Pendiente',
+    nombre_cliente:'Ana', servicio:'Color', notas:'algo',
+    cliente_notas:null, whatsapp_cliente:'', valor:null
+  }]);
+  check('sin nota del cliente no se dibuja la caja',
+        /cita-nota-cliente/.test(r3.html || ''), false);
+  check('  ...pero la nota de la cita sigue ahí',
+        /📝 algo/.test(r3.html || ''), true);
+
+  // El estilo tiene que existir, o la caja se vería igual que el resto.
+  check('la caja del cliente tiene estilo propio',
+        /\.cita-nota-cliente\{/.test(css), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el buscador de clientes');
+
+  // Dos contextos, dos escapes: jsonAttr adentro del onclick='...' (porque
+  // JSON.stringify no escapa la comilla simple y un "D'Elia" rompía el
+  // atributo), escapeHtml en el texto visible.
+  check('el buscador escapa la comilla simple del atributo',
+        /onclick='seleccionarClienteAgenda\(\$\{jsonAttr\(c\.id\)\},\$\{jsonAttr\(c\.nombre\)\}/.test(js), true);
+  check('  ...y escapa el texto visible',
+        /\$\{escapeHtml\(c\.nombre\)\} · \$\{escapeHtml\(c\.whatsapp\)\|\|/.test(js), true);
+  check('ya no queda JSON.stringify suelto en ese onclick',
+        /onclick='seleccionarClienteAgenda\(\$\{JSON\.stringify/.test(js), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la migración — el guardia del teléfono compartido');
+
+  check('la RPC devuelve cliente_notas',
+        /RETURNS TABLE\([^)]*cliente_notas text\)/i.test(sql), true);
+  check('sigue siendo security definer', /SECURITY DEFINER/i.test(sql), true);
+  check('  ...con el search_path fijo', /SET search_path TO 'public'/i.test(sql), true);
+  check('  ...y con el corte por profesional',
+        /if v_barbero_id is null then\s*return;/i.test(sql), true);
+
+  // Las tres capas. La tercera es la que decide el caso difícil: ante dos
+  // personas distintas con el mismo número y nombre, ninguna nota.
+  check('exige teléfono no vacío',
+        /coalesce\(r\.whatsapp_norm, ''\) <> ''/.test(sql), true);
+  check('compara el primer nombre, no el completo',
+        /split_part\(btrim\(c\.nombre\), ' ', 1\)[\s\S]{0,80}split_part\(btrim\(r\.nombre_cliente\), ' ', 1\)/.test(sql), true);
+  check('ante dos fichas con nota no muestra ninguna',
+        /case when count\(\*\) = 1 then min\(c\.notas\) end/.test(sql), true);
+  // Contar solo las fichas CON nota es lo que salva el caso benigno de la
+  // ficha duplicada: si solo una tiene la nota escrita, esa se muestra.
+  check('  ...contando solo las fichas que tienen nota',
+        /coalesce\(btrim\(c\.notas\), ''\) <> ''/.test(sql), true);
+  check('el cruce está acotado al mismo negocio',
+        /c\.barberia_id = r\.barberia_id/.test(sql), true);
+
+  // En las visitas el vínculo es exacto: no se le aplica el guardia, y no debe.
+  check('en las visitas la nota sale del join exacto',
+        /left join clientes c on c\.id = v\.cliente_id/.test(sql), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('los permisos que el DROP se lleva');
+
+  // Postgres otorga EXECUTE a PUBLIC por defecto en toda función nueva. El
+  // drop+create devolvió ese permiso el 2026-09-11, rompiendo la convención
+  // que sigue el resto del repo. Las dos líneas tienen que estar.
+  check('le quita a PUBLIC el permiso que Postgres otorga solo',
+        /revoke all on function mi_agenda_citas\(date\) from public/i.test(sql), true);
+  check('  ...y le devuelve el execute a authenticated',
+        /grant execute on function mi_agenda_citas\(date\) to authenticated/i.test(sql), true);
+  // El drop es inevitable —no se puede agregar una columna a un RETURNS TABLE
+  // con CREATE OR REPLACE— pero tiene que estar acotado a esta firma.
+  check('el drop apunta a la firma exacta',
+        /drop function if exists mi_agenda_citas\(date\)/i.test(sql), true);
+  check('la migración no lleva transacción a mano',
+        /^\s*(begin|commit)\s*;/m.test(sql), false);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>

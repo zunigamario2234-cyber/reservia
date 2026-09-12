@@ -63,6 +63,13 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
 .cita-hora{font-size:16px;font-weight:700;color:#7c6af7}
 .cita-cliente{font-size:14px;font-weight:600;color:#e8e6e0;margin-top:2px}
 .cita-detalle{font-size:12px;color:#777;margin-top:4px}
+/* La nota del CLIENTE (clientes.notas), distinta de la nota de la CITA
+   (.cita-detalle con 📝). Tres señales a la vez para que no se confundan:
+   posición —va pegada al nombre, porque habla de la persona, no del turno—,
+   forma —caja con borde, no texto suelto— y la etiqueta "Del cliente:".
+   Ámbar y no rojo: muchas son neutrales ("prefiere poco charla"), no alertas. */
+.cita-nota-cliente{margin-top:6px;padding:8px 10px;border-radius:8px;background:#231b0e;border:0.5px solid #4a3a1a;border-left:2px solid #e0a850;font-size:12px;color:#d8c9a8;line-height:1.5}
+.cita-nota-cliente b{color:#e0a850;font-weight:600}
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
 .b-green{background:#0f2a1a;color:#5cd685}
 .b-blue{background:#13142a;color:#6ab0e0}
@@ -236,6 +243,25 @@ const METODOS_PAGO_MIAGENDA = ['Efectivo','Transferencia','Débito','Crédito'];
 // o nota con apóstrofe (ej. "D'Elia") rompería el atributo a mitad de
 // camino. &#39; se decodifica de vuelta a ' antes de que el JS se ejecute.
 function jsonAttr(obj){ return JSON.stringify(obj).replace(/'/g,'&#39;'); }
+
+// Escapa lo que se pinta con innerHTML.
+//
+// ⚠ ESTA PÁGINA RECIBE TEXTO DE DESCONOCIDOS. El formulario público de
+// reservas tiene un campo de notas abierto —su placeholder dice "Ej: corte
+// específico, alergias..."— y el nombre del cliente también lo escribe quien
+// reserva. Los dos llegan acá y se pintaban crudos: cualquiera que reservara
+// por el link público podía escribir `<img src=x onerror="...">` y ese código
+// se ejecutaba en la sesión del profesional, que puede cobrar, cancelar citas
+// y ver datos de clientes.
+//
+// La regla para este archivo: TODO lo que venga de la base y se interpole en
+// innerHTML pasa por acá. No alcanza con escapar lo que hoy parece peligroso —
+// un campo que hoy escribe el dueño mañana lo puede escribir el cliente.
+function escapeHtml(s){
+  return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[c]);
+}
 function fmt(n){ return '$'+Math.round(n||0).toLocaleString('es-CL'); }
 function fmtHora(h){ return h?h.slice(0,5):''; }
 function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg||''),'_blank'); }
@@ -380,7 +406,7 @@ async function cargarAgenda(){
   const cont=document.getElementById('citas-lista');
   cont.innerHTML='<div class="msg-full">Cargando...</div>';
   const {data,error}=await sb.rpc('mi_agenda_citas',{p_fecha:fecha});
-  if(error){ cont.innerHTML='<div class="msg-full">Error al cargar la agenda: '+error.message+'</div>'; return; }
+  if(error){ cont.innerHTML='<div class="msg-full">Error al cargar la agenda: '+escapeHtml(error.message)+'</div>'; return; }
   CITAS_ACTUALES=data||[];
   renderCitas(CITAS_ACTUALES);
 }
@@ -437,9 +463,10 @@ function renderCitas(lista){
     const pagoAbierto=PAGO_ABIERTO_MIAGENDA===c.id;
     return `<div class="cita-item">
       <div class="cita-hora">${fmtHora(c.hora)}</div>
-      <div class="cita-cliente">${c.nombre_cliente||'Cliente'}</div>
-      <div class="cita-detalle">${c.servicio||'—'} · <span class="badge ${estadoBadge(c.estado)}">${c.estado}</span>${c.valor?' · '+fmt(c.valor):''}</div>
-      ${c.notas?`<div class="cita-detalle">📝 ${c.notas}</div>`:''}
+      <div class="cita-cliente">${escapeHtml(c.nombre_cliente)||'Cliente'}</div>
+      ${c.cliente_notas?`<div class="cita-nota-cliente"><b>Del cliente:</b> ${escapeHtml(c.cliente_notas)}</div>`:''}
+      <div class="cita-detalle">${escapeHtml(c.servicio)||'—'} · <span class="badge ${estadoBadge(c.estado)}">${escapeHtml(c.estado)}</span>${c.valor?' · '+fmt(c.valor):''}</div>
+      ${c.notas?`<div class="cita-detalle">📝 ${escapeHtml(c.notas)}</div>`:''}
       <div class="cita-acciones">
         ${c.whatsapp_cliente?`<a class="btn-wa" onclick='enviarWhatsAppCita(${jsonAttr(c)})'>📱 WhatsApp</a>`:''}
         ${puedePagar&&pagoAbierto?METODOS_PAGO_MIAGENDA.map(m=>`<button class="btn btn-primary btn-sm" onclick="pagarCitaMiAgenda('${c.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Cancelar</button>`:''}
@@ -490,7 +517,7 @@ function abrirNuevaReserva(){
   document.getElementById('nr-sugerencias').classList.remove('open');
   CLIENTE_SEL=null;
   const sel=document.getElementById('nr-servicio');
-  sel.innerHTML='<option value="">Seleccionar...</option>'+SERVICIOS.map(s=>`<option value="${s.nombre}">${s.nombre} (${fmt(s.precio)})</option>`).join('');
+  sel.innerHTML='<option value="">Seleccionar...</option>'+SERVICIOS.map(s=>`<option value="${escapeHtml(s.nombre)}">${escapeHtml(s.nombre)} (${fmt(s.precio)})</option>`).join('');
   document.getElementById('m-reserva').classList.add('open');
 }
 
@@ -507,7 +534,11 @@ function buscarClienteAgenda(q){
     const {data}=await sb.rpc('mi_agenda_buscar_cliente',{p_query:q.trim()});
     const box=document.getElementById('nr-sugerencias');
     if(!data || !data.length){ box.classList.remove('open'); return; }
-    box.innerHTML=data.map(c=>`<div class="suggest-item" onclick='seleccionarClienteAgenda(${JSON.stringify(c.id)},${JSON.stringify(c.nombre)},${JSON.stringify(c.whatsapp)})'>${c.nombre} · ${c.whatsapp||'—'}</div>`).join('');
+    // Dos escapes distintos porque son dos contextos distintos: jsonAttr para
+    // lo que va DENTRO del atributo onclick='...' (JSON.stringify no escapa la
+    // comilla simple, así que un "D'Elia" rompía el atributo a mitad de camino),
+    // y escapeHtml para el texto visible.
+    box.innerHTML=data.map(c=>`<div class="suggest-item" onclick='seleccionarClienteAgenda(${jsonAttr(c.id)},${jsonAttr(c.nombre)},${jsonAttr(c.whatsapp)})'>${escapeHtml(c.nombre)} · ${escapeHtml(c.whatsapp)||'—'}</div>`).join('');
     box.classList.add('open');
   },300);
 }
@@ -618,7 +649,7 @@ async function comCargar(){
   const cont=document.getElementById('com-resumen');
   cont.innerHTML='<div class="msg-full">Cargando...</div>';
   const {data,error}=await sb.rpc('mi_agenda_comisiones',{p_desde:desde,p_hasta:hasta});
-  if(error){ cont.innerHTML='<div class="msg-full">Error: '+error.message+'</div>'; return; }
+  if(error){ cont.innerHTML='<div class="msg-full">Error: '+escapeHtml(error.message)+'</div>'; return; }
   renderComisionResumen(data||[],desde,hasta);
 }
 
@@ -635,7 +666,7 @@ function renderComisionResumen(filas,desde,hasta){
     servicios[nombre].comision+=f.comision_monto||0;
   });
   const serviciosHtml=Object.entries(servicios).sort((a,b)=>b[1].ventas-a[1].ventas).map(([nombre,d])=>`
-    <div class="serv-row"><span>${nombre} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
+    <div class="serv-row"><span>${escapeHtml(nombre)} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
   `).join('')||'<div class="empty">Sin ventas en este período.</div>';
 
   cont.innerHTML=`
