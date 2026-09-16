@@ -275,6 +275,101 @@ function correr(src){
         /throw new Error\(`supabasePatch sin filtro/.test(jsLib), true);
 
   // ───────────────────────────────────────────────────────────────
+  titulo('el encabezado de los correos');
+
+  // emailShell la comparten los TRES endpoints (seis llamadas). Cambiarla toca
+  // todos los correos del sistema y hasta el 2026-09-16 nada la probaba.
+  //
+  // Se EJECUTA la función real contra dos casos, en vez de leer el código: con
+  // logo y sin logo. `process` y `module` se stubbean porque el archivo corre
+  // en Node.
+  var shell = (function(){
+    try {
+      return new Function('process','module','exports',
+        jsLib + '\nreturn emailShell;')({env:{}}, {exports:{}}, {});
+    } catch(e){ return null; }
+  })();
+  check('se puede ejecutar emailShell', typeof shell, 'function');
+
+  if(typeof shell === 'function'){
+    var conLogo = shell({ nombreNegocio:'Mi Negocio',
+                          logoUrl:'https://ejemplo.cl/logo.png',
+                          contenidoHtml:'<p>hola</p>' });
+    var sinLogo = shell({ nombreNegocio:'Mi Negocio', contenidoHtml:'<p>hola</p>' });
+
+    check('con logo, lo pinta', /<img src="https:\/\/ejemplo\.cl\/logo\.png"/.test(conLogo), true);
+    // El nombre en texto SIEMPRE, con logo o sin él: si el cliente de correo
+    // bloquea las imágenes, el correo tiene que seguir diciendo de quién es.
+    check('el nombre va en texto aunque haya logo',
+          conLogo.indexOf('>Mi Negocio</span>') !== -1, true);
+    check('  ...y también sin logo',
+          sinLogo.indexOf('>Mi Negocio</span>') !== -1, true);
+    check('sin logo no queda un <img> vacío', /<img/.test(sinLogo), false);
+
+    // alt vacío: el logo es decorativo, el nombre ya está al lado. Con el
+    // nombre adentro, bloqueado queda recortado en 44px y el lector de
+    // pantalla lo dice dos veces.
+    check('el logo lleva alt vacío', /<img [^>]*alt=""/.test(conLogo), true);
+
+    // linear-gradient no existe en Outlook: ignora la propiedad y deja la
+    // celda sin fondo — texto blanco sobre blanco.
+    check('el degradado tiene color sólido de respaldo',
+          /background:#[0-9a-f]{6};background:linear-gradient/i.test(conLogo), true);
+
+    // Un logo_url con javascript: o data: no tiene nada que hacer en un correo.
+    var logoRaro = shell({ nombreNegocio:'X', logoUrl:'javascript:alert(1)',
+                           contenidoHtml:'' });
+    check('rechaza un logo que no sea http(s)', /<img/.test(logoRaro), false);
+
+    // El nombre del negocio lo escribe el dueño, pero igual se escapa: es la
+    // misma regla que el resto del sistema y no cuesta nada.
+    //
+    // ⚠ EL PAYLOAD VA PARTIDO ('<scr'+'ipt>') A PROPÓSITO. Escrito entero,
+    // dentro de este bloque inline, el parser de HTML ve la etiqueta de cierre
+    // y TERMINA EL BLOQUE ahí: todo el JavaScript que sigue deja de ser código.
+    // El síntoma no es un test en rojo — es un headless que nunca termina, o
+    // que devuelve la página sin ejecutar. Pasó el 2026-09-16.
+    //
+    // Y ojo: al parser NO le importa que esté dentro de un comentario. La
+    // primera versión de ESTA MISMA explicación escribía la etiqueta de cierre
+    // entera acá arriba, y rompía el archivo igual. Por eso ni el comentario
+    // la nombra: se escribe partida o no se escribe.
+    var PAYLOAD = '<scr' + 'ipt>alert(1)</scr' + 'ipt>';
+    var logoXss = shell({ nombreNegocio: PAYLOAD,
+                          logoUrl:'https://ejemplo.cl/l.png', contenidoHtml:'' });
+    check('escapa el nombre del negocio',
+          logoXss.indexOf(PAYLOAD) === -1, true);
+    check('  ...y lo deja escapado', logoXss.indexOf('&lt;scr') !== -1, true);
+  }
+
+  // Los tres endpoints tienen que PASARLE el logo, o la función no sirve de nada.
+  check('enviar-encuesta le pasa el logo', /logoUrl: barberias\[0\]\?\.logo_url/.test(jsEnviar), true);
+  check('avisar-encuesta-mala también', /logoUrl: negocio\?\.logo_url/.test(jsAvisar), true);
+  // Y que lo PIDAN en el select: sin la columna, logoUrl llega undefined y el
+  // logo desaparece sin ningún error.
+  check('enviar-encuesta pide logo_url', /select=nombre,logo_url/.test(jsEnviar), true);
+  check('avisar-encuesta-mala pide logo_url', /select=nombre,email,logo_url/.test(jsAvisar), true);
+
+  // El profesional en la frase de la encuesta, con sus tres niveles de caída.
+  check('la encuesta pide el profesional de la visita',
+        /select=servicio,barbero_nombre/.test(jsEnviar), true);
+  check('  ...y lo mete en la pregunta',
+        /\$\{srv\} con \$\{prof\}/.test(jsEnviar), true);
+  // Los tres niveles de caída, comprobados uno por uno con indexOf.
+  //
+  // ⚠ Acá había un solo regex con tres `[\s\S]{0,200}` encadenados y COLGABA
+  // EL NAVEGADOR: sobre un archivo de varios KB el backtracking explota y
+  // Chrome se queda sin responder — el síntoma fue un headless que nunca
+  // terminaba y devolvía cero bytes, no un test en rojo. Tres búsquedas de
+  // texto plano prueban lo mismo y no pueden colgarse.
+  check('  ...degradando al servicio si no hay profesional',
+        jsEnviar.indexOf('¿Cómo estuvo tu ${srv}?') !== -1, true);
+  check('  ...al profesional si no hay servicio',
+        jsEnviar.indexOf('¿Cómo te atendió ${prof}?') !== -1, true);
+  check('  ...y a "tu visita" si no hay ninguno',
+        jsEnviar.indexOf("'¿Cómo estuvo tu visita?'") !== -1, true);
+
+  // ───────────────────────────────────────────────────────────────
   titulo('el panel escapa lo que escribió el cliente');
 
   check('app.html tiene escapeHtml', /function escapeHtml/.test(jsApp), true);

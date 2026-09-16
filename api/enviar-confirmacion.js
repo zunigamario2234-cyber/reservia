@@ -163,9 +163,12 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const barberias = await supabaseGet(`barberias?id=eq.${encodeURIComponent(reserva.barberia_id)}&select=nombre,email`);
+    const barberias = await supabaseGet(`barberias?id=eq.${encodeURIComponent(reserva.barberia_id)}&select=nombre,email,logo_url`);
     const barberia = barberias[0];
     const nombreNegocio = barberia?.nombre || 'tu negocio';
+    // El logo va en los TRES correos de este endpoint, igual que en los otros
+    // dos: un encabezado distinto por correo se ve como sistemas distintos.
+    const logoNegocio = barberia?.logo_url;
     const fecha = reserva.fecha;
     const hora = (reserva.hora || '').slice(0, 5);
 
@@ -178,6 +181,7 @@ module.exports = async function handler(req, res) {
           subject: `Reserva confirmada en ${nombreNegocio}`,
           html: emailShell({
             nombreNegocio,
+            logoUrl: logoNegocio,
             contenidoHtml: construirContenidoCliente({
               nombreCliente: reserva.nombre_cliente,
               fecha,
@@ -219,6 +223,7 @@ module.exports = async function handler(req, res) {
             : `Te agendaron una cita en ${nombreNegocio}`,
           html: emailShell({
             nombreNegocio,
+            logoUrl: logoNegocio,
             contenidoHtml: construirContenidoProfesional({
               nombreProfesional: resuelto.profesional.nombre,
               nombreCliente: reserva.nombre_cliente,
@@ -256,6 +261,7 @@ module.exports = async function handler(req, res) {
           subject: `Nueva reserva sin avisar en ${nombreNegocio}`,
           html: emailShell({
             nombreNegocio,
+            logoUrl: logoNegocio,
             contenidoHtml: construirContenidoDueno({
               barberoNombre: reserva.barbero_nombre,
               motivo: profesional.motivo,

@@ -18,11 +18,30 @@
 
 const { supabaseGet, supabasePatch, enviarEmail, emailShell } = require('./_lib/resend');
 
-function construirContenido({ nombreCliente, servicio, link }) {
+function escapeHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+function construirContenido({ nombreCliente, servicio, profesional, link }) {
+  // La pregunta se arma en tres niveles, de más concreta a más genérica. El
+  // profesional va DENTRO de la frase y no como línea aparte ("Atendido por
+  // Felipe"): se lee natural y deja claro que la pregunta es sobre ESA
+  // atención, que es lo que hace útil la respuesta.
+  //
+  // Cada nivel degrada solo: sin profesional queda el servicio, sin servicio
+  // queda "tu visita". Nunca aparece un "con undefined" ni un "tu " colgando.
+  const srv = escapeHtml(servicio);
+  const prof = escapeHtml(profesional);
+  const pregunta = srv && prof ? `¿Cómo estuvo tu ${srv} con ${prof}?`
+                 : srv         ? `¿Cómo estuvo tu ${srv}?`
+                 : prof        ? `¿Cómo te atendió ${prof}?`
+                 :               '¿Cómo estuvo tu visita?';
   return `
-    <p style="margin:0 0 12px;font-size:16px;color:#111">Hola ${nombreCliente || ''} 👋</p>
+    <p style="margin:0 0 12px;font-size:16px;color:#111">Hola ${escapeHtml(nombreCliente)} 👋</p>
     <p style="margin:0 0 20px;font-size:14px;color:#444;line-height:1.6">
-      ¡Gracias por venir! ${servicio ? `¿Cómo estuvo tu ${servicio}?` : '¿Cómo estuvo tu visita?'}
+      ¡Gracias por venir! ${pregunta}
       Tu opinión nos ayuda a mejorar, y nos toma menos de un minuto.
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0">
@@ -94,8 +113,8 @@ module.exports = async function handler(req, res) {
           e.cliente_id
             ? supabaseGet(`clientes?id=eq.${e.cliente_id}&select=nombre,email`)
             : Promise.resolve([]),
-          supabaseGet(`barberias?id=eq.${e.barberia_id}&select=nombre`),
-          supabaseGet(`visitas?id=eq.${e.visita_id}&select=servicio`)
+          supabaseGet(`barberias?id=eq.${e.barberia_id}&select=nombre,logo_url`),
+          supabaseGet(`visitas?id=eq.${e.visita_id}&select=servicio,barbero_nombre`)
         ]);
         const cliente = clientes[0];
         const correo = (cliente?.email || '').trim();
@@ -117,9 +136,11 @@ module.exports = async function handler(req, res) {
           subject: `¿Cómo estuvo tu visita a ${barberias[0]?.nombre || 'nosotros'}?`,
           html: emailShell({
             nombreNegocio: barberias[0]?.nombre || 'tu negocio',
+            logoUrl: barberias[0]?.logo_url,
             contenidoHtml: construirContenido({
               nombreCliente: cliente?.nombre,
               servicio: visitas[0]?.servicio,
+              profesional: visitas[0]?.barbero_nombre,
               link
             })
           })

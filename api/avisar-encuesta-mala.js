@@ -102,7 +102,7 @@ module.exports = async function handler(req, res) {
     }
 
     const [barberias, clientes, visitas] = await Promise.all([
-      supabaseGet(`barberias?id=eq.${encodeURIComponent(barberiaId)}&select=nombre,email`),
+      supabaseGet(`barberias?id=eq.${encodeURIComponent(barberiaId)}&select=nombre,email,logo_url`),
       e.cliente_id
         ? supabaseGet(`clientes?id=eq.${e.cliente_id}&select=nombre,apellido,whatsapp`)
         : Promise.resolve([]),
@@ -128,6 +128,7 @@ module.exports = async function handler(req, res) {
       subject: `${e.puntaje}★ de ${nombreCliente || 'un cliente'} — conviene contactarlo`,
       html: emailShell({
         nombreNegocio: negocio?.nombre || 'tu negocio',
+        logoUrl: negocio?.logo_url,
         contenidoHtml: construirContenido({
           puntaje: e.puntaje,
           comentario: e.comentario,

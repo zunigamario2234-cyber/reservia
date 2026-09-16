@@ -84,16 +84,59 @@ async function enviarEmail({ to, subject, html }) {
   }
 }
 
-// Wrapper visual compartido: header con degradado + nombre del negocio + tarjeta blanca.
-function emailShell({ nombreNegocio, contenidoHtml }) {
+function escaparHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+// Wrapper visual compartido: encabezado con el logo y el nombre del negocio,
+// sobre una tarjeta blanca. Lo usan los tres endpoints que mandan correo.
+//
+// ⚠ DOS COSAS QUE EL HTML DE CORREO NO PERDONA, y que explican por qué esto no
+// se escribe como una página normal:
+//
+//  1. MUCHOS CLIENTES BLOQUEAN LAS IMÁGENES por defecto — Outlook entre ellos.
+//     Por eso el logo va ADEMÁS del nombre en texto, nunca en su lugar: con las
+//     imágenes bloqueadas, el correo tiene que seguir diciendo de quién es.
+//
+//     Y por eso el `alt` va VACÍO, que es lo contrario de lo que uno escribe
+//     por reflejo. El logo es decorativo: el nombre ya está al lado, en texto.
+//     Con el nombre en el alt pasaban dos cosas, las dos malas — bloqueado, el
+//     texto quedaba recortado dentro del cuadro de 44px ("Essent…") pegado al
+//     nombre entero, que se lee como algo roto; y un lector de pantalla
+//     anunciaba el negocio dos veces seguidas. Comprobado renderizando el
+//     correo con la imagen bloqueada el 2026-09-16.
+//
+//  2. `linear-gradient` NO EXISTE en Outlook, que ignora la propiedad entera y
+//     deja la celda sin fondo: texto blanco sobre blanco, ilegible. Por eso
+//     `background` lleva primero un color sólido y después el degradado —
+//     quien entiende el segundo lo pisa, quien no, se queda con el primero.
+//     Es un respaldo, no una redundancia.
+//
+// Y todo va en tablas con estilos en línea por lo mismo: el CSS de <head> y el
+// layout moderno se caen en la mitad de los clientes de correo.
+function emailShell({ nombreNegocio, contenidoHtml, logoUrl }) {
+  const nombre = escaparHtml(nombreNegocio);
+  // Solo se acepta http(s): un `logo_url` con javascript: o data: no tiene
+  // sentido acá y no vale la pena dejarlo pasar a un correo.
+  const logo = logoUrl && /^https?:\/\//i.test(logoUrl) ? escaparHtml(logoUrl) : '';
   return `<!DOCTYPE html>
 <html lang="es">
 <body style="margin:0;padding:0;background:#f4f4f7;font-family:system-ui,-apple-system,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 16px">
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:100%">
-        <tr><td style="background:linear-gradient(135deg,#7c6af7,#5b8def);padding:28px 32px">
-          <span style="color:#fff;font-size:18px;font-weight:700">${nombreNegocio}</span>
+        <tr><td style="background:#6f5cf0;background:linear-gradient(135deg,#7c6af7,#5b8def);padding:24px 32px">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            ${logo ? `<td style="padding-right:12px;vertical-align:middle">
+              <img src="${logo}" alt="" width="44" height="44"
+                   style="display:block;width:44px;height:44px;border-radius:8px;object-fit:cover;background:#ffffff">
+            </td>` : ''}
+            <td style="vertical-align:middle">
+              <span style="color:#ffffff;font-size:18px;font-weight:700">${nombre}</span>
+            </td>
+          </tr></table>
         </td></tr>
         <tr><td style="padding:32px">
           ${contenidoHtml}
