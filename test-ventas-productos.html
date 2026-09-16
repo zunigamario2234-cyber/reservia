@@ -547,6 +547,53 @@ async function correr(src){
         /COBRO_CTX=\{lineas:\[\],productos:\[\]/.test(avp), true);
   check('  ...y abre el buscador de productos', /abrirAgregarProducto\(\)/.test(avp), true);
 
+  // ───────────────────────────────────────────────────────────────
+  titulo('elegir profesional agrega solo el producto único');
+
+  // El buscador y el auto-agregado tienen que contar lo MISMO. Si mañana
+  // alguien cambia el criterio en un lado, acá se agregaría un producto que
+  // no es el que está a la vista.
+  check('el filtro vive en una sola función',
+        /function productosQueCoinciden\(/.test(js), true);
+  check('  ...y el buscador la usa en vez de filtrar por su cuenta',
+        /const list=productosQueCoinciden\(q\);/.test(
+          extraerFuncion(js,'renderBuscadorProductos')), true);
+  check('el select dispara el auto-agregado',
+        /id="cobprod-prof" onchange="cobprodProfesionalElegido\(\)"/.test(appHtml), true);
+
+  // La función REAL, corrida contra un inventario de verdad. Se captura a qué
+  // id le pidió agregar (o si no pidió nada).
+  function correrAutoAgregar(inventario, query, prof){
+    var pedido = null;
+    var fuente = extraerFuncion(js,'productosQueCoinciden') + '\n' +
+                 extraerFuncion(js,'cobprodProfesionalElegido');
+    var doc = domFalso({'cobprod-q':query,'cobprod-prof':prof});
+    new Function('document','S','COBRO_CTX','cobroAgregarProducto',
+      fuente + '\nreturn cobprodProfesionalElegido();')
+      (doc, {inventario:inventario}, {lineas:[],productos:[]},
+       function(id){ pedido = id; });
+    return pedido;
+  }
+  var INV = [
+    { id:'p1', codigo:'PRD-001', nombre:'Cera fuerte',  stock:5 },
+    { id:'p2', codigo:'PRD-002', nombre:'Cera suave',   stock:3 },
+    { id:'p3', codigo:'PRD-009', nombre:'Shampoo',      stock:0 }
+  ];
+  check('un solo resultado y profesional elegido: se agrega',
+        correrAutoAgregar(INV,'PRD-001','Ana'), 'p1');
+  // El caso que importa: sin profesional NO se agrega nada, porque de ahí
+  // sale la comisión. Si esto se rompiera, la venta se imputaría sola.
+  check('sin profesional, no se agrega nada',
+        correrAutoAgregar(INV,'PRD-001',''), null);
+  // "Cera" da dos: ahí hay una elección real y la hace la persona.
+  check('con dos resultados, no elige por vos',
+        correrAutoAgregar(INV,'Cera','Ana'), null);
+  check('con el buscador vacío, no agrega',
+        correrAutoAgregar(INV,'','Ana'), null);
+  // Sin stock no se agrega, igual que el botón de la fila va disabled.
+  check('un único resultado sin stock, tampoco',
+        correrAutoAgregar(INV,'PRD-009','Ana'), null);
+
   // Con cero líneas, montar el modal no puede leer lineas[0] a ciegas.
   var mm = extraerFuncion(js,'cobroMontarModal');
   check('montar el modal tolera cero líneas',

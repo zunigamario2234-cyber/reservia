@@ -1170,7 +1170,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     </div>
     <div class="fg">
       <label>Profesional que vende *</label>
-      <select id="cobprod-prof"></select>
+      <select id="cobprod-prof" onchange="cobprodProfesionalElegido()"></select>
       <div style="font-size:10px;color:var(--text3);margin-top:4px">De acá sale su comisión por el producto, así que no se preselecciona: hay que elegirlo.</div>
     </div>
     <div id="cobprod-lista" style="max-height:280px;overflow-y:auto"></div>
@@ -3532,12 +3532,24 @@ function cobroReservasDisponibles(){
 
 // ─── PRODUCTOS EN EL COBRO ───
 
+// El criterio de coincidencia del buscador, en UN solo lugar: lo leen el
+// listado y el auto-agregado al elegir profesional. Con una copia en cada
+// lado, el día que una cambie el buscador mostraría un resultado y el
+// auto-agregado contaría otro — y se agregaría un producto distinto del que
+// la persona tiene a la vista.
+//
+// Sin búsqueda no se listan los 40 productos: en el mostrador se escribe el
+// código de la etiqueta, no se navega un catálogo.
+function productosQueCoinciden(texto){
+  const q=(texto||'').trim().toLowerCase();
+  if(!q)return [];
+  return S.inventario.filter(p=>
+    (p.codigo||'').toLowerCase().includes(q)||p.nombre.toLowerCase().includes(q)).slice(0,12);
+}
+
 function renderBuscadorProductos(){
   const q=(document.getElementById('cobprod-q').value||'').trim().toLowerCase();
-  // Sin búsqueda no se listan los 40 productos: en el mostrador se escribe el
-  // código de la etiqueta, no se navega un catálogo.
-  const list=!q?[]:S.inventario.filter(p=>
-    (p.codigo||'').toLowerCase().includes(q)||p.nombre.toLowerCase().includes(q)).slice(0,12);
+  const list=productosQueCoinciden(q);
   const cont=document.getElementById('cobprod-lista');
   if(!q){ cont.innerHTML='<div class="empty" style="padding:16px 0">Escribe un código o un nombre para buscar.</div>'; return; }
   cont.innerHTML=list.length?list.map(p=>{
@@ -3563,6 +3575,29 @@ function abrirAgregarProducto(){
   sel('cobprod-prof',S.barberos.filter(b=>b.activo).map(b=>({v:b.nombre,t:b.nombre})),true);
   document.getElementById('cobprod-prof').value='';
   renderBuscadorProductos();
+}
+
+// Al elegir el profesional, si el buscador quedó en UN solo producto con
+// stock, se agrega solo. Es el caso de "Vender" desde Inventario: el producto
+// ya entró filtrado por su código y lo único que faltaba era quién lo vende,
+// así que pedir además un clic en "Agregar" es pedir confirmar algo que no
+// tiene otra opción posible.
+//
+// Se dispara SOLO acá, en el cambio del select, y NO al escribir: tipeando un
+// código se pasa por un único resultado a mitad de camino (un "PRD-0" que
+// todavía no es "PRD-001"), y agregar ahí metería en el cobro un producto que
+// nadie pidió.
+//
+// Con 0 o 2+ resultados no hace nada: ahí sí hay una elección real que hacer,
+// y la hace la persona con el botón de cada fila.
+function cobprodProfesionalElegido(){
+  if(!COBRO_CTX)return;
+  if(!document.getElementById('cobprod-prof').value)return;
+  const list=productosQueCoinciden(document.getElementById('cobprod-q').value);
+  if(list.length!==1)return;
+  // Sin stock no se agrega, igual que el botón de la fila, que va disabled.
+  if((list[0].stock||0)<=0)return;
+  cobroAgregarProducto(list[0].id);
 }
 
 function cobroAgregarProducto(id){
