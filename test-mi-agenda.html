@@ -97,7 +97,10 @@ nota del cliente no se confunda con la nota de la cita.</p>
 <script>
 'use strict';
 
-var ARCHIVOS = ['mi-agenda.html','migration_notas_cliente_agenda.sql'];
+var ARCHIVOS = ['mi-agenda.html','migration_notas_cliente_agenda.sql',
+                'migration_comisiones_productos_miagenda.sql',
+                'migration_borrar_cita_miagenda.sql',
+                'migration_cliente_miagenda.sql'];
 var lineas = [], fallos = 0, comprobaciones = 0;
 
 function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
@@ -328,6 +331,171 @@ function correr(src){
         /drop function if exists mi_agenda_citas\(date\)/i.test(sql), true);
   check('la migración no lleva transacción a mano',
         /^\s*(begin|commit)\s*;/m.test(sql), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('borrar de verdad vs. quitar de la vista');
+
+  // Los dos caminos son distintos y la diferencia importa: borrar destruye el
+  // dato para todos, quitar solo lo esconde de esta agenda. Se ejecuta
+  // renderCitas() REAL para ver qué botón pinta cada tipo — mirar el código
+  // como texto diría que los dos botones existen, no cuál sale en cada caso.
+  var hReserva = (pintarCitas(js, [{
+    id:'r1', tipo:'reserva', hora:'09:00:00', estado:'Confirmada',
+    nombre_cliente:'Ana', servicio:'Corte', whatsapp_cliente:'', valor:null
+  }]).html) || '';
+  var hVisita = (pintarCitas(js, [{
+    id:'v1', tipo:'visita', hora:'10:00:00', estado:'Atendida',
+    nombre_cliente:'Ana', servicio:'Corte', whatsapp_cliente:'', valor:12000
+  }]).html) || '';
+
+  check('una reserva ofrece Eliminar',       /borrarCita\('r1'\)/.test(hReserva), true);
+  check('  ...y no ofrece quitar de la vista',
+        /eliminarCita\('r1'/.test(hReserva), false);
+  // EL CHECK QUE PROTEGE LA PLATA: una visita es la venta ya cobrada y su
+  // comisión. Si acá apareciera borrarCita, el profesional podría destruir
+  // el registro de lo que cobró.
+  check('una visita NO ofrece Eliminar',     /borrarCita\('v1'\)/.test(hVisita), false);
+  check('  ...ofrece quitarla de la vista',  /eliminarCita\('v1','visita'\)/.test(hVisita), true);
+
+  // El copy tiene que decir la verdad de lo que hace cada uno.
+  var fBorrar  = extraerFuncion(js,'borrarCita');
+  var fOcultar = extraerFuncion(js,'eliminarCita');
+  check('borrar avisa que no se puede deshacer',
+        /no se puede deshacer/i.test(fBorrar), true);
+  check('quitar sigue diciendo que NO se borra',
+        /no se borra del sistema/i.test(fOcultar), true);
+
+  // La firma sin p_tipo es la garantía de fondo: no hay forma de pedirle a la
+  // RPC que borre una visita, ni llamándola a mano.
+  check('borrarCita llama a la RPC sin el tipo',
+        /mi_agenda_borrar_cita',\{p_id:id\}/.test(fBorrar), true);
+  check('  ...y avisa cuando la RPC devolvió false',
+        /data===false/.test(fBorrar), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('correo y cumpleaños al agendar');
+
+  check('el modal pide correo',      /id="nr-email"/.test(css), true);
+  check('  ...y cumpleaños',         /id="nr-cumple"/.test(css), true);
+  check('  ...los dos como opcionales, no con *',
+        /Correo \(opcional\)/.test(css) && /nacimiento \(opcional\)/.test(css), true);
+
+  var fGuardar = extraerFuncion(js,'guardarNuevaReserva');
+  check('viajan los dos a la RPC',
+        /p_email_cliente:email\|\|null/.test(fGuardar) &&
+        /p_cumpleanos_cliente:cumple/.test(fGuardar), true);
+  // Sin esta validación el correo se pierde en silencio: email_para_ficha()
+  // descarta server-side lo que no tenga arroba y nadie se entera.
+  check('un correo sin arroba se rechaza antes de mandarlo',
+        /email&&!email\.includes\('@'\)/.test(fGuardar), true);
+  check('abrir el modal limpia los campos nuevos',
+        /nr-email'\)\.value=''/.test(extraerFuncion(js,'abrirNuevaReserva')) &&
+        /nr-cumple'\)\.value=''/.test(extraerFuncion(js,'abrirNuevaReserva')), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la ficha del cliente, por el camino normalizado');
+
+  // EL CHECK QUE EVITA LOS DUPLICADOS. Mi Agenda tiene que llamar a la RPC
+  // que compara el WhatsApp normalizado. Volver a la otra —que usa match
+  // exacto— reintroduce el bug sin ningún error visible.
+  check('usa mi_agenda_resolver_cliente',
+        /mi_agenda_resolver_cliente/.test(fGuardar), true);
+  check('  ...y ya NO la de match exacto',
+        /buscar_o_crear_cliente_club/.test(fGuardar), false);
+  check('avisa si la ficha se creó o si ya existía',
+        /creado\?/.test(fGuardar), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las comisiones separan servicios de productos');
+
+  var fCom = extraerFuncion(js,'renderComisionResumen');
+  // La RPC manda el nombre del producto en la misma columna `servicio`, así
+  // que agrupar sin mirar `tipo` mezclaría un corte y un shampoo homónimos.
+  check('agrupa mirando el tipo', /f\.tipo\|\|'servicio'/.test(fCom), true);
+  check('  ...y pinta la tarjeta de productos', /Productos vendidos/.test(fCom), true);
+
+  // Se ejecuta el render REAL con las dos clases de fila mezcladas.
+  var docCom = domFalso();
+  var fuenteCom = extraerFuncion(js,'escapeHtml') + '\n' +
+                  extraerFuncion(js,'fmt') + '\n' +
+                  extraerFuncion(js,'comEtiquetaRango') + '\n' + fCom;
+  var comErr = '';
+  try {
+    new Function('document','COM_RANGO','FILAS',
+      fuenteCom + '\nrenderComisionResumen(FILAS,"2026-09-01","2026-09-30");')
+      (docCom, 'mes', [
+        {tipo:'servicio', servicio:'Corte',   valor:12000, comision_monto:6000},
+        {tipo:'producto', servicio:'Shampoo', valor:8000,  comision_monto:800}
+      ]);
+  } catch(e){ comErr = e.message; }
+  check('renderComisionResumen corre sin excepciones', comErr || 'sin error', 'sin error');
+
+  var htmlCom = docCom._html('com-resumen');
+  check('aparece el servicio',  /Corte/.test(htmlCom), true);
+  check('aparece el producto',  /Shampoo/.test(htmlCom), true);
+  check('en dos tarjetas separadas',
+        /Desglose por servicio/.test(htmlCom) && /Productos vendidos/.test(htmlCom), true);
+  // El hero suma las dos clases: es la comisión total de la persona.
+  check('el total suma servicio y producto', /\$6\.800/.test(htmlCom), true);
+
+  // Un profesional que no vende productos no tiene por qué ver una tarjeta
+  // vacía en su pantalla.
+  var docSolo = domFalso();
+  try {
+    new Function('document','COM_RANGO','FILAS',
+      fuenteCom + '\nrenderComisionResumen(FILAS,"2026-09-01","2026-09-30");')
+      (docSolo, 'mes', [{tipo:'servicio', servicio:'Corte', valor:12000, comision_monto:6000}]);
+  } catch(e){}
+  check('sin productos, no se pinta esa tarjeta',
+        /Productos vendidos/.test(docSolo._html('com-resumen')), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('las tres migraciones nuevas');
+
+  var sqlCom    = sinComentariosSql(src['migration_comisiones_productos_miagenda.sql']);
+  var sqlBorrar = sinComentariosSql(src['migration_borrar_cita_miagenda.sql']);
+  var sqlClien  = sinComentariosSql(src['migration_cliente_miagenda.sql']);
+
+  // Ninguna lleva transacción a mano: con dollar-quoting el editor de
+  // Supabase devuelve éxito sin aplicar nada.
+  check('comisiones sin begin/commit', /^\s*(begin|commit)\s*;/m.test(sqlCom),    false);
+  check('borrado sin begin/commit',    /^\s*(begin|commit)\s*;/m.test(sqlBorrar), false);
+  check('cliente sin begin/commit',    /^\s*(begin|commit)\s*;/m.test(sqlClien),  false);
+
+  // El revoke a anon no es redundante: los default privileges de Supabase le
+  // dan EXECUTE explícito, y revocarle a PUBLIC no se lo quita.
+  check('comisiones revoca a anon', /revoke all on function mi_agenda_comisiones\(date,date\) from anon/i.test(sqlCom), true);
+  check('borrado revoca a anon',    /revoke all on function mi_agenda_borrar_cita\(uuid\) from anon/i.test(sqlBorrar), true);
+  check('cliente revoca a anon',    /revoke all on function mi_agenda_resolver_cliente\(uuid\) from anon/i.test(sqlClien), true);
+
+  // El DROP se lleva los permisos; tienen que volver.
+  check('comisiones devuelve el execute', /grant execute on function mi_agenda_comisiones\(date,date\) to authenticated/i.test(sqlCom), true);
+
+  // La firma de una sola columna es lo que impide borrar visitas.
+  check('la RPC de borrado recibe solo el id',
+        /create or replace function mi_agenda_borrar_cita\(p_id uuid\)/i.test(sqlBorrar), true);
+  check('  ...y filtra por procesado = false',
+        /procesado\s*=\s*false/i.test(sqlBorrar), true);
+  check('  ...y por barbero_nombre, no solo por negocio',
+        /barbero_nombre\s*=\s*v_nombre/i.test(sqlBorrar), true);
+
+  // EL CHECK DE LA DECISIÓN: la migración del cliente NO puede redefinir
+  // buscar_o_crear_cliente_club. Esa RPC corre en el link público y en el
+  // Club VIP, y cambiarle el criterio mueve a qué ficha se le suman las
+  // visitas y corre reportes históricos. Se decidió no tocarla.
+  check('no redefine la RPC del link público',
+        /create or replace function buscar_o_crear_cliente_club/i.test(sqlClien), false);
+  // Lee la columna generada en vez de repetir la fórmula: con una tercera
+  // copia, el día que cambie la definición el match deja de encontrar y los
+  // duplicados vuelven en silencio.
+  check('lee whatsapp_norm en vez de recalcularlo',
+        /v_norm\s*:=\s*v_reserva\.whatsapp_norm/i.test(sqlClien), true);
+  check('  ...con la guarda de los 9 dígitos',
+        /length\(v_norm\)\s*=\s*9/i.test(sqlClien), true);
+  // La fecha de alta es de hoy en Chile, no la de la reserva ni current_date.
+  check('la ficha se registra con la fecha de Chile',
+        /America\/Santiago/.test(sqlClien), true);
+  check('  ...y con el canal correcto',  /'Mi Agenda'/.test(sqlClien), true);
 
   pintar();
 }

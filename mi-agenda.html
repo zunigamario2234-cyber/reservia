@@ -183,6 +183,14 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
       <div class="form-group"><label>Nombre *</label><input type="text" id="nr-nombre" placeholder="Juan Pérez"></div>
       <div class="form-group"><label>WhatsApp *</label><input type="text" id="nr-wsp" placeholder="+56 9 XXXX XXXX"></div>
     </div>
+    <!-- Correo y cumpleaños son OPCIONALES a propósito: en el mostrador se
+         agenda rápido y muchas veces no se tienen a mano. Pedirlos
+         obligatorios frenaría la reserva por un dato que se puede completar
+         después desde la ficha. -->
+    <div class="fr">
+      <div class="form-group"><label>Correo (opcional)</label><input type="email" id="nr-email" placeholder="cliente@correo.com"></div>
+      <div class="form-group"><label>Fecha de nacimiento (opcional)</label><input type="date" id="nr-cumple"></div>
+    </div>
     <div class="fr">
       <div class="form-group"><label>Fecha *</label><input type="date" id="nr-fecha"></div>
       <div class="form-group"><label>Hora *</label><input type="time" id="nr-hora"></div>
@@ -472,7 +480,8 @@ function renderCitas(lista){
         ${puedePagar&&pagoAbierto?METODOS_PAGO_MIAGENDA.map(m=>`<button class="btn btn-primary btn-sm" onclick="pagarCitaMiAgenda('${c.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Cancelar</button>`:''}
         ${puedePagar&&!pagoAbierto?`<button class="btn btn-primary btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Pagar</button>`:''}
         ${!pagoAbierto&&cancelable?`<button class="btn btn-ghost btn-sm" onclick="cancelarCita('${c.id}','${c.tipo}')">Cancelar</button>`:''}
-        ${!pagoAbierto?`<button class="btn btn-danger btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Eliminar de mi agenda</button>`:''}
+        ${!pagoAbierto&&c.tipo==='reserva'?`<button class="btn btn-danger btn-sm" onclick="borrarCita('${c.id}')">Eliminar</button>`:''}
+        ${!pagoAbierto&&c.tipo!=='reserva'?`<button class="btn btn-ghost btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Quitar de mi agenda</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -507,10 +516,32 @@ async function cancelarCita(id,tipo){
   cargarAgenda();
 }
 
+// OCULTAR — para las visitas, o sea lo ya cobrado. El dato queda y el dueño
+// lo sigue viendo. El texto dice exactamente eso: prometer un borrado que no
+// ocurre haría que alguien creyera que quitó una cita del sistema.
 async function eliminarCita(id,tipo){
-  if(!confirm('¿Eliminar esta cita de tu agenda? No se borra del sistema, solo deja de aparecer en tu vista.'))return;
+  if(!confirm('¿Quitar esta cita de tu agenda? No se borra del sistema, solo deja de aparecer en tu vista.'))return;
   const {error}=await sb.rpc('mi_agenda_eliminar_cita',{p_id:id,p_tipo:tipo});
   if(error){ alert('Error: '+error.message); return; }
+  cargarAgenda();
+}
+
+// BORRAR DE VERDAD — solo reservas sin cobrar. Es irreversible y no deja
+// rastro: no hay auditoría, así que el dueño tampoco puede ver después que
+// esta cita existió. El confirm lo dice con esas palabras porque es la única
+// oportunidad de entenderlo antes de que pase.
+//
+// No se le pasa el tipo: mi_agenda_borrar_cita ni siquiera acepta ese
+// parámetro, justamente para que no exista forma de pedirle que borre una
+// visita — ahí vive la plata cobrada y su comisión.
+async function borrarCita(id){
+  if(!confirm('¿Eliminar esta reserva?\n\nSe borra del sistema y no se puede deshacer. El dueño tampoco va a poder verla después.'))return;
+  const {data,error}=await sb.rpc('mi_agenda_borrar_cita',{p_id:id});
+  if(error){ alert('Error: '+error.message); return; }
+  // La RPC devuelve false sin distinguir el motivo (no existe, es de otro, o
+  // ya está cobrada) para no filtrar por qué falló. Acá se traduce a un aviso
+  // genérico en vez de dejar creer que se borró.
+  if(data===false){ alert('No se pudo eliminar. Si ya la cobraste, no se puede borrar: quítala de tu agenda.'); }
   cargarAgenda();
 }
 
@@ -521,6 +552,8 @@ function abrirNuevaReserva(){
   document.getElementById('nr-buscar').value='';
   document.getElementById('nr-nombre').value='';
   document.getElementById('nr-wsp').value='';
+  document.getElementById('nr-email').value='';
+  document.getElementById('nr-cumple').value='';
   document.getElementById('nr-notas').value='';
   document.getElementById('nr-fecha').value=document.getElementById('ag-fecha').value||hoyStr();
   document.getElementById('nr-hora').value='';
@@ -564,6 +597,8 @@ function seleccionarClienteAgenda(id,nombre,whatsapp){
 async function guardarNuevaReserva(){
   const nombre=document.getElementById('nr-nombre').value.trim();
   const wsp=document.getElementById('nr-wsp').value.trim();
+  const email=document.getElementById('nr-email').value.trim();
+  const cumple=document.getElementById('nr-cumple').value||null;
   const fecha=document.getElementById('nr-fecha').value;
   const hora=document.getElementById('nr-hora').value;
   const servicio=document.getElementById('nr-servicio').value;
@@ -573,11 +608,22 @@ async function guardarNuevaReserva(){
     al.textContent='Nombre, WhatsApp, fecha y hora son obligatorios.'; al.style.display='';
     return;
   }
+  // El correo es opcional, pero si se escribe algo tiene que parecer un
+  // correo. Sin esta validación el dato se pierde SIN AVISO: del lado del
+  // servidor email_para_ficha() descarta todo lo que no tenga arroba, así que
+  // un "no tiene" tipeado acá se guardaría como reserva y nunca llegaría a la
+  // ficha, y nadie se enteraría. Mismo criterio que el formulario público.
+  if(email&&!email.includes('@')){
+    const al=document.getElementById('nr-alert');
+    al.textContent='El correo no parece válido. Revísalo o déjalo vacío.'; al.style.display='';
+    return;
+  }
   const btn=document.getElementById('btn-guardar-nr');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Guardando...';
   const {data:reservaId,error}=await sb.rpc('mi_agenda_crear_reserva',{
     p_nombre_cliente:nombre, p_whatsapp_cliente:wsp, p_fecha:fecha, p_hora:hora,
-    p_servicio:servicio||null, p_notas:notas||null
+    p_servicio:servicio||null, p_notas:notas||null,
+    p_email_cliente:email||null, p_cumpleanos_cliente:cumple
   });
   btn.disabled=false; btn.textContent='Guardar reserva';
   if(error){
@@ -595,11 +641,31 @@ async function guardarNuevaReserva(){
   // Resuelve (busca o crea) la ficha de cliente al instante, mismo patrón
   // no bloqueante que reservar.html — si falla, la reserva ya se creó
   // igual, solo no queda la ficha lista hasta que se procese/pague.
+  //
+  // ⚠ ES mi_agenda_resolver_cliente Y NO buscar_o_crear_cliente_club.
+  // Las dos hacen lo mismo, pero reconocen fichas con criterios distintos:
+  // esta compara el WhatsApp normalizado (los últimos 9 dígitos), así que el
+  // mismo número tipeado '+56 9 8754 2136' o '987542136' cae en la misma
+  // ficha en vez de abrir una nueva. La otra sigue con match exacto y se usa
+  // en el link público y en el Club VIP, que no se tocaron a propósito:
+  // cambiarles el criterio mueve a qué ficha se le suman las visitas y corre
+  // reportes históricos. Está explicado en migration_cliente_miagenda.sql.
+  //
+  // Si se cambia esta llamada de vuelta a la otra, vuelven los duplicados.
+  let avisoFicha='';
   try{
-    await sb.rpc('buscar_o_crear_cliente_club',{p_barberia_id:PERFIL.barberia_id,p_reserva_id:reservaId});
+    const {data:ficha}=await sb.rpc('mi_agenda_resolver_cliente',{p_reserva_id:reservaId});
+    // returns table, así que llega un array de una fila.
+    const f=Array.isArray(ficha)?ficha[0]:ficha;
+    if(f) avisoFicha=f.creado?' · ficha de cliente creada':' · se usó la ficha que ya existía';
   }catch(e){
     console.log('No se pudo resolver el cliente al instante:',e.message);
   }
+  // Se avisa cuál de las dos cosas pasó porque son distintas para quien
+  // atiende: "creada" significa cliente nuevo, "ya existía" significa que las
+  // visitas se le van a sumar a su historial. Antes esto no se decía en
+  // ningún lado y la única forma de saberlo era ir a mirar el panel.
+  alert('Reserva guardada'+avisoFicha);
   cerrarModal();
   document.getElementById('ag-fecha').value=fecha;
   cargarAgenda();
@@ -667,17 +733,28 @@ function renderComisionResumen(filas,desde,hasta){
   const cont=document.getElementById('com-resumen');
   const ventas=filas.reduce((s,f)=>s+(f.valor||0),0);
   const comision=filas.reduce((s,f)=>s+(f.comision_monto||0),0);
-  const servicios={};
-  filas.forEach(f=>{
-    const nombre=f.servicio||'—';
-    if(!servicios[nombre]) servicios[nombre]={cant:0,ventas:0,comision:0};
-    servicios[nombre].cant++;
-    servicios[nombre].ventas+=f.valor||0;
-    servicios[nombre].comision+=f.comision_monto||0;
-  });
-  const serviciosHtml=Object.entries(servicios).sort((a,b)=>b[1].ventas-a[1].ventas).map(([nombre,d])=>`
-    <div class="serv-row"><span>${escapeHtml(nombre)} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
-  `).join('')||'<div class="empty">Sin ventas en este período.</div>';
+  // Agrupa por nombre DENTRO de cada tipo. La RPC manda el nombre del
+  // producto en la misma columna `servicio` y los separa con `tipo`, así que
+  // agrupar sin mirar el tipo mezclaría un corte y un shampoo que se llamaran
+  // igual, y sumaría sus comisiones como si fueran lo mismo.
+  //
+  // Las filas viejas (antes de la migración) no traen `tipo`: cuentan como
+  // servicio, que es lo único que había entonces.
+  function agrupar(deTipo){
+    const acc={};
+    filas.filter(f=>(f.tipo||'servicio')===deTipo).forEach(f=>{
+      const nombre=f.servicio||'—';
+      if(!acc[nombre]) acc[nombre]={cant:0,ventas:0,comision:0};
+      acc[nombre].cant++;
+      acc[nombre].ventas+=f.valor||0;
+      acc[nombre].comision+=f.comision_monto||0;
+    });
+    return Object.entries(acc).sort((a,b)=>b[1].ventas-a[1].ventas).map(([nombre,d])=>`
+      <div class="serv-row"><span>${escapeHtml(nombre)} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
+    `).join('');
+  }
+  const serviciosHtml=agrupar('servicio')||'<div class="empty">Sin servicios en este período.</div>';
+  const productosHtml=agrupar('producto');
 
   cont.innerHTML=`
     <div class="com-hero">
@@ -690,7 +767,11 @@ function renderComisionResumen(filas,desde,hasta){
     <div class="card">
       <div class="card-title">Desglose por servicio</div>
       ${serviciosHtml}
-    </div>`;
+    </div>
+    ${productosHtml?`<div class="card">
+      <div class="card-title">Productos vendidos</div>
+      ${productosHtml}
+    </div>`:''}`;
 }
 
 // ─── Init ───
