@@ -51,7 +51,11 @@ reservas de clientes.</p>
 <script>
 'use strict';
 
-var ARCHIVOS = ['reservar.html','club.html'];
+// PAGINAS son las que pasan por el barrido de cada página (parseo, lecturas
+// de tabla, etc.). ARCHIVOS agrega lo que solo se lee suelto — la migración,
+// para comparar la regla del celular contra su gemela en JS.
+var PAGINAS  = ['reservar.html','club.html'];
+var ARCHIVOS = PAGINAS.concat(['migration_celular_cl.sql']);
 
 var lineas = [], fallos = 0, comprobaciones = 0;
 
@@ -232,7 +236,7 @@ var HORARIO_PRUEBA = {
 };
 
 function correr(src){
-  ARCHIVOS.forEach(function(f){
+  PAGINAS.forEach(function(f){
     titulo(f);
     var html = src[f];
     var js = sinComentarios(inlineScripts(html).join('\n'));
@@ -550,6 +554,129 @@ function correr(src){
     check('ya no filtra por procesado',
           vista.length === 1 && /\.eq\('procesado'/.test(vista[0].resto), false);
   });
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('celular chileno — la regla en JS');
+
+  var jsRes = sinComentarios(inlineScripts(src['reservar.html']).join('\n'));
+  var sqlCel = src['migration_celular_cl.sql'] || '';
+
+  // La función REAL de reservar.html, ejecutada. Mirarla como texto diría que
+  // "menciona replace", no qué decide sobre cada número.
+  var fNorm = extraerFuncion(jsRes, 'normCelCl');
+  check('normCelCl existe', fNorm !== '', true);
+  var normCelCl = null;
+  try { normCelCl = new Function(fNorm + '\nreturn normCelCl;')(); } catch(e){}
+  check('se puede ejecutar', typeof normCelCl === 'function', true);
+
+  // LOS CASOS SALEN DEL PROPIO SQL, no de una lista escrita acá.
+  // La migración lleva su tabla de casos en el bloque de verificación (3c), y
+  // este test la parsea y corre el JS contra ella. Así hay UNA sola fuente de
+  // casos para las dos reglas: agregar un caso de un lado y no del otro, o
+  // cambiarle el esperado, rompe el test. Es la prueba de paridad.
+  var casos = [];
+  var re = /\(\s*(?:'([^']*)'|null)\s*,\s*(?:'([^']*)'|null)\s*\)/g, m;
+  var bloque = sqlCel.slice(sqlCel.indexOf('LA TABLA DE CASOS'));
+  while((m = re.exec(bloque)) !== null){
+    casos.push({ entrada: m[1] === undefined ? null : m[1],
+                 esperado: m[2] === undefined ? '' : m[2] });
+  }
+  check('se parsearon los casos del SQL', casos.length >= 15, true);
+
+  if(normCelCl && casos.length){
+    // Se compara como STRING, no como array: el check() de este archivo usa
+    // ===, y dos arrays nunca son === aunque tengan lo mismo adentro.
+    var malos = casos.filter(function(c){ return normCelCl(c.entrada) !== c.esperado; });
+    check('el JS coincide con el esperado del SQL en TODOS los casos',
+          malos.map(function(c){
+            return c.entrada + ' dio "' + normCelCl(c.entrada) + '" y se esperaba "' + c.esperado + '"';
+          }).join(' | '), '');
+
+    // Los casos que más importan, explícitos: si el parseo de arriba se
+    // rompiera y dejara la lista vacía, el check anterior pasaría con [].
+    check('acepta el número pelado',      normCelCl('987542136'), '987542136');
+    check('acepta con +56 y espacios',    normCelCl('+56 9 8754 2136'), '987542136');
+    check('acepta con guiones',           normCelCl('+56-9-8754-2136'), '987542136');
+    // EL CASO DE LA DECISIÓN: 8 dígitos NO se reparan. unirse.html sí los
+    // repara porque muestra el prefijo "+56 9" impreso; este campo es libre,
+    // y prefijar un 9 inventaría un número que nadie escribió.
+    check('RECHAZA 8 dígitos (no los repara)', normCelCl('87542136'), '');
+    check('rechaza un fijo',              normCelCl('221234567'), '');
+    check('rechaza 999999999',            normCelCl('999999999'), '');
+    check('rechaza 900000000',            normCelCl('900000000'), '');
+    check('rechaza 911111111',            normCelCl('911111111'), '');
+    check('rechaza vacío',                normCelCl(''), '');
+    check('rechaza null',                 normCelCl(null), '');
+    // Un válido que empieza con dígitos repetidos pero no todos: la regla de
+    // los repetidos no puede ser tan laxa que mate números reales.
+    check('acepta 912345678',             normCelCl('912345678'), '912345678');
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('celular chileno — dónde se aplica');
+
+  // En el gate del paso 4, donde el campo está a la vista. En el submit
+  // llegaría tarde: el error se pinta en el paso 5.
+  check('el gate del paso valida el celular', /if\(!normCelCl\(wsp\)\)/.test(jsRes), true);
+  check('  ...con el mensaje concreto',
+        /celular chileno de 9 dígitos que empiece en 9/.test(src['reservar.html']), true);
+  check('el campo tiene eco en vivo', /oninput="ecoCelWsp\(\)"/.test(src['reservar.html']), true);
+  // Dice "Leímos" y no "Guardaremos": se guarda el texto crudo, no este
+  // formato. El otro verbo sería una promesa falsa.
+  var fEco = extraerFuncion(jsRes, 'ecoCelWsp');
+  check('el eco dice "Leímos"',       /Leímos/.test(fEco), true);
+  check('  ...y no "Guardaremos"',    /Guardaremos/.test(fEco), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('celular chileno — la migración');
+
+  check('define celular_cl_norm',
+        /create or replace function celular_cl_norm\(p_texto text\)/.test(sqlCel), true);
+  check('  ...immutable',  /\bimmutable\b/.test(sqlCel), true);
+  // Las tres condiciones de la regla, que son las que el JS espeja.
+  check('exige largo 9',    /length\(t\.d\)\s*=\s*9/.test(sqlCel), true);
+  check('exige empezar en 9', /left\(t\.d,\s*1\)\s*=\s*'9'/.test(sqlCel), true);
+  check('rechaza los repetidos',
+        /substr\(t\.d,\s*2,\s*8\)\s*<>\s*repeat\(substr\(t\.d,\s*2,\s*1\),\s*8\)/.test(sqlCel), true);
+  // No publicada: es texto puro, no tiene nada que ofrecer afuera. El revoke
+  // a anon no es redundante — los default privileges de Supabase le dan
+  // EXECUTE explícito y el revoke a public no se lo quita.
+  check('revoca a public', /revoke execute on function celular_cl_norm\(text\) from public/i.test(sqlCel), true);
+  check('  ...y a anon',   /revoke execute on function celular_cl_norm\(text\) from anon/i.test(sqlCel), true);
+
+  check('la RPC pública usa la función',
+        /if celular_cl_norm\(p_whatsapp_cliente\) is null then/.test(sqlCel), true);
+  check('  ...con el mismo mensaje que unirse_club_publico',
+        /raise exception 'Revisa tu WhatsApp: son 9 dígitos y empieza en 9'/.test(sqlCel), true);
+
+  // EL CHECK DEL ALCANCE. Se guarda el texto CRUDO, no el normalizado:
+  // registrar_cobro_conjunto busca al cliente por igualdad exacta, así que
+  // guardar normalizado dejaría de matchear las fichas viejas y haría MÁS
+  // duplicados. Si alguien "mejora" esto, el test cae.
+  // Acotado al insert REAL de la función. Una regex sobre todo el archivo
+  // alcanzaba el bloque de verificación (3c), que también tiene un `values` y
+  // llama a celular_cl_norm — y daba un falso positivo.
+  var mIns = sqlCel.match(/insert into reservas \(([\s\S]*?)\) returning id into v_id;/);
+  var cuerpoInsert = mIns ? mIns[1] : '';
+  check('se encontró el insert de la RPC', cuerpoInsert !== '', true);
+  check('inserta el whatsapp crudo',
+        /p_whatsapp_cliente/.test(cuerpoInsert), true);
+  check('  ...y NO el normalizado',
+        /celular_cl_norm/.test(cuerpoInsert), false);
+
+  // Las tres validaciones que ya existían siguen ahí: el cuerpo se reescribió
+  // completo y perder una sería silencioso.
+  check('conserva la de hora pasada',  /Esa hora ya pasó/.test(sqlCel), true);
+  check('conserva la de profesional obligatorio',
+        /Tienes que elegir un profesional/.test(sqlCel), true);
+  check('conserva la de profesional activo',
+        /ya no está disponible/.test(sqlCel), true);
+
+  // Sin drop: un drop le quitaría a anon el execute y nadie podría reservar.
+  check('NO dropea la RPC pública',
+        /drop function[^\n]*crear_reserva_publica/i.test(sqlCel), false);
+  check('la migración no lleva transacción a mano',
+        /^\s*(begin|commit)\s*;/m.test(sqlCel), false);
 
   pintar();
 }

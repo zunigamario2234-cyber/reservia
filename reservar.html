@@ -79,6 +79,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .horario-btn:disabled{opacity:0.3;cursor:not-allowed}
 .form-group{margin-bottom:12px}
 label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+/* Eco del celular leído, debajo del campo. Mismo tamaño que label para que
+   no compita con el input. El .ok/.mal lo pone ecoCelWsp(). */
+.ayuda-wsp{font-size:11px;color:#555;margin-top:5px;line-height:1.5}
+.ayuda-wsp b{color:#7c6af7;font-weight:600}
+.ayuda-wsp.mal{color:#e05050}
 input,textarea{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
 input:focus,textarea:focus{outline:none;border-color:#7c6af7}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -202,7 +207,7 @@ input:focus,textarea:focus{outline:none;border-color:#7c6af7}
         <div class="form-group"><label>Nombre *</label><input type="text" id="cl-nombre" placeholder="Juan"></div>
         <div class="form-group"><label>Apellido</label><input type="text" id="cl-apellido" placeholder="Pérez"></div>
       </div>
-      <div class="form-group"><label>WhatsApp *</label><input type="tel" id="cl-wsp" placeholder="+56 9 XXXX XXXX"></div>
+      <div class="form-group"><label>WhatsApp *</label><input type="tel" id="cl-wsp" placeholder="+56 9 XXXX XXXX" inputmode="numeric" oninput="ecoCelWsp()"><div class="ayuda-wsp" id="cl-wsp-ayuda">Un celular chileno: 9 dígitos que empiezan en 9.</div></div>
       <div class="form-group"><label>Correo electrónico *</label><input type="email" id="cl-email" placeholder="tu@correo.com"></div>
       <div class="form-group"><label>Fecha de nacimiento (opcional)</label><input type="date" id="cl-cumple"></div>
       <div class="form-group"><label>Notas (opcional)</label><textarea id="cl-notas" rows="2" placeholder="Ej: corte específico, alergias..."></textarea></div>
@@ -422,6 +427,54 @@ function bloqueoChocaCon(b, hMin, dur, fecha, diaSemana){
 // pueden correrse un día según la zona horaria del visitante.
 function fmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function abrirWA(wsp,msg){ const n=(wsp||'').replace(/\D/g,''); window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank'); }
+
+// ─── Celular chileno ────────────────────────────────────────────────────────
+//
+// EN ESPEJO de celular_cl_norm() en migration_celular_cl.sql. Las dos reglas
+// tienen que decidir lo mismo sobre las mismas entradas: si se separan, el
+// front aceptaría algo que el servidor rechaza y la persona vería un error
+// después de llenar todo el formulario. test-reserva-publica.html corre la
+// tabla de casos acá, y el bloque (3c) de la migración corre LA MISMA tabla
+// contra el SQL.
+//
+// ⚠ A DIFERENCIA de normWspCl() en unirse.html, acá NO se repara un número de
+// 8 dígitos agregándole el 9. Allá el campo muestra el prefijo "+56 9"
+// impreso y la ayuda dice "solo los 8 dígitos que siguen", así que el 9 está
+// a la vista. Este campo es libre: agregarle un 9 a ocho dígitos inventaría
+// en silencio un número que la persona nunca escribió.
+function normCelCl(raw){
+  var d = String(raw == null ? '' : raw).replace(/\D/g,'');
+  if(d.length > 9) d = d.slice(-9);
+  if(d.length !== 9 || d.charAt(0) !== '9') return '';
+  // Los 8 que siguen al 9 no pueden ser todos el mismo dígito: 999999999 y
+  // 900000000 son relleno de alguien que no quiere dar su número.
+  var resto = d.slice(1);
+  for(var i=0;i<resto.length;i++){ if(resto.charAt(i) !== resto.charAt(0)) return d; }
+  return '';
+}
+
+function fmtCelCl(norm){
+  if(norm.length !== 9) return '';
+  return '+56 ' + norm.charAt(0) + ' ' + norm.substr(1,4) + ' ' + norm.substr(5,4);
+}
+
+// Eco en vivo: la persona confirma que el número leído es el suyo ANTES de
+// enviar, en vez de descubrir el error cuando ya llenó el resto.
+//
+// Dice "Leímos", no "Guardaremos": se guarda el texto crudo tal como lo
+// escribió, no este formato. Prometer lo otro sería mentirle.
+function ecoCelWsp(){
+  var el = document.getElementById('cl-wsp');
+  var ayuda = document.getElementById('cl-wsp-ayuda');
+  if(!el || !ayuda) return;
+  var val = el.value.trim();
+  var norm = normCelCl(val);
+  ayuda.classList.remove('mal');
+  if(!val){ ayuda.innerHTML = 'Un celular chileno: 9 dígitos que empiezan en 9.'; return; }
+  if(norm){ ayuda.innerHTML = 'Leímos <b>' + fmtCelCl(norm) + '</b>'; return; }
+  ayuda.textContent = 'Ese número no parece un celular chileno.';
+  ayuda.classList.add('mal');
+}
 
 // Mismo criterio de reemplazo de {clave} que buildMsg() en app.html —
 // duplicado acá porque este archivo no comparte JS con app.html (ver
@@ -807,6 +860,11 @@ function irPaso(n){
     const wsp=document.getElementById('cl-wsp').value.trim();
     const email=document.getElementById('cl-email').value.trim();
     if(!nombre||!wsp||!email){alert('Nombre, WhatsApp y correo son obligatorios.');return;}
+    // Acá y no en el submit: este gate corre en el paso 4, donde el campo del
+    // WhatsApp está a la vista. El error de la RPC se pinta en #alert-confirm,
+    // que vive en el paso 5 — la persona lo leería en una pantalla donde el
+    // campo ni se muestra y tendría que adivinar que debe volver atrás.
+    if(!normCelCl(wsp)){alert('Revisa tu WhatsApp: tiene que ser un celular chileno de 9 dígitos que empiece en 9.');return;}
     if(!email.includes('@')){alert('Ingresa un correo válido.');return;}
     renderResumen();
   }
