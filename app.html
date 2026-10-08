@@ -616,6 +616,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <div id="tc-gastos">
     <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px">
       <button class="btn btn-primary" onclick="openM('m-costo')">+ Gasto</button>
+      <!-- Copia desde el mes anterior AL QUE ESTÁ EN PANTALLA, no al mes en
+           curso: estando parado en agosto, el origen es julio. -->
+      <button class="btn btn-ghost" onclick="abrirRepetirGastos()">⟳ Repetir mes anterior</button>
     </div>
     <div class="g3" style="margin-bottom:14px">
       <div class="mc"><div class="mc-label">Costos fijos</div><div class="mc-val" id="co-fijo">$0</div></div>
@@ -1182,17 +1185,52 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
 <div class="overlay" id="m-costo">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">Agregar gasto</span><button class="xbtn" onclick="closeM('m-costo')">×</button></div>
-    <div class="fr"><div class="fg"><label>Fecha *</label><input id="co-fecha" type="date"></div><div class="fg"><label>Descripción *</label><input id="co-desc" type="text" placeholder="Arriendo local"></div></div>
+    <div class="modal-hdr"><span class="modal-title" id="m-costo-title">Agregar gasto</span><button class="xbtn" onclick="closeM('m-costo')">×</button></div>
+    <!-- Vacío = alta; con id = edición. Mismo patrón que cl-id en el modal de
+         cliente, para no inventar un segundo modal que después haya que
+         mantener en paralelo. -->
+    <input type="hidden" id="co-id">
+    <!-- Aviso de mes anterior. Se recalcula al abrir y cada vez que cambia la
+         fecha, porque editar hacia atrás mueve el IVA crédito de un mes que
+         pudo haberse declarado. -->
+    <div id="co-aviso-mes" class="alert al-warn" style="display:none;margin-bottom:10px;font-size:12px"></div>
+    <!-- Sugerencias: las descripciones más repetidas de meses anteriores. -->
+    <div id="co-sugerencias" style="display:none;margin-bottom:10px"></div>
+    <div class="fg"><label>Descripción *</label><input id="co-desc" type="text" placeholder="Arriendo local"></div>
     <div class="fr">
+      <div class="fg"><label>Monto neto ($) *</label><input id="co-monto" type="number" min="1" placeholder="0" oninput="calcIvaCo()"></div>
       <div class="fg"><label>Tipo</label><select id="co-tipo"><option value="fijo">🔒 Fijo</option><option value="variable">📊 Variable</option></select></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>¿Lleva IVA?</label><select id="co-iva-opt" onchange="calcIvaCo()"><option value="si" id="co-iva-si">Sí</option><option value="no">No</option></select></div>
+      <div class="fg"><label>Fecha *</label><input id="co-fecha" type="date" onchange="coAvisoMes()"></div>
+    </div>
+    <div class="fr"><div class="fg"><label>IVA calculado</label><input id="co-iva-val" readonly></div><div class="fg"><label>Total</label><input id="co-total-val" readonly style="color:#d4a853"></div></div>
+    <!-- Categoría acá abajo porque no entra en ningún cálculo: solo se pinta
+         en la tabla. El tipo, que sí alimenta los KPIs de fijos y variables,
+         se queda arriba a la vista. -->
+    <div style="margin-top:4px">
+      <button type="button" class="btn btn-ghost btn-sm" id="co-mas-btn" onclick="coToggleMas()">Más opciones ▾</button>
+    </div>
+    <div id="co-mas" style="display:none;margin-top:8px">
       <div class="fg"><label>Categoría</label><select id="co-cat"><option>Arriendo</option><option>Servicios básicos</option><option>Productos</option><option>Sueldos</option><option>Marketing</option><option>Equipamiento</option><option>Otro</option></select></div>
     </div>
-    <div class="fr"><div class="fg"><label>Monto neto ($) *</label><input id="co-monto" type="number" placeholder="0" oninput="calcIvaCo()"></div><div class="fg"><label>¿Lleva IVA?</label><select id="co-iva-opt" onchange="calcIvaCo()"><option value="si" id="co-iva-si">Sí</option><option value="no">No</option></select></div></div>
-    <div class="fr"><div class="fg"><label>IVA calculado</label><input id="co-iva-val" readonly></div><div class="fg"><label>Total</label><input id="co-total-val" readonly style="color:#d4a853"></div></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
-      <button class="btn btn-primary" onclick="guardarCosto()">Guardar</button>
+      <button class="btn btn-primary" id="co-guardar-btn" onclick="guardarCosto()">Guardar</button>
       <button class="btn btn-ghost" onclick="closeM('m-costo')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Repetir gastos del mes anterior -->
+<div class="overlay" id="m-repetir">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-hdr"><span class="modal-title" id="m-rep-title">Repetir gastos</span><button class="xbtn" onclick="closeM('m-repetir')">×</button></div>
+    <div id="rep-aviso" class="alert al-warn" style="display:none;margin-bottom:10px;font-size:12px"></div>
+    <div id="rep-lista" style="max-height:340px;overflow-y:auto"></div>
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" id="rep-btn" onclick="confirmarRepetirGastos()">Copiar los marcados</button>
+      <button class="btn btn-ghost" onclick="closeM('m-repetir')">Cancelar</button>
     </div>
   </div>
 </div>
@@ -2047,6 +2085,23 @@ function initModal(id){
   if(id==='m-costo'){
     document.getElementById('co-fecha').value=hoy;
     document.getElementById('co-iva-si').textContent='Sí ('+ivaPctNegocio()+'%)';
+    // openM siempre deja el modal en modo ALTA. editarCosto() lo abre con
+    // openM y después rellena: si el reset no estuviera acá, una edición
+    // cancelada dejaría el co-id cargado y el siguiente "+ Gasto"
+    // sobrescribiría ese gasto en vez de crear uno nuevo.
+    document.getElementById('co-id').value='';
+    CO_MES_ORIGINAL=null;
+    document.getElementById('m-costo-title').textContent='Agregar gasto';
+    document.getElementById('co-guardar-btn').textContent='Guardar';
+    document.getElementById('co-desc').value='';
+    document.getElementById('co-monto').value='';
+    document.getElementById('co-tipo').value='fijo';
+    document.getElementById('co-cat').value='Arriendo';
+    document.getElementById('co-iva-opt').value='si';
+    coCerrarMas();
+    calcIvaCo();
+    coAvisoMes();
+    coPintarSugerencias();
   }
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
@@ -2560,16 +2615,31 @@ async function guardarReserva(){
 
 async function guardarCosto(){
   const d=document.getElementById('co-desc').value.trim();
-  const m=parseFloat(document.getElementById('co-monto').value)||0;
+  const m=parseFloat(document.getElementById('co-monto').value);
   const f=document.getElementById('co-fecha').value;
   if(!d||!f){notify('Descripción y fecha obligatorias','warn');return;}
+  // El label ya decía * y nadie lo miraba: con `||0` se podían guardar gastos
+  // de $0 —o negativos— que ensucian la tabla y no suman nada. `!(m>0)` cubre
+  // los tres casos de una vez, incluido el NaN del campo vacío.
+  if(!(m>0)){
+    notify('El monto tiene que ser mayor que 0','warn');
+    document.getElementById('co-monto').focus();
+    return;
+  }
   const conIva=document.getElementById('co-iva-opt').value==='si';
   // Mismo cálculo que el preview del modal, para que lo que se guarda sea
   // exactamente lo que el dueño vio antes de apretar Guardar.
   const iva=conIva?ivaSobreNeto(m):0;
-  const {error}=await sb.from('costos').insert({barberia_id:S.barberia.id,fecha:f,descripcion:d,tipo:document.getElementById('co-tipo').value,categoria:document.getElementById('co-cat').value,monto_neto:m,iva,total:m+iva});
+  const payload={barberia_id:S.barberia.id,fecha:f,descripcion:d,tipo:document.getElementById('co-tipo').value,categoria:document.getElementById('co-cat').value,monto_neto:m,iva,total:m+iva};
+  // Con id es edición; sin id, alta. Mismo patrón que guardarCliente().
+  const id=document.getElementById('co-id').value;
+  let error;
+  if(id){ const r=await sb.from('costos').update(payload).eq('id',id); error=r.error; }
+  else   { const r=await sb.from('costos').insert(payload);            error=r.error; }
   if(error){notify(error.message,'err');return;}
-  await loadCostos();closeM('m-costo');notify('Gasto registrado ✓');renderCostos();renderDashboard();
+  // renderCostos() repinta Gastos, IVA y Comisiones de una sola pasada, así
+  // que el mes que esté en pantalla queda consistente en las tres.
+  await loadCostos();closeM('m-costo');notify(id?'Gasto actualizado ✓':'Gasto registrado ✓');renderCostos();renderDashboard();
 }
 
 async function guardarProducto(){
@@ -4893,6 +4963,14 @@ function rangoMesesCostos(){
   const ms=[];
   S.visitas.forEach(v=>{ if(v.fecha) ms.push(v.fecha.slice(0,7)); });
   S.costos.forEach(c=>{ if(c.fecha) ms.push(c.fecha.slice(0,7)); });
+  // Las ventas también, o un mes con venta de PRODUCTOS y sin visitas ni
+  // gastos queda fuera del rango: su IVA débito existe pero las flechas no
+  // dejan llegar hasta él. Apareció al mover el IVA de S.visitas a S.ventas.
+  //
+  // El `||[]` no es decorativo: S.ventas la arma construirVentas() después de
+  // cargar dos tablas, y este rango se calcula en el primer render. Un
+  // S.ventas sin declarar ya tiró el panel entero una vez.
+  (S.ventas||[]).forEach(v=>{ if(v.fecha) ms.push(v.fecha.slice(0,7)); });
   const hoy=mesActual();
   return {
     min:ms.reduce((a,m)=>m<a?m:a,hoy),
@@ -4913,6 +4991,232 @@ function moverMesCostos(delta){
 // del mes equivocado; volver a donde estabas cuesta un clic. Guardar un gasto
 // llama a renderCostos() directo, así que ahí sí se conserva el mes elegido.
 function entrarCostos(){ COSTOS_MES=mesActual(); renderCostos(); }
+
+// ─── GASTOS: fechas legibles, alta, edición y repetición ───
+
+const DIAS_CORTO =['dom','lun','mar','mié','jue','vie','sáb'];
+const MESES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+// "mié 7 oct". Se parte el texto a mano y el Date se construye con
+// componentes LOCALES: un new Date('2026-10-07') se lee como UTC y en Chile
+// retrocede un día, que es como se pierde una fecha de gasto.
+function fechaCorta(iso){
+  if(!iso||iso.length<10)return '—';
+  const y=Number(iso.slice(0,4)), m=Number(iso.slice(5,7)), d=Number(iso.slice(8,10));
+  if(!y||!m||!d)return '—';
+  return DIAS_CORTO[new Date(y,m-1,d).getDay()]+' '+d+' '+MESES_CORTO[m-1];
+}
+
+// created_at es timestamptz, o sea UTC. Se baja a hora de Chile ANTES de
+// cortar el día: con el corte crudo, un gasto cargado a las 22:00 figuraría
+// registrado al día siguiente. 'en-CA' da el ISO YYYY-MM-DD.
+function fechaRegistro(ts){
+  if(!ts)return '';
+  try{ return fechaCorta(new Date(ts).toLocaleDateString('en-CA',{timeZone:'America/Santiago'})); }
+  catch(e){ return ''; }
+}
+
+// Mes al que pertenecía el gasto ANTES de editarlo. Null en un alta. Mover un
+// gasto hacia adelante también cambia el IVA del mes que lo pierde, así que
+// no alcanza con mirar la fecha nueva.
+let CO_MES_ORIGINAL=null;
+let CO_SUGERENCIAS=[];
+
+function coToggleMas(){
+  const d=document.getElementById('co-mas');
+  const abierto=d.style.display!=='none';
+  d.style.display=abierto?'none':'';
+  document.getElementById('co-mas-btn').textContent=abierto?'Más opciones ▾':'Menos opciones ▴';
+}
+function coCerrarMas(){
+  document.getElementById('co-mas').style.display='none';
+  document.getElementById('co-mas-btn').textContent='Más opciones ▾';
+}
+
+// El aviso se arma con textContent y nunca con innerHTML: el nombre del mes
+// es nuestro, pero esta caja va a querer mostrar descripciones algún día.
+function coAvisoMes(){
+  const el=document.getElementById('co-aviso-mes');
+  if(!el)return;
+  const f=document.getElementById('co-fecha').value;
+  const mesNuevo=f?f.slice(0,7):'';
+  const actual=mesActual();
+  const partes=[];
+  if(CO_MES_ORIGINAL&&mesNuevo&&CO_MES_ORIGINAL!==mesNuevo){
+    partes.push('Vas a mover este gasto de '+nombreMesLargo(CO_MES_ORIGINAL)+' a '+nombreMesLargo(mesNuevo)+
+                ': cambia el IVA de los DOS meses, el que lo pierde y el que lo recibe.');
+  }
+  // Basta con que CUALQUIERA de los dos meses esté en el pasado.
+  if((CO_MES_ORIGINAL&&CO_MES_ORIGINAL<actual)||(mesNuevo&&mesNuevo<actual)){
+    partes.push('Toca un mes ya cerrado: cambia su IVA crédito. Si ya lo declaraste al SII, la pantalla va a dejar de coincidir con lo declarado.');
+  }
+  if(!partes.length){ el.style.display='none'; el.textContent=''; return; }
+  el.textContent='⚠ '+partes.join(' ');
+  el.style.display='';
+}
+
+// Las descripciones más repetidas de meses ANTERIORES al que está en
+// pantalla, con el resto de la fila del último gasto con ese nombre.
+function coSugerenciasDe(){
+  const cuenta={};
+  (S.costos||[]).forEach(c=>{
+    if(!c.fecha||c.fecha.slice(0,7)>=COSTOS_MES)return;
+    const k=(c.descripcion||'').trim();
+    if(!k)return;
+    if(!cuenta[k])cuenta[k]={desc:k,veces:0,ultima:'',monto:0,tipo:'fijo',categoria:'Arriendo',conIva:true};
+    cuenta[k].veces++;
+    if(c.fecha>cuenta[k].ultima){
+      cuenta[k].ultima=c.fecha;
+      cuenta[k].monto=c.monto_neto||0;
+      cuenta[k].tipo=c.tipo||'fijo';
+      cuenta[k].categoria=c.categoria||'Arriendo';
+      cuenta[k].conIva=(c.iva||0)>0;
+    }
+  });
+  return Object.values(cuenta).sort((a,b)=>b.veces-a.veces).slice(0,6);
+}
+
+function coPintarSugerencias(){
+  const cont=document.getElementById('co-sugerencias');
+  if(!cont)return;
+  CO_SUGERENCIAS=coSugerenciasDe();
+  if(!CO_SUGERENCIAS.length){ cont.style.display='none'; cont.innerHTML=''; return; }
+  // ⚠ El onclick lleva el ÍNDICE, nunca la descripción. Un gasto llamado
+  // O'Higgins rompería el atributo a mitad de camino, y uno con comillas
+  // podría inyectar. El texto visible va por escHtml().
+  cont.innerHTML='<div style="font-size:10px;color:var(--text3);margin-bottom:5px">Lo que cargas seguido</div>'+
+    CO_SUGERENCIAS.map((s,i)=>
+      `<button type="button" class="btn btn-ghost btn-sm" style="margin:0 5px 5px 0" onclick="coUsarSugerencia(${i})">${escHtml(s.desc)} · ${fmt(s.monto)}</button>`
+    ).join('');
+  cont.style.display='';
+}
+
+// Rellena por .value, nunca pintando HTML con el texto adentro.
+function coUsarSugerencia(i){
+  const s=CO_SUGERENCIAS[i];
+  if(!s)return;
+  document.getElementById('co-desc').value=s.desc;
+  document.getElementById('co-monto').value=s.monto||'';
+  document.getElementById('co-tipo').value=s.tipo;
+  document.getElementById('co-cat').value=s.categoria;
+  document.getElementById('co-iva-opt').value=s.conIva?'si':'no';
+  calcIvaCo();
+}
+
+function editarCosto(id){
+  const c=(S.costos||[]).find(x=>x.id===id);
+  if(!c){notify('No encontré ese gasto','warn');return;}
+  // openM deja el modal limpio y en modo alta; recién después se rellena.
+  openM('m-costo');
+  CO_MES_ORIGINAL=(c.fecha||'').slice(0,7)||null;
+  document.getElementById('co-id').value=c.id;
+  document.getElementById('m-costo-title').textContent='Editar gasto';
+  document.getElementById('co-guardar-btn').textContent='Guardar cambios';
+  document.getElementById('co-desc').value=c.descripcion||'';
+  document.getElementById('co-monto').value=c.monto_neto||'';
+  document.getElementById('co-fecha').value=c.fecha||'';
+  document.getElementById('co-tipo').value=c.tipo||'fijo';
+  document.getElementById('co-cat').value=c.categoria||'Arriendo';
+  document.getElementById('co-iva-opt').value=(c.iva||0)>0?'si':'no';
+  // Editando no se ofrecen sugerencias: la descripción ya está puesta y un
+  // clic accidental la pisaría.
+  document.getElementById('co-sugerencias').style.display='none';
+  calcIvaCo();
+  coAvisoMes();
+}
+
+async function borrarCosto(id){
+  const c=(S.costos||[]).find(x=>x.id===id);
+  if(!c){notify('No encontré ese gasto','warn');return;}
+  const mes=(c.fecha||'').slice(0,7);
+  let msg='¿Eliminar "'+(c.descripcion||'este gasto')+'" por '+fmt(c.total)+'?';
+  if(mes&&mes<mesActual()){
+    msg+='\n\n⚠ Es de '+nombreMesLargo(mes)+', un mes ya cerrado: al borrarlo cambia el IVA crédito de ese mes. Si ya lo declaraste al SII, la pantalla va a dejar de coincidir con lo declarado.';
+  }
+  if(!confirm(msg))return;
+  const {error}=await sb.from('costos').delete().eq('id',id);
+  if(error){notify(error.message,'err');return;}
+  await loadCostos();notify('Gasto eliminado ✓');renderCostos();renderDashboard();
+}
+
+// ─── Repetir los gastos del mes anterior ───
+//
+// El destino es el mes QUE ESTÁ EN PANTALLA y el origen es el anterior a ese,
+// no el mes en curso: parado en agosto se copia desde julio.
+
+let REP_CANDIDATOS=[];
+
+// Conserva el día; si no existe en el destino (un 31 en un mes de 30), cae al
+// último. ultimoDiaMes ya resuelve eso sin pasar por UTC.
+function repFechaDestino(dia,mes){
+  const maxDia=Number(ultimoDiaMes(mes).slice(8,10));
+  return mes+'-'+String(Math.min(Math.max(dia||1,1),maxDia)).padStart(2,'0');
+}
+
+function abrirRepetirGastos(){
+  const destino=COSTOS_MES, origen=sumarMes(destino,-1);
+  const deOrigen=(S.costos||[]).filter(c=>c.fecha&&c.fecha.slice(0,7)===origen);
+  if(!deOrigen.length){ notify('No hay gastos en '+nombreMesLargo(origen)+' para copiar','warn'); return; }
+  const yaEn=(S.costos||[]).filter(c=>c.fecha&&c.fecha.slice(0,7)===destino);
+  const nombres=yaEn.map(c=>(c.descripcion||'').trim().toLowerCase());
+  REP_CANDIDATOS=deOrigen.map(c=>({
+    descripcion:c.descripcion||'', monto:c.monto_neto||0,
+    tipo:c.tipo||'fijo', categoria:c.categoria||'Arriendo',
+    conIva:(c.iva||0)>0, dia:Number((c.fecha||'').slice(8,10))||1,
+    repetido:nombres.indexOf((c.descripcion||'').trim().toLowerCase())!==-1
+  }));
+  document.getElementById('m-rep-title').textContent='Repetir gastos de '+nombreMesLargo(origen);
+  const aviso=document.getElementById('rep-aviso');
+  const repes=REP_CANDIDATOS.filter(x=>x.repetido).length;
+  if(yaEn.length){
+    // Los que ya existen por descripción vienen DESMARCADOS: el daño de
+    // duplicar un arriendo es peor que el de tener que marcarlo a mano.
+    aviso.textContent='⚠ '+nombreMesLargo(destino)+' ya tiene '+yaEn.length+' gasto(s) cargado(s).'+
+      (repes?' Los '+repes+' que coinciden por descripción vienen desmarcados.':'');
+    aviso.style.display='';
+  } else { aviso.style.display='none'; }
+  renderRepetirLista();
+  openM('m-repetir');
+}
+
+function renderRepetirLista(){
+  const destino=COSTOS_MES;
+  document.getElementById('rep-lista').innerHTML=REP_CANDIDATOS.map((c,i)=>
+    `<div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:0.5px solid var(--border);font-size:12px">
+      <input type="checkbox" id="rep-ck-${i}" ${c.repetido?'':'checked'} style="width:auto">
+      <div style="flex:1;min-width:0">
+        <strong style="color:var(--text)">${escHtml(c.descripcion)}</strong>${c.repetido?'<span style="color:#e0a850;font-size:10px"> · ya existe</span>':''}
+        <br><span style="font-size:10px;color:var(--text3)">${fechaCorta(repFechaDestino(c.dia,destino))} · ${escHtml(c.categoria)} · ${escHtml(c.tipo)}${c.conIva?' · con IVA':''}</span>
+      </div>
+      <input type="number" id="rep-m-${i}" value="${Number(c.monto)||0}" min="1" style="width:110px">
+    </div>`
+  ).join('');
+}
+
+async function confirmarRepetirGastos(){
+  const destino=COSTOS_MES, filas=[];
+  REP_CANDIDATOS.forEach((c,i)=>{
+    if(!document.getElementById('rep-ck-'+i).checked)return;
+    const m=parseFloat(document.getElementById('rep-m-'+i).value);
+    if(!(m>0))return;
+    // ⚠ El IVA se RECALCULA con ivaSobreNeto(), no se copia el guardado: el
+    // monto pudo editarse acá mismo, y si el negocio cambió su iva_pct el
+    // valor viejo metería un crédito fiscal que no corresponde al mes nuevo.
+    const iva=c.conIva?ivaSobreNeto(m):0;
+    filas.push({barberia_id:S.barberia.id,fecha:repFechaDestino(c.dia,destino),
+                descripcion:c.descripcion,tipo:c.tipo,categoria:c.categoria,
+                monto_neto:m,iva,total:m+iva});
+  });
+  if(!filas.length){notify('No marcaste ningún gasto con monto mayor que 0','warn');return;}
+  const btn=document.getElementById('rep-btn');
+  btn.disabled=true;
+  const {error}=await sb.from('costos').insert(filas);
+  btn.disabled=false;
+  if(error){notify(error.message,'err');return;}
+  await loadCostos();closeM('m-repetir');
+  notify(filas.length+' gasto(s) copiados a '+nombreMesLargo(destino)+' ✓');
+  renderCostos();renderDashboard();
+}
 
 // Salta al reporte por profesional con el mismo mes ya cargado en el rango.
 // La pestaña se alcanza por id y no por posición: un nth-child se rompe en
@@ -4939,12 +5243,18 @@ function renderCostos(){
   document.getElementById('co-fijo').textContent=fmt(fijo);
   document.getElementById('co-var').textContent=fmt(varbl);
   document.getElementById('co-tot').textContent=fmt(fijo+varbl);
+  // Las dos fechas en la MISMA celda y sin tooltip: esto se usa desde el
+  // teléfono, donde no hay hover. Arriba la fecha del gasto —la que decide a
+  // qué mes pertenece— y debajo, en chico, cuándo se registró.
   document.getElementById('t-costos').innerHTML=list.map(c=>`<tr>
-    <td data-label="Fecha">${c.fecha}</td><td data-label="Descripción">${c.descripcion}</td>
-    <td data-label="Tipo"><span class="badge ${c.tipo==='fijo'?'b-blue':'b-purple'}">${c.tipo}</span></td>
-    <td data-label="Categoría">${c.categoria||'—'}</td><td data-label="Neto">${fmt(c.monto_neto)}</td>
+    <td data-label="Fecha"><div>${fechaCorta(c.fecha)}</div>${c.created_at?`<div style="font-size:10px;color:var(--text3)">Registrado ${fechaRegistro(c.created_at)}</div>`:''}</td>
+    <td data-label="Descripción">${escHtml(c.descripcion)}</td>
+    <td data-label="Tipo"><span class="badge ${c.tipo==='fijo'?'b-blue':'b-purple'}">${escHtml(c.tipo)}</span></td>
+    <td data-label="Categoría">${escHtml(c.categoria)||'—'}</td><td data-label="Neto">${fmt(c.monto_neto)}</td>
     <td data-label="IVA" class="gold">${fmt(c.iva)}</td><td data-label="Total" style="font-weight:600">${fmt(c.total)}</td>
-    <td data-label=""><button class="btn btn-danger btn-sm" onclick="eliminar('costos','${c.id}',loadCostos,renderCostos)">×</button></td>
+    <td data-label="" style="white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" onclick="editarCosto('${c.id}')" title="Editar">✎</button>
+      <button class="btn btn-danger btn-sm" onclick="borrarCosto('${c.id}')" title="Eliminar">×</button></td>
   </tr>`).join('');
   // IVA — lee el mismo mes que la tabla de arriba. Antes llamaba a mesActual()
   // por su cuenta: con el selector marcando julio, esto seguía mostrando agosto.

@@ -307,6 +307,34 @@ async function correr(src){
   check('las filas sin fecha se ignoran',
         intentar(function(){ return sucio.rango().min; }), '2026-06');
 
+  // Las VENTAS también cuentan. Un mes con venta de productos y sin visitas
+  // ni gastos quedaba fuera del rango: su IVA débito existía y las flechas no
+  // dejaban llegar hasta él. Apareció al mover el IVA de S.visitas a S.ventas.
+  var soloVentasProd = armarModulo(appJs,
+    { visitas:[], costos:[], ventas:[{fecha:'2026-04-18'}] }, '2026-08', '2026-08');
+  check('el mínimo mira también las ventas',
+        intentar(function(){ return soloVentasProd.rango().min; }), '2026-04');
+
+  var ventaFutura = armarModulo(appJs,
+    { visitas:[], costos:[], ventas:[{fecha:'2026-12-05'}] }, '2026-08', '2026-08');
+  check('  ...y el máximo también',
+        intentar(function(){ return ventaFutura.rango().max; }), '2026-12');
+
+  var tresFuentes = armarModulo(appJs,
+    { visitas:[{fecha:'2026-05-01'}], costos:[{fecha:'2026-03-10'}], ventas:[{fecha:'2026-01-22'}] },
+    '2026-08', '2026-08');
+  check('con las tres fuentes, gana la más vieja',
+        intentar(function(){ return tresFuentes.rango().min; }), '2026-01');
+
+  // ⚠ S.ventas la arma construirVentas() DESPUÉS de cargar dos tablas, y el
+  // rango se calcula en el primer render. Sin el `||[]`, un S.ventas sin
+  // declarar tira TypeError y se lleva puesta la pantalla entera — ya pasó
+  // una vez con S.visitas y hubo que revertir.
+  var sinVentas = armarModulo(appJs,
+    { visitas:[{fecha:'2026-06-01'}], costos:[] }, '2026-08', '2026-08');
+  check('sin S.ventas declarado, no tira',
+        intentar(function(){ return sinVentas.rango().min; }), '2026-06');
+
   // ───────────────────────────────────────────────────────────────
   titulo('mover el período');
 

@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Test — gastos: alta, edición y repetición</title>
+
+<!--
+  Test de la sección Gastos de Costos e IVA en app.html.
+
+  POR QUÉ EXISTE
+  Tres de las cuatro cosas que se prueban acá se rompen EN SILENCIO, que es la
+  peor forma de romperse cuando lo que está en juego es una declaración de IVA:
+
+   1. Que guardarCosto() vuelva a insertar cuando debía actualizar. El gasto
+      editado queda duplicado y el mes suma dos veces el mismo arriendo. No
+      hay error: hay un número más grande.
+
+   2. Que el repetidor copie el `iva` guardado en vez de recalcularlo. Si el
+      monto se editó en la vista previa, o si el negocio cambió su iva_pct, el
+      crédito fiscal del mes nuevo queda mal y nada lo indica.
+
+   3. Que el día 31 se copie tal cual a un mes de 30. Postgres rechaza la
+      fecha y el gasto no entra — o peor, entra con otra fecha.
+
+   4. Que la descripción se pinte sin escapar. Acá el riesgo real es bajo
+      porque la escribe el propio dueño, pero es la misma clase de agujero que
+      hubo que cerrar en mi-agenda.html.
+
+  CÓMO SE PRUEBA
+  Se extraen las funciones REALES de app.html y se ejecutan contra un DOM y un
+  Supabase falsos, capturando qué se le pidió a la base. Mirar el código como
+  texto diría que "menciona update", no cuál de los dos caminos tomó.
+-->
+
+<style>
+  body{background:#0a0a0a;color:#e8e6e0;font-family:ui-monospace,Menlo,Consolas,monospace;padding:20px;font-size:13px}
+  pre{white-space:pre-wrap;line-height:1.6}
+  .ok{color:#4caf87}
+  .fail{color:#e05050}
+  #manual{display:none;margin-bottom:14px}
+</style>
+
+<div id="manual">
+  <p>Elige <code>app.html</code> para correr el test:</p>
+  <input type="file" id="archivo" multiple>
+</div>
+<pre id="resultado">Corriendo…</pre>
+
+<script>
+'use strict';
+
+var ARCHIVOS = ['app.html'];
+
+var lineas = [], fallos = 0, comprobaciones = 0;
+
+function titulo(t){ lineas.push('', t, '─'.repeat(t.length)); }
+function check(nombre, real, esperado){
+  comprobaciones++;
+  var ok = (JSON.stringify(real) === JSON.stringify(esperado));
+  if(!ok) fallos++;
+  lineas.push((ok ? 'OK   ' : 'FALLO') + ' │ ' + nombre);
+  if(!ok){
+    lineas.push('      │   esperado: ' + JSON.stringify(esperado));
+    lineas.push('      │   obtenido: ' + JSON.stringify(real));
+  }
+}
+
+// Sin esto, una mutación que rompa la sintaxis deja el <pre> sin clase
+// ok/fail, que es indistinguible de que el test no corrió: falso verde.
+function intentar(fn){
+  try { return fn(); }
+  catch(e){ return '⟪excepción: ' + (e && e.message ? e.message : e) + '⟫'; }
+}
+
+function pintar(){
+  var fin = fallos === 0
+    ? '\n\n>>> TODO OK — ' + comprobaciones + ' comprobaciones'
+    : '\n\n>>> ' + fallos + ' FALLO(S) de ' + comprobaciones + ' comprobaciones';
+  var pre = document.getElementById('resultado');
+  pre.textContent = lineas.join('\n') + fin;
+  pre.className = fallos === 0 ? 'ok' : 'fail';
+}
+
+function sinComentarios(js){
+  return js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+function inlineScripts(html){
+  var re = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi, m, out = [];
+  while((m = re.exec(html)) !== null){ if(m[1].trim()) out.push(m[1]); }
+  return out;
+}
+function extraerFuncion(js, nombre){
+  var i = js.indexOf('function ' + nombre + '(');
+  if(i === -1) return '';
+  var ini = js.indexOf('{', i), prof = 0;
+  for(var k = ini; k < js.length; k++){
+    if(js[k] === '{') prof++;
+    else if(js[k] === '}'){ prof--; if(prof === 0) return js.slice(i, k + 1); }
+  }
+  return '';
+}
+function extraerFuncionAsync(js, nombre){
+  var f = extraerFuncion(js, nombre);
+  if(!f) return '';
+  return (new RegExp('async\\s+function\\s+' + nombre + '\\s*\\(').test(js) ? 'async ' : '') + f;
+}
+
+// DOM falso: cada id devuelve un campo con value/textContent/style, y recuerda
+// si le pidieron foco. Alcanza para las funciones de esta sección, que solo
+// leen y escriben campos.
+function domFalso(valores){
+  var campos = {}, foco = { id:null };
+  function nuevo(v){
+    return { value: v === undefined ? '' : v, textContent:'', innerHTML:'',
+             checked:false, disabled:false, style:{},
+             classList:{ add:function(){}, remove:function(){}, toggle:function(){} },
+             focus:function(){ foco.id = this.__id; } };
+  }
+  Object.keys(valores || {}).forEach(function(k){ campos[k] = nuevo(valores[k]); campos[k].__id = k; });
+  return {
+    getElementById: function(id){
+      if(!campos[id]){ campos[id] = nuevo(''); campos[id].__id = id; }
+      return campos[id];
+    },
+    _campo: function(id){ return campos[id]; },
+    _foco: foco
+  };
+}
+
+// Supabase falso: captura la tabla, la operación y el payload.
+function sbFalso(captura){
+  return {
+    from: function(tabla){
+      return {
+        insert: function(p){ captura.push({tabla:tabla, op:'insert', payload:p}); return Promise.resolve({error:null}); },
+        update: function(p){
+          captura.push({tabla:tabla, op:'update', payload:p});
+          return { eq: function(col, val){ captura[captura.length-1].eq = [col, val]; return Promise.resolve({error:null}); } };
+        },
+        delete: function(){
+          captura.push({tabla:tabla, op:'delete'});
+          return { eq: function(col, val){ captura[captura.length-1].eq = [col, val]; return Promise.resolve({error:null}); } };
+        }
+      };
+    }
+  };
+}
+
+var IVA_PCT = 19;
+
+// Compila una función de app.html junto con las ayudantes que necesita, en un
+// mismo ámbito, con las dependencias inyectadas.
+function compilar(js, nombres, extras){
+  var fuente = nombres.map(function(n){
+    return extraerFuncionAsync(js, n);
+  }).join('\n');
+  var faltan = nombres.filter(function(n){ return extraerFuncion(js, n) === ''; });
+  if(faltan.length) return { error: 'no se pudo extraer: ' + faltan.join(', ') };
+  return { fuente: fuente, extras: extras || {} };
+}
+
+async function correr(src){
+  var js = sinComentarios(inlineScripts(src['app.html']).join('\n'));
+  var html = src['app.html'];
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('app.html entero sigue parseando');
+
+  // Los demás checks extraen funciones SUELTAS, así que una llave de más
+  // fuera de toda función pasaría desapercibida y rompería el panel entero al
+  // cargar. Acá se compila cada bloque <script> completo (sin ejecutarlo).
+  var bloques = inlineScripts(src['app.html']);
+  check('hay scripts inline', bloques.length > 0, true);
+  var errSintaxis = '';
+  bloques.forEach(function(b, i){
+    try { new Function(b); }
+    catch(e){ if(!errSintaxis) errSintaxis = 'bloque ' + i + ': ' + e.message; }
+  });
+  check('todos los bloques compilan', errSintaxis || 'sin error', 'sin error');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el modal: modo alta y modo edición');
+
+  check('hay campo oculto para el id', /id="co-id"/.test(html), true);
+  check('el título es direccionable', /id="m-costo-title"/.test(html), true);
+  check('el botón de guardar también', /id="co-guardar-btn"/.test(html), true);
+  // La categoría no entra en ningún cálculo: solo se pinta. El tipo sí
+  // alimenta los KPIs de fijos y variables, así que NO se esconde.
+  check('la categoría vive bajo Más opciones',
+        /id="co-mas"[\s\S]{0,200}id="co-cat"/.test(html), true);
+  check('el tipo NO está escondido',
+        /id="co-mas"[\s\S]{0,200}id="co-tipo"/.test(html), false);
+  check('openM deja el modal en modo alta',
+        /co-id'\)\.value='';/.test(js) && /CO_MES_ORIGINAL=null;/.test(js), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('guardarCosto: monto obligatorio y mayor que 0');
+
+  var cg = compilar(js, ['guardarCosto'], null);
+  check('guardarCosto se pudo extraer', cg.error || 'ok', 'ok');
+
+  async function correrGuardar(valores){
+    var cap = [], avisos = [];
+    var doc = domFalso(valores);
+    await new Function('document','sb','S','notify','ivaSobreNeto','loadCostos',
+                       'closeM','renderCostos','renderDashboard',
+      cg.fuente + '\nreturn guardarCosto();')
+      (doc, sbFalso(cap), {barberia:{id:'B1'}},
+       function(m){ avisos.push(m); },
+       function(n){ return Math.round((n||0)*IVA_PCT/100); },
+       function(){ return Promise.resolve(); },
+       function(){}, function(){}, function(){});
+    return { cap: cap, avisos: avisos, foco: doc._foco.id };
+  }
+
+  var base = {'co-desc':'Arriendo','co-fecha':'2026-10-05','co-iva-opt':'si',
+              'co-tipo':'fijo','co-cat':'Arriendo','co-id':''};
+
+  function con(extra){
+    var o = {}; Object.keys(base).forEach(function(k){ o[k] = base[k]; });
+    Object.keys(extra).forEach(function(k){ o[k] = extra[k]; });
+    return o;
+  }
+
+  var vacio = await correrGuardar(con({'co-monto':''}));
+  check('monto vacío: no escribe nada', vacio.cap.length, 0);
+  check('  ...avisa', /mayor que 0/.test(vacio.avisos.join(' ')), true);
+  check('  ...y pone el foco en el monto', vacio.foco, 'co-monto');
+
+  var cero = await correrGuardar(con({'co-monto':'0'}));
+  check('monto 0: no escribe nada', cero.cap.length, 0);
+
+  var neg = await correrGuardar(con({'co-monto':'-5000'}));
+  check('monto negativo: no escribe nada', neg.cap.length, 0);
+
+  var sinDesc = await correrGuardar(con({'co-monto':'10000','co-desc':''}));
+  check('sin descripción: no escribe nada', sinDesc.cap.length, 0);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('guardarCosto: insert vs update');
+
+  var alta = await correrGuardar(con({'co-monto':'100000'}));
+  check('sin id, inserta', alta.cap.length && alta.cap[0].op, 'insert');
+  check('  ...en costos', alta.cap.length && alta.cap[0].tabla, 'costos');
+  check('  ...con el IVA sobre el neto', alta.cap.length && alta.cap[0].payload.iva, 19000);
+  check('  ...y el total = neto + IVA', alta.cap.length && alta.cap[0].payload.total, 119000);
+
+  // EL CHECK QUE EVITA EL DUPLICADO: con id tiene que ACTUALIZAR. Si esto
+  // vuelve a insert, editar un gasto lo duplica y el mes suma dos arriendos.
+  var edicion = await correrGuardar(con({'co-monto':'100000','co-id':'G7'}));
+  check('con id, actualiza', edicion.cap.length && edicion.cap[0].op, 'update');
+  check('  ...acotado a ese id', edicion.cap.length && edicion.cap[0].eq, ['id','G7']);
+
+  var sinIva = await correrGuardar(con({'co-monto':'50000','co-iva-opt':'no'}));
+  check('sin IVA, el iva va en 0', sinIva.cap.length && sinIva.cap[0].payload.iva, 0);
+  check('  ...y el total es el neto', sinIva.cap.length && sinIva.cap[0].payload.total, 50000);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el aviso de mes anterior');
+
+  var ca = compilar(js, ['coAvisoMes'], null);
+  check('coAvisoMes se pudo extraer', ca.error || 'ok', 'ok');
+
+  function correrAviso(fechaNueva, mesOriginal, hoyMes){
+    var doc = domFalso({'co-fecha':fechaNueva});
+    new Function('document','CO_MES_ORIGINAL','mesActual','nombreMesLargo',
+      ca.fuente + '\nreturn coAvisoMes();')
+      (doc, mesOriginal, function(){ return hoyMes; },
+       function(m){ return 'mes(' + m + ')'; });
+    return doc._campo('co-aviso-mes').textContent;
+  }
+
+  check('alta en el mes en curso: sin aviso',
+        correrAviso('2026-10-05', null, '2026-10'), '');
+  // Basta con que la fecha NUEVA esté en el pasado.
+  check('alta con fecha de un mes cerrado: avisa',
+        /mes ya cerrado/.test(correrAviso('2026-08-05', null, '2026-10')), true);
+  // Y basta con que el mes ORIGINAL lo esté, aunque la fecha nueva sea de hoy:
+  // sacar un gasto de agosto también cambia el IVA de agosto.
+  check('editar sacando un gasto de un mes cerrado: avisa igual',
+        /mes ya cerrado/.test(correrAviso('2026-10-05', '2026-08', '2026-10')), true);
+  // Mover de mes toca DOS meses y hay que decirlo.
+  check('cambiar de mes avisa que se mueven los dos',
+        /los DOS meses/.test(correrAviso('2026-10-05', '2026-09', '2026-10')), true);
+  check('  ...y nombra el origen y el destino',
+        /mes\(2026-09\)[\s\S]*mes\(2026-10\)/.test(correrAviso('2026-10-05','2026-09','2026-10')), true);
+  check('editar dentro del mismo mes en curso: sin aviso',
+        correrAviso('2026-10-20', '2026-10', '2026-10'), '');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('borrar: confirmación, y la extra si es mes cerrado');
+
+  var cb = compilar(js, ['borrarCosto'], null);
+  check('borrarCosto se pudo extraer', cb.error || 'ok', 'ok');
+
+  async function correrBorrar(gasto, hoyMes, responde){
+    var cap = [], textos = [];
+    await new Function('document','sb','S','notify','confirm','mesActual',
+                       'nombreMesLargo','fmt','loadCostos','renderCostos','renderDashboard',
+      cb.fuente + '\nreturn borrarCosto("G1");')
+      (domFalso({}), sbFalso(cap), {costos:[gasto]},
+       function(){}, function(t){ textos.push(t); return responde; },
+       function(){ return hoyMes; }, function(m){ return 'mes(' + m + ')'; },
+       function(v){ return '$' + v; },
+       function(){ return Promise.resolve(); }, function(){}, function(){});
+    return { cap: cap, textos: textos };
+  }
+
+  var gastoViejo = {id:'G1', descripcion:'Arriendo', total:119000, fecha:'2026-08-05'};
+  var gastoHoy   = {id:'G1', descripcion:'Luz',      total:30000,  fecha:'2026-10-05'};
+
+  var cancelado = await correrBorrar(gastoHoy, '2026-10', false);
+  check('si se cancela, no borra nada', cancelado.cap.length, 0);
+
+  var borradoHoy = await correrBorrar(gastoHoy, '2026-10', true);
+  check('confirmado, borra', borradoHoy.cap.length && borradoHoy.cap[0].op, 'delete');
+  check('  ...ese id', borradoHoy.cap.length && borradoHoy.cap[0].eq, ['id','G1']);
+  check('  ...y el texto nombra el gasto',
+        /Arriendo|Luz/.test(borradoHoy.textos.join(' ')), true);
+  // Un gasto del mes en curso no necesita el sermón del IVA.
+  check('  ...sin aviso de IVA si es del mes en curso',
+        /IVA crédito/.test(borradoHoy.textos.join(' ')), false);
+
+  var borradoViejo = await correrBorrar(gastoViejo, '2026-10', true);
+  check('borrar de un mes cerrado avisa del IVA',
+        /IVA crédito/.test(borradoViejo.textos.join(' ')), true);
+  check('  ...y menciona el SII',
+        /SII/.test(borradoViejo.textos.join(' ')), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('repetir gastos del mes anterior');
+
+  var cr = compilar(js, ['repFechaDestino'], null);
+  check('repFechaDestino se pudo extraer', cr.error || 'ok', 'ok');
+
+  var repFecha = new Function('ultimoDiaMes',
+    cr.fuente + '\nreturn repFechaDestino;')
+    (function(mes){
+      var y = Number(mes.slice(0,4)), m = Number(mes.slice(5,7));
+      return mes + '-' + String(new Date(y, m, 0).getDate()).padStart(2,'0');
+    });
+
+  check('conserva el día', repFecha(5, '2026-11'), '2026-11-05');
+  // EL CLAMP: un 31 copiado a un mes de 30 sería una fecha inválida.
+  check('el 31 cae al último día de un mes de 30', repFecha(31, '2026-11'), '2026-11-30');
+  check('  ...y en febrero', repFecha(31, '2026-02'), '2026-02-28');
+  check('el día 0 o vacío cae al 1', repFecha(0, '2026-11'), '2026-11-01');
+
+  var cc = compilar(js, ['confirmarRepetirGastos'], null);
+  check('confirmarRepetirGastos se pudo extraer', cc.error || 'ok', 'ok');
+
+  async function correrRepetir(candidatos, marcados, montos){
+    var cap = [], avisos = [];
+    var vals = {};
+    candidatos.forEach(function(c, i){ vals['rep-m-' + i] = montos[i]; });
+    var doc = domFalso(vals);
+    candidatos.forEach(function(c, i){ doc.getElementById('rep-ck-' + i).checked = marcados[i]; });
+    await new Function('document','sb','S','notify','ivaSobreNeto','ultimoDiaMes',
+                       'nombreMesLargo','loadCostos','closeM','renderCostos','renderDashboard',
+                       'REP_CANDIDATOS','COSTOS_MES','repFechaDestino',
+      cc.fuente + '\nreturn confirmarRepetirGastos();')
+      (doc, sbFalso(cap), {barberia:{id:'B1'}},
+       function(m){ avisos.push(m); },
+       function(n){ return Math.round((n||0)*IVA_PCT/100); },
+       function(mes){
+         var y = Number(mes.slice(0,4)), m = Number(mes.slice(5,7));
+         return mes + '-' + String(new Date(y, m, 0).getDate()).padStart(2,'0');
+       },
+       function(m){ return 'mes(' + m + ')'; },
+       function(){ return Promise.resolve(); }, function(){}, function(){}, function(){},
+       candidatos, '2026-11', repFecha);
+    return { cap: cap, avisos: avisos };
+  }
+
+  var cands = [
+    {descripcion:'Arriendo', monto:100000, tipo:'fijo',     categoria:'Arriendo', conIva:true,  dia:5,  repetido:false},
+    {descripcion:'Luz',      monto:30000,  tipo:'variable', categoria:'Otro',     conIva:false, dia:31, repetido:false}
+  ];
+
+  var rep = await correrRepetir(cands, [true, true], ['100000','30000']);
+  check('inserta una sola vez, en lote', rep.cap.length, 1);
+  var filas = rep.cap.length ? rep.cap[0].payload : [];
+  check('  ...con las dos filas', filas.length, 2);
+  check('  ...en costos', rep.cap.length && rep.cap[0].tabla, 'costos');
+  check('la fecha va al mes destino', filas[0] && filas[0].fecha, '2026-11-05');
+  check('  ...con el día 31 clampeado', filas[1] && filas[1].fecha, '2026-11-30');
+
+  // EL CHECK DEL IVA: se RECALCULA, no se copia. Si el monto se editó en la
+  // vista previa, copiar el iva viejo deja un crédito fiscal que no cuadra.
+  var editado = await correrRepetir(cands, [true, false], ['200000','0']);
+  var f2 = editado.cap.length ? editado.cap[0].payload : [];
+  check('con el monto editado, el IVA se recalcula', f2[0] && f2[0].iva, 38000);
+  check('  ...y el total sigue a ese IVA', f2[0] && f2[0].total, 238000);
+  check('lo desmarcado no viaja', f2.length, 1);
+
+  var sinIvaRep = await correrRepetir(cands, [false, true], ['0','30000']);
+  var f3 = sinIvaRep.cap.length ? sinIvaRep.cap[0].payload : [];
+  check('un gasto sin IVA sigue sin IVA', f3[0] && f3[0].iva, 0);
+
+  var nada = await correrRepetir(cands, [false, false], ['0','0']);
+  check('sin nada marcado, no escribe', nada.cap.length, 0);
+  check('  ...y avisa', /mayor que 0/.test(nada.avisos.join(' ')), true);
+
+  var montoMalo = await correrRepetir(cands, [true, true], ['0','30000']);
+  var f4 = montoMalo.cap.length ? montoMalo.cap[0].payload : [];
+  check('una fila en 0 se descarta y el resto viaja', f4.length, 1);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('la tabla: escape y las dos fechas');
+
+  var rc = extraerFuncion(js, 'renderCostos');
+  // Lo escribe el propio dueño, así que el riesgo real es bajo — pero es la
+  // misma clase de agujero que hubo que cerrar en mi-agenda.html.
+  check('la descripción va escapada', /escHtml\(c\.descripcion\)/.test(rc), true);
+  check('la categoría también',       /escHtml\(c\.categoria\)/.test(rc), true);
+  check('el tipo también',            /escHtml\(c\.tipo\)/.test(rc), true);
+  check('ya no se interpola crudo',
+        /\$\{c\.descripcion\}|\$\{c\.categoria\}/.test(rc), false);
+
+  check('la fecha del gasto se pinta legible', /fechaCorta\(c\.fecha\)/.test(rc), true);
+  check('y abajo cuándo se registró',          /fechaRegistro\(c\.created_at\)/.test(rc), true);
+  // Se usa desde el teléfono: un title no se puede abrir con el dedo.
+  check('sin depender de un tooltip', /title="[^"]*created_at/.test(rc), false);
+  check('hay botón de editar por fila', /editarCosto\('\$\{c\.id\}'\)/.test(rc), true);
+  check('y el de borrar pasa por la confirmación propia',
+        /borrarCosto\('\$\{c\.id\}'\)/.test(rc), true);
+
+  var cf = compilar(js, ['fechaCorta'], null);
+  var fechaCorta = new Function('DIAS_CORTO','MESES_CORTO',
+    cf.fuente + '\nreturn fechaCorta;')
+    (['dom','lun','mar','mié','jue','vie','sáb'],
+     ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']);
+
+  // 2026-10-07 es miércoles. Si esto diera "mar 6", el Date se está leyendo
+  // como UTC y en Chile retrocede un día.
+  check('fecha legible', fechaCorta('2026-10-07'), 'mié 7 oct');
+  check('  ...no retrocede por zona horaria', /^mar 6/.test(fechaCorta('2026-10-07')), false);
+  check('una fecha vacía no rompe', fechaCorta(''), '—');
+  check('  ...ni una nula', fechaCorta(null), '—');
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('sugerencias rápidas, sin inyección');
+
+  var cs = compilar(js, ['coSugerenciasDe'], null);
+  check('coSugerenciasDe se pudo extraer', cs.error || 'ok', 'ok');
+
+  var sug = new Function('S','COSTOS_MES',
+    cs.fuente + '\nreturn coSugerenciasDe();')
+    ({costos:[
+      {descripcion:'Arriendo', fecha:'2026-08-05', monto_neto:100000, tipo:'fijo',     categoria:'Arriendo', iva:19000},
+      {descripcion:'Arriendo', fecha:'2026-09-05', monto_neto:110000, tipo:'fijo',     categoria:'Arriendo', iva:20900},
+      {descripcion:'Luz',      fecha:'2026-09-10', monto_neto:30000,  tipo:'variable', categoria:'Otro',     iva:0},
+      {descripcion:'Futuro',   fecha:'2026-11-01', monto_neto:9999,   tipo:'fijo',     categoria:'Otro',     iva:0}
+    ]}, '2026-10');
+
+  check('ordena por lo más repetido', sug.length && sug[0].desc, 'Arriendo');
+  check('  ...con el monto del último, no del primero', sug.length && sug[0].monto, 110000);
+  check('  ...y recuerda si llevaba IVA', sug.length && sug[0].conIva, true);
+  check('un gasto sin IVA se recuerda sin IVA',
+        sug.length > 1 && sug[1].conIva, false);
+  // Solo meses ANTERIORES al que está en pantalla: sugerir algo del futuro
+  // sería ofrecer un gasto que todavía no existió.
+  check('no sugiere meses posteriores al de la pantalla',
+        sug.filter(function(s){ return s.desc === 'Futuro'; }).length, 0);
+
+  // ⚠ EL CHECK DE LA INYECCIÓN. Un gasto llamado O'Higgins rompe el atributo
+  // onclick a mitad de camino si la descripción se mete ahí. Va el índice.
+  var cp = extraerFuncion(js, 'coPintarSugerencias');
+  check('el onclick lleva el índice, no la descripción',
+        /onclick="coUsarSugerencia\(\$\{i\}\)"/.test(cp), true);
+  check('  ...y el texto visible va escapado', /escHtml\(s\.desc\)/.test(cp), true);
+  check('  ...nunca s.desc crudo en el HTML', /\$\{s\.desc\}/.test(cp), false);
+  // Rellenar por .value es lo que evita volver a pintar el texto como HTML.
+  var cu = extraerFuncion(js, 'coUsarSugerencia');
+  check('la sugerencia se aplica por .value', /co-desc'\)\.value=s\.desc/.test(cu), true);
+
+  var rl = extraerFuncion(js, 'renderRepetirLista');
+  check('la vista previa también escapa la descripción',
+        /escHtml\(c\.descripcion\)/.test(rl), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('lo que NO se tocó');
+
+  // El IVA de gastos se SUMA sobre el neto; el de ventas se EXTRAE del bruto.
+  // Son cálculos distintos a propósito y no se unifican.
+  check('ivaSobreNeto sigue existiendo', /function ivaSobreNeto\(/.test(js), true);
+  check('  ...y sigue sumando sobre el neto',
+        /ivaPctNegocio\(\)\/100/.test(extraerFuncion(js, 'ivaSobreNeto')), true);
+  check('guardarCosto sigue usando ivaSobreNeto',
+        /ivaSobreNeto\(m\)/.test(extraerFuncion(js, 'guardarCosto')), true);
+  check('el repetidor también',
+        /ivaSobreNeto\(m\)/.test(extraerFuncion(js, 'confirmarRepetirGastos')), true);
+  // Entrar a la pestaña sigue volviendo al mes en curso: un período pegado de
+  // la visita anterior termina en una declaración del mes equivocado.
+  check('entrarCostos sigue reseteando al mes en curso',
+        /COSTOS_MES=mesActual\(\)/.test(extraerFuncion(js, 'entrarCostos')), true);
+
+  pintar();
+}
+
+Promise.all(ARCHIVOS.map(function(f){
+  return fetch(f).then(function(r){
+    if(!r.ok) throw new Error(f + ' respondió HTTP ' + r.status);
+    return r.text();
+  });
+})).then(function(textos){
+  var src = {};
+  ARCHIVOS.forEach(function(f, i){ src[f] = textos[i]; });
+  return correr(src);
+}).catch(function(e){
+  document.getElementById('manual').style.display = 'block';
+  document.getElementById('resultado').textContent =
+    'Esperando los archivos… (' + (e && e.message ? e.message : 'el navegador no me deja leerlos solo') + ')';
+  document.getElementById('archivo').addEventListener('change', function(ev){
+    var files = Array.prototype.slice.call(ev.target.files);
+    var src = {}, pend = ARCHIVOS.slice();
+    files.forEach(function(f){
+      var fr = new FileReader();
+      fr.onload = function(){
+        src[f.name] = String(fr.result);
+        pend = pend.filter(function(x){ return x !== f.name; });
+        if(pend.length === 0) correr(src);
+      };
+      fr.readAsText(f);
+    });
+  });
+});
+</script>
+</html>
