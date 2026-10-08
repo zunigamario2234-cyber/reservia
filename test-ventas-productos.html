@@ -253,10 +253,17 @@ async function correr(src){
   titulo('quién lee ventas y quién lee citas');
 
   var rc = extraerFuncion(js, 'renderCostos');
+  // El cálculo del IVA salió de renderCostos a resumenIvaMes(), para que la
+  // exportación a Excel lea los mismos números que la pantalla. Lo que se
+  // comprueba es lo mismo de antes, en su lugar nuevo: el débito fiscal
+  // incluye la venta de productos, y con S.visitas quedaría subdeclarado.
+  var riv = extraerFuncion(js, 'resumenIvaMes');
   check('el IVA suma también los productos',
-        /const vMes=S\.ventas\.filter/.test(rc), true);
+        /\(S\.ventas\|\|\[\]\)\.filter/.test(riv), true);
   check('  ...y ya no solo las visitas',
-        /const vMes=S\.visitas\.filter/.test(rc), false);
+        /S\.visitas/.test(riv), false);
+  check('  ...y renderCostos lo lee de ahí',
+        /resumenIvaMes\(mf\)/.test(rc), true);
   check('las comisiones del mes salen de las ventas',
         /agregarComisionesPorProfesional\(S\.ventas\.filter/.test(rc), true);
 

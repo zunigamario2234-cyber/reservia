@@ -45,6 +45,13 @@
 </div>
 <pre id="resultado">Corriendo…</pre>
 
+<!-- La MISMA versión que carga app.html. Se usa para escribir un .xlsx de
+     verdad y volver a leerlo: es la única forma de comprobar que una
+     descripción que empieza con "=" queda como texto y no como fórmula.
+     Si no carga (sin internet), los checks que dependen de ella FALLAN con un
+     mensaje claro — no se saltan en silencio, que sería un falso verde. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <script>
 'use strict';
 
@@ -476,6 +483,193 @@ async function correr(src){
   var rl = extraerFuncion(js, 'renderRepetirLista');
   check('la vista previa también escapa la descripción',
         /escHtml\(c\.descripcion\)/.test(rl), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('exportar a Excel: lo que arma nuestro código');
+
+  // XLSX falso: captura las hojas y el nombre de archivo sin escribir nada.
+  // Lo que se prueba acá es lo NUESTRO — qué filas, qué columnas, qué tipos y
+  // qué nombre. Que un string se escriba como texto y no como fórmula lo
+  // garantiza SheetJS, y eso se prueba más abajo con la librería de verdad.
+  function xlsxFalso(cap){
+    return {
+      utils:{
+        book_new: function(){ return { hojas: [] }; },
+        json_to_sheet: function(data){ return { __data: data }; },
+        book_append_sheet: function(wb, ws, nombre){ wb.hojas.push({ nombre: nombre, data: ws.__data }); }
+      },
+      writeFile: function(wb, archivo){ cap.wb = wb; cap.archivo = archivo; }
+    };
+  }
+
+  var ce = compilar(js, ['slugArchivo','ivaPctNegocio','ivaDe','resumenIvaMes','exportarExcel'], null);
+  check('exportarExcel y sus ayudantes se pudieron extraer', ce.error || 'ok', 'ok');
+
+  function correrExport(costos, ventas, mes, nombreNegocio){
+    var cap = {}, avisos = [];
+    intentar(function(){
+      return new Function('XLSX','S','COSTOS_MES','notify','nombreMesLargo','document','getRepCitas',
+        ce.fuente + '\nreturn exportarExcel("gastos");')
+        (xlsxFalso(cap),
+         { costos: costos, ventas: ventas, barberia: { id:'B1', nombre: nombreNegocio, iva_pct: 19 } },
+         mes,
+         function(m){ avisos.push(m); },
+         function(m){ return 'mes(' + m + ')'; },
+         { getElementById: function(){ return null; } },
+         function(){ return []; });
+    });
+    return { cap: cap, avisos: avisos };
+  }
+
+  var COSTOS = [
+    {fecha:'2026-10-03', descripcion:'Arriendo local',     categoria:'Arriendo', tipo:'fijo',     monto_neto:100000, iva:19000, total:119000, created_at:'2026-10-03T14:00:00Z'},
+    {fecha:'2026-10-01', descripcion:'Luz, agua y gas',    categoria:'Servicios básicos', tipo:'variable', monto_neto:30000, iva:5700, total:35700, created_at:'2026-10-01T12:00:00Z'},
+    {fecha:'2026-09-15', descripcion:'Gasto de septiembre',categoria:'Otro',     tipo:'fijo',     monto_neto:50000,  iva:9500,  total:59500, created_at:'2026-09-15T10:00:00Z'}
+  ];
+  var VENTAS = [
+    {fecha:'2026-10-02', valor:238000},
+    {fecha:'2026-09-20', valor:100000}
+  ];
+
+  var exp = correrExport(COSTOS, VENTAS, '2026-10', 'Essentials Studio');
+  var hojas = (exp.cap.wb && exp.cap.wb.hojas) || [];
+
+  check('se arman dos hojas', hojas.length, 2);
+  check('la primera se llama Gastos',       hojas[0] && hojas[0].nombre, 'Gastos');
+  check('la segunda, Resumen IVA',          hojas[1] && hojas[1].nombre, 'Resumen IVA');
+
+  var filas = (hojas[0] && hojas[0].data) || [];
+  // SOLO el mes en pantalla: el gasto de septiembre no puede colarse.
+  check('solo van los gastos del mes seleccionado', filas.length, 2);
+  check('  ...y no el de otro mes',
+        filas.filter(function(f){ return /septiembre/.test(f['Descripción']); }).length, 0);
+
+  check('las columnas y su orden',
+        filas.length ? Object.keys(filas[0]) : [],
+        ['Fecha','Descripción','Categoría','Tipo','Neto','IVA','Total','Registrado']);
+
+  // Ordenadas por fecha ascendente, no en el orden de llegada.
+  check('van ordenadas por fecha', filas.map(function(f){ return f.Fecha; }), ['2026-10-01','2026-10-03']);
+  check('la fecha es texto ISO', filas[0] && filas[0].Fecha, '2026-10-01');
+  check('"Registrado" sale de created_at, recortado al día',
+        filas[0] && filas[0].Registrado, '2026-10-01');
+
+  // Montos como NÚMEROS puros, no texto con $ ni puntos de miles.
+  check('el neto es número',  filas[0] && typeof filas[0].Neto,  'number');
+  check('el IVA es número',   filas[0] && typeof filas[0].IVA,   'number');
+  check('el total es número', filas[0] && typeof filas[0].Total, 'number');
+  check('sin formatear',      filas[0] && filas[0].Total, 35700);
+
+  // El total de la hoja tiene que dar lo mismo que el KPI de la pantalla, que
+  // suma c.total del mes.
+  var sumaHoja = filas.reduce(function(s,f){ return s + f.Total; }, 0);
+  var sumaKpi  = COSTOS.filter(function(c){ return c.fecha.slice(0,7) === '2026-10'; })
+                       .reduce(function(s,c){ return s + c.total; }, 0);
+  check('el total de la hoja coincide con el KPI de pantalla', sumaHoja, sumaKpi);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('el Resumen IVA sale de la misma función que la pantalla');
+
+  var resumen = (hojas[1] && hojas[1].data) || [];
+  var porConcepto = {};
+  resumen.forEach(function(r){ porConcepto[r.Concepto] = r.Monto; });
+
+  // La paridad: los mismos números que resumenIvaMes() le da a renderCostos.
+  var rivaEsperado = new Function('S','ivaDe',
+    extraerFuncion(js,'resumenIvaMes') + '\nreturn resumenIvaMes("2026-10");')
+    ({ventas:VENTAS, costos:COSTOS},
+     function(b){ return Math.round((b||0)*19/119); });
+
+  check('ventas cobradas coinciden', porConcepto['Ventas cobradas'], rivaEsperado.vBruto);
+  check('IVA débito coincide',       porConcepto['IVA débito (ventas)'], rivaEsperado.ivaV);
+  check('IVA crédito coincide',      porConcepto['IVA crédito (gastos)'], rivaEsperado.ivaC);
+  check('la cantidad de gastos con IVA coincide',
+        porConcepto['Gastos con IVA (cantidad)'], rivaEsperado.gastosConIva);
+  // El signo se refleja en el rótulo, no en el monto.
+  check('el resultado va en positivo con su rótulo',
+        porConcepto['IVA a pagar SII'], Math.abs(rivaEsperado.ivaPagar));
+  check('renderCostos lee la misma función',
+        /resumenIvaMes\(mf\)/.test(extraerFuncion(js,'renderCostos')), true);
+  // Si alguien vuelve a calcular el IVA dentro del render, se separan.
+  check('  ...y ya no lo calcula por su cuenta',
+        /const ivaV=ivaDe\(vBruto\)/.test(extraerFuncion(js,'renderCostos')), false);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('mes vacío, y el nombre del archivo');
+
+  var vacioExp = correrExport(COSTOS, VENTAS, '2026-07', 'Essentials Studio');
+  check('un mes sin gastos no descarga nada', vacioExp.cap.archivo === undefined, true);
+  check('  ...y avisa', /Sin gastos/.test(vacioExp.avisos.join(' ')), true);
+
+  check('el archivo lleva mes y negocio',
+        exp.cap.archivo, 'gastos-2026-10-essentials-studio.xlsx');
+
+  var sl = new Function(extraerFuncion(js,'slugArchivo') + '\nreturn slugArchivo;')();
+  check('saca las tildes',      sl('Barbería Ñuñoa'), 'barberia-nunoa');
+  // Una barra convertiría el nombre en una ruta y la descarga falla.
+  check('neutraliza la barra',  sl('Corte/Estilo'), 'corte-estilo');
+  check('espacios a guiones',   sl('Dos  Espacios'), 'dos-espacios');
+  check('sin guiones colgando', sl('  ¡Hola!  '), 'hola');
+  check('un nombre vacío no rompe', sl(''), '');
+  check('solo [a-z0-9-]', /^[a-z0-9-]*$/.test(sl('Añez & Cía. #1 (2026)')), true);
+
+  // ───────────────────────────────────────────────────────────────
+  titulo('texto del usuario: tildes, comillas y el "=" que no es fórmula');
+
+  var RAROS = [
+    {fecha:'2026-10-05', descripcion:'=SUMA(A1:A9)',          categoria:'Otro', tipo:'fijo', monto_neto:1000, iva:190, total:1190, created_at:'2026-10-05T10:00:00Z'},
+    {fecha:'2026-10-06', descripcion:'+1-800-COBRAR',          categoria:'Otro', tipo:'fijo', monto_neto:2000, iva:380, total:2380, created_at:'2026-10-06T10:00:00Z'},
+    {fecha:'2026-10-07', descripcion:'@arroba',                categoria:'Otro', tipo:'fijo', monto_neto:3000, iva:570, total:3570, created_at:'2026-10-07T10:00:00Z'},
+    {fecha:'2026-10-08', descripcion:'-descuento',             categoria:'Otro', tipo:'fijo', monto_neto:-5000, iva:0,  total:-5000, created_at:'2026-10-08T10:00:00Z'},
+    {fecha:'2026-10-09', descripcion:'Peña "El Ñandú", 3 sillas\ncon salto', categoria:'Señalética', tipo:'fijo', monto_neto:4000, iva:760, total:4760, created_at:'2026-10-09T10:00:00Z'}
+  ];
+  var expR = correrExport(RAROS, [], '2026-10', 'Test');
+  var fr = (expR.cap.wb && expR.cap.wb.hojas[0] && expR.cap.wb.hojas[0].data) || [];
+
+  check('las cinco filas viajan', fr.length, 5);
+  // El texto se entrega TAL CUAL: no se prefija ni se recorta nada. En .xlsx
+  // eso es seguro; prefijar sería ensuciar el dato sin motivo.
+  check('el "=" se entrega literal, sin prefijo',  fr[0] && fr[0]['Descripción'], '=SUMA(A1:A9)');
+  check('el "+" también',                          fr[1] && fr[1]['Descripción'], '+1-800-COBRAR');
+  check('el "@" también',                          fr[2] && fr[2]['Descripción'], '@arroba');
+  // EL CASO QUE NO HAY QUE CONFUNDIR: un monto negativo es un número negativo.
+  check('un monto negativo sigue siendo número',   fr[3] && typeof fr[3].Total, 'number');
+  check('  ...y conserva el signo',                fr[3] && fr[3].Total, -5000);
+  check('  ...sin que lo toque el prefijo de texto', fr[3] && fr[3]['Descripción'], '-descuento');
+  check('tildes, ñ, comillas, coma y salto de línea intactos',
+        fr[4] && fr[4]['Descripción'], 'Peña "El Ñandú", 3 sillas\ncon salto');
+  check('la categoría con tilde intacta', fr[4] && fr[4]['Categoría'], 'Señalética');
+
+  // ─── Con SheetJS DE VERDAD ───
+  // Lo de arriba prueba qué datos entrega nuestro código. Esto prueba qué
+  // termina adentro del archivo: se escribe un .xlsx real y se vuelve a leer.
+  check('SheetJS cargó', typeof XLSX !== 'undefined' && !!XLSX.utils, true);
+  if(typeof XLSX !== 'undefined' && XLSX.utils){
+    var wsReal = XLSX.utils.json_to_sheet(fr);
+    var wbReal = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbReal, wsReal, 'Gastos');
+    var buf = XLSX.write(wbReal, {type:'array', bookType:'xlsx'});
+    var leido = XLSX.read(buf, {type:'array'});
+    var ws2 = leido.Sheets['Gastos'];
+
+    // B2 es la primera Descripción: "=SUMA(A1:A9)".
+    var b2 = ws2['B2'] || {};
+    check('la celda del "=" es de tipo texto', b2.t, 's');
+    // La prueba de fondo: una fórmula vive en la propiedad `f`. Si está
+    // ausente, Excel y Sheets muestran el texto y no lo evalúan.
+    check('  ...y NO tiene fórmula', b2.f === undefined, true);
+    check('  ...con el contenido literal', b2.v, '=SUMA(A1:A9)');
+
+    // El negativo tiene que seguir siendo numérico después del viaje.
+    var g5 = ws2['G5'] || {};
+    check('el total negativo sigue siendo número en el archivo', g5.t, 'n');
+    check('  ...con su signo', g5.v, -5000);
+
+    // Y las tildes sobreviven al formato.
+    var b6 = ws2['B6'] || {};
+    check('las tildes y la ñ sobreviven al .xlsx',
+          b6.v, 'Peña "El Ñandú", 3 sillas\ncon salto');
+  }
 
   // ───────────────────────────────────────────────────────────────
   titulo('lo que NO se tocó');

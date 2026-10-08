@@ -619,6 +619,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <!-- Copia desde el mes anterior AL QUE ESTÁ EN PANTALLA, no al mes en
            curso: estando parado en agosto, el origen es julio. -->
       <button class="btn btn-ghost" onclick="abrirRepetirGastos()">⟳ Repetir mes anterior</button>
+      <button class="btn btn-ghost" onclick="exportarExcel('gastos')">📥 Exportar</button>
     </div>
     <div class="g3" style="margin-bottom:14px">
       <div class="mc"><div class="mc-label">Costos fijos</div><div class="mc-val" id="co-fijo">$0</div></div>
@@ -4959,6 +4960,34 @@ function ultimoDiaMes(mes){
 // costos, el negocio que factura sin cargar gastos se quedaba sin meses.
 // El máximo nunca baja del mes en curso, que es la vista por defecto y puede
 // estar vacío — ese es exactamente el caso que motivó todo esto.
+// El resumen de IVA de un mes, en UN solo lugar. Lo leen la pantalla
+// (renderCostos) y la exportación a Excel. Con el cálculo duplicado, el
+// archivo podría no cuadrar con lo que el dueño está viendo — y esa
+// diferencia aparecería recién frente al SII, que es el peor lugar posible.
+//
+// La aritmética es EXACTAMENTE la que vivía adentro de renderCostos, movida
+// sin tocar un operador:
+//   · Suma primero y redondea UNA sola vez al final. Redondear por visita
+//     descuadraría los totales contra lo ya declarado.
+//   · Va sobre S.ventas y NO sobre S.visitas: el débito fiscal incluye la
+//     venta de productos. Con S.visitas quedaría subdeclarado, y es la clase
+//     de error que no da ningún síntoma hasta que lo encuentra el SII.
+//
+// Lo único que se agregó son los `||[]`, que no cambian ningún número cuando
+// los arreglos existen: S.ventas la arma construirVentas() después de cargar
+// dos tablas, y un S.ventas sin declarar ya tiró el panel entero una vez.
+function resumenIvaMes(mes){
+  const vMes=(S.ventas||[]).filter(v=>v.fecha?.startsWith(mes));
+  const vBruto=vMes.reduce((s,v)=>s+(v.valor||0),0);
+  const ivaV=ivaDe(vBruto);
+  const cMes=(S.costos||[]).filter(c=>c.fecha?.startsWith(mes));
+  const ivaC=cMes.reduce((s,c)=>s+(c.iva||0),0);
+  return {
+    vBruto:vBruto, ivaV:ivaV, ivaC:ivaC, ivaPagar:ivaV-ivaC,
+    gastosConIva:cMes.filter(c=>c.iva>0).length
+  };
+}
+
 function rangoMesesCostos(){
   const ms=[];
   S.visitas.forEach(v=>{ if(v.fecha) ms.push(v.fecha.slice(0,7)); });
@@ -5262,17 +5291,12 @@ function renderCostos(){
   // Va sobre S.ventas y NO sobre S.visitas: el débito fiscal incluye la venta
   // de productos. Con S.visitas quedaría subdeclarado, y es la clase de error
   // que no da ningún síntoma hasta que lo encuentra el SII.
-  const mes=mf;
-  const vMes=S.ventas.filter(v=>v.fecha?.startsWith(mes));
-  // Suma primero y redondea una sola vez al final, igual que antes: si se
-  // redondeara por visita los totales no cuadrarían con lo ya declarado.
-  const vBruto=vMes.reduce((s,v)=>s+(v.valor||0),0);
-  const ivaV=ivaDe(vBruto);
-  const cMes=S.costos.filter(c=>c.fecha?.startsWith(mes));
-  const ivaC=cMes.reduce((s,c)=>s+(c.iva||0),0);
-  const ivaPagar=ivaV-ivaC;
+  // El cálculo salió a resumenIvaMes() para que la exportación lea los MISMOS
+  // números que esta pantalla. Acá solo queda el pintado.
+  const riva=resumenIvaMes(mf);
+  const vBruto=riva.vBruto, ivaV=riva.ivaV, ivaC=riva.ivaC, ivaPagar=riva.ivaPagar;
   document.getElementById('iva-ventas').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Ventas cobradas</span><span>${fmt(vBruto)}</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA débito</span><span class="gold">${fmt(ivaV)}</span></div>`;
-  document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${cMes.filter(c=>c.iva>0).length} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
+  document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${riva.gastosConIva} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
   // Comisiones — mismo mes que el resto de la pantalla, por lo mismo.
   // Sobre S.ventas para que la comisión de productos entre en lo que el
@@ -6012,6 +6036,19 @@ function renderReporteServicios(){
 }
 
 // ─── EXPORTAR EXCEL ───
+// Para el nombre del ARCHIVO, no para el contenido. El nombre del negocio es
+// texto libre: una barra lo convierte en una ruta y la descarga falla, y los
+// acentos viajan mal entre sistemas de archivos. Queda
+// "gastos-2026-10-essentials-studio.xlsx".
+function slugArchivo(s){
+  return (s||'').toString()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')  // saca las tildes
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-')                       // todo lo demás, a guión
+    .replace(/^-+|-+$/g,'')                           // sin guiones en las puntas
+    .slice(0,60);
+}
+
 function exportarExcel(tipo){
   let data=[];let nombre='reporte';
   if(tipo==='resumen'||tipo==='citas'){
@@ -6065,6 +6102,52 @@ function exportarExcel(tipo){
     citas.forEach(v=>{const s=v.servicio||'Sin servicio';if(!bySrv[s])bySrv[s]={cnt:0,val:0};bySrv[s].cnt++;bySrv[s].val+=(v.valor||0);});
     data=Object.entries(bySrv).sort((a,b)=>b[1].cnt-a[1].cnt).map(([s,d])=>({Servicio:s,'Total citas':d.cnt,'Ventas totales':d.val,'Ticket promedio':d.cnt?Math.round(d.val/d.cnt):0}));
     nombre='servicios_'+mes;
+  }
+
+  else if(tipo==='gastos'){
+    // El mes que está EN PANTALLA, no el mes en curso.
+    const mes=COSTOS_MES;
+    const list=(S.costos||[]).filter(c=>c.fecha?.startsWith(mes))
+                             .sort((a,b)=>(a.fecha||'')<(b.fecha||'')?-1:1);
+    if(!list.length){notify('Sin gastos en '+nombreMesLargo(mes)+' para exportar','warn');return;}
+    // Los montos van como NÚMEROS, no como texto: sin símbolo, sin puntos de
+    // miles, y un negativo es un número negativo. Salen de lo guardado tal
+    // cual — acá no se recalcula nada, así que el archivo cuadra con la tabla
+    // por construcción.
+    //
+    // La fecha va como texto ISO y no como fecha de Excel: en ISO el orden
+    // alfabético ya ES el cronológico, así que ordena y filtra igual, y se
+    // evita el corrimiento de un día por zona horaria.
+    //
+    // No hace falta neutralizar un "=" al principio de la descripción: en
+    // .xlsx estas celdas se escriben como cadenas (t:'s'), y una fórmula
+    // necesita la propiedad `f`, que json_to_sheet nunca pone. Excel y Sheets
+    // las muestran como texto. Ese riesgo es del CSV, no de este formato.
+    const gastos=list.map(c=>({
+      Fecha:c.fecha||'',
+      'Descripción':c.descripcion||'',
+      'Categoría':c.categoria||'',
+      Tipo:c.tipo||'',
+      Neto:Number(c.monto_neto)||0,
+      IVA:Number(c.iva)||0,
+      Total:Number(c.total)||0,
+      Registrado:(c.created_at||'').slice(0,10)
+    }));
+    // Mismos números que la pestaña Resumen IVA, de la misma función.
+    const r=resumenIvaMes(mes);
+    const resumen=[
+      {Concepto:'Ventas cobradas',            Monto:r.vBruto},
+      {Concepto:'IVA débito (ventas)',        Monto:r.ivaV},
+      {Concepto:'Gastos con IVA (cantidad)',  Monto:r.gastosConIva},
+      {Concepto:'IVA crédito (gastos)',       Monto:r.ivaC},
+      {Concepto:r.ivaPagar>=0?'IVA a pagar SII':'IVA a favor', Monto:Math.abs(r.ivaPagar)}
+    ];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(gastos),'Gastos');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(resumen),'Resumen IVA');
+    XLSX.writeFile(wb,'gastos-'+mes+'-'+slugArchivo(S.barberia?.nombre)+'.xlsx');
+    notify('Excel descargado ✓');
+    return;
   }
 
   if(!data.length){notify('Sin datos para exportar','warn');return;}

@@ -47,9 +47,11 @@
 
   PRUEBA DE MUTACIÓN
   Cada edición tiene que poner el test en rojo:
-   a) En renderCostos, volver el IVA a `const mes=mesActual();`
-      -> falla "renderCostos no vuelve a pedir el mes por su cuenta" y
-         "el IVA lee el mes compartido".
+   a) En resumenIvaMes, ignorar el parámetro y usar mesActual()
+      -> falla "la función del IVA recibe el mes, no lo pide".
+      (o, en renderCostos, dejar de pasarle mf -> falla "el IVA lee el mes
+       compartido"; el cálculo vive en resumenIvaMes desde que la
+       exportación a Excel necesitó leer los mismos números)
    b) En rangoMesesCostos, borrar el forEach de S.visitas
       -> falla "el mínimo mira las visitas, no solo los costos".
    c) En rangoMesesCostos, arrancar el reduce del máximo en '' en vez de hoy
@@ -207,8 +209,16 @@ async function correr(src){
         /const\s+mf\s*=\s*COSTOS_MES\s*;/.test(rc), true);
   check('los gastos filtran por el mes compartido',
         /S\.costos\.filter\(\s*c\s*=>\s*c\.fecha\?\.startsWith\(mf\)\s*\)/.test(rc), true);
+  // El cálculo del IVA salió de renderCostos a resumenIvaMes(), para que la
+  // exportación a Excel lea los mismos números que la pantalla. La propiedad
+  // que importa no cambió —el IVA parte del mes compartido— pero ahora se
+  // comprueba en dos partes: que el render le PASE mf, y que la función no
+  // vuelva a pedir el mes por su cuenta.
   check('el IVA lee el mes compartido',
-        /const\s+mes\s*=\s*mf\s*;/.test(rc), true);
+        /resumenIvaMes\(mf\)/.test(rc), true);
+  var riv = extraerFuncion(appJs, 'resumenIvaMes');
+  check('  ...y la función del IVA recibe el mes, no lo pide',
+        riv !== '' && !/mesActual\(\)/.test(riv), true);
   check('las comisiones leen el mes compartido',
         /const\s+mes2\s*=\s*mf\s*;/.test(rc), true);
 
