@@ -25,6 +25,18 @@
 # el detalle de los bugs que se arreglaron.
 test-*.html
 
+# ── Scripts de prueba ────────────────────────────────────────────────────
+# Mismo criterio que los .sql y los test-*.html: se corren pegándolos en la
+# consola del navegador o desde esta carpeta, nunca desde el dominio.
+# Publicados le muestran a cualquiera cómo están escritas las políticas del
+# bucket y qué caminos de ataque se probaron — el mapa del modelo de
+# seguridad, que es justo lo que este archivo saca de un dominio comercial.
+#
+# El patrón cubre prueba_* sin importar la extensión, y *.sh porque un
+# script de shell publicado no tiene ningún uso legítimo acá.
+prueba_*
+*.sh
+
 # ── Documentación ────────────────────────────────────────────────────────
 # Hoy no hay ninguno; queda puesto para que un README o notas de trabajo no
 # terminen publicados sin que nadie se dé cuenta.
