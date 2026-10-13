@@ -673,9 +673,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
           <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Sube el logo de tu negocio — los colores de la plataforma se ajustarán automáticamente</div>
           <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg4);border:0.5px solid var(--p1);border-radius:8px;cursor:pointer;font-size:13px;color:var(--p1)">
             🎨 Subir logo
-            <input type="file" id="logo-file" accept="image/*" onchange="subirLogo(this)" style="display:none">
+            <input type="file" id="logo-file" accept="image/jpeg,image/png,image/webp" onchange="subirLogo(this)" style="display:none">
           </label>
-          <div style="font-size:10px;color:var(--text3);margin-top:6px">JPG, PNG o SVG · Recomendado: fondo transparente</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px">JPG, PNG o WebP · Se recorta cuadrado</div>
         </div>
         <div id="paleta-colores" style="display:none">
           <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Paleta detectada</div>
@@ -694,9 +694,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
           <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Se muestra ancha arriba en tu link de reservas y en Club VIP — recomendado horizontal (ej. 1200×400)</div>
           <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg4);border:0.5px solid var(--p1);border-radius:8px;cursor:pointer;font-size:13px;color:var(--p1)">
             🖼️ Subir portada
-            <input type="file" id="portada-file" accept="image/*" onchange="subirPortada(this)" style="display:none">
+            <input type="file" id="portada-file" accept="image/jpeg,image/png,image/webp" onchange="subirPortada(this)" style="display:none">
           </label>
-          <div style="font-size:10px;color:var(--text3);margin-top:6px">JPG o PNG</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px">JPG, PNG o WebP · Se recorta a 1200×400</div>
         </div>
       </div>
     </div>
@@ -2107,8 +2107,8 @@ function initModal(id){
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
-  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';}
-  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';}
+  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;}
+  if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';FOTO_ALZ_CROPPED_BLOB=null;}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
     document.getElementById('blq-tipo').value='puntual';
@@ -2680,6 +2680,7 @@ async function guardarEntrada(){
 let FOTO_PROF_CROPPED_BLOB=null;
 function previewFotoPro(input){
   if(input.files&&input.files[0]){
+    if(!puedeSubirFotos()){input.value='';return;}
     abrirRecorteImagen(input.files[0],1,512,512,blob=>{
       FOTO_PROF_CROPPED_BLOB=blob;
       const reader=new FileReader();
@@ -2693,14 +2694,26 @@ function previewFotoPro(input){
   }
 }
 
+// Igual que previewFotoPro: el archivo crudo NUNCA se sube. Pasa por el
+// recortador, que re-codifica la imagen, así el tipo real queda garantizado y
+// la extensión sale del blob y no del nombre que eligió el usuario.
+//
+// 1:1 a 512x512 porque la foto se muestra siempre cuadrada: 72px en el modal
+// y 32px en la lista de servicios. No aparece en el link público.
+let FOTO_SRV_CROPPED_BLOB=null;
 function previewFotoSrv(input){
   if(input.files&&input.files[0]){
-    const reader=new FileReader();
-    reader.onload=e=>{
-      const prev=document.getElementById('sv-foto-preview');
-      prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
-    };
-    reader.readAsDataURL(input.files[0]);
+    if(!puedeSubirFotos()){input.value='';return;}
+    abrirRecorteImagen(input.files[0],1,512,512,blob=>{
+      FOTO_SRV_CROPPED_BLOB=blob;
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const prev=document.getElementById('sv-foto-preview');
+        prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+      };
+      reader.readAsDataURL(blob);
+    });
+    input.value='';
   }
 }
 
@@ -2825,11 +2838,14 @@ async function guardarProfesional(){
   if(!n||!w){notify('Nombre y WhatsApp obligatorios','warn');return;}
   const btn=document.getElementById('btn-guardar-prof');
   btn.disabled=true;btn.textContent='Guardando...';
-  let foto_url=null;
+  let foto_url=null,fotoFallo=null;
   if(FOTO_PROF_CROPPED_BLOB){
-    const fname=`profesionales/${S.barberia.id}/${Date.now()}.jpg`;
-    const {error:upErr}=await sb.storage.from('fotos').upload(fname,FOTO_PROF_CROPPED_BLOB,{upsert:true,contentType:'image/jpeg'});
-    if(!upErr){
+    const blob=FOTO_PROF_CROPPED_BLOB;
+    const fname=`profesionales/${S.barberia.id}/${Date.now()}.${extDeMime(blob.type)}`;
+    const {error:upErr}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    if(upErr){
+      fotoFallo=upErr.message;
+    } else {
       const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
       foto_url=url.publicUrl;
     }
@@ -2864,7 +2880,12 @@ async function guardarProfesional(){
     if(filas.length) await sb.from('barbero_servicios').upsert(filas,{onConflict:'barbero_id,servicio_id'});
   }
   FOTO_PROF_CROPPED_BLOB=null;
-  await loadBarberos();await loadBarberoServicios();closeM('m-profesional');notify('Profesional guardado ✓');renderProfesionals();
+  await loadBarberos();await loadBarberoServicios();closeM('m-profesional');
+  if(fotoFallo){
+    console.error('La foto del profesional no se pudo subir:',fotoFallo);
+    notify('Profesional guardado, pero la foto no se subió.','warn');
+  } else notify('Profesional guardado ✓');
+  renderProfesionals();
   btn.disabled=false;btn.textContent='Guardar';
 }
 
@@ -2942,7 +2963,7 @@ async function crearCuentaProfesional(){
 function compartirInvitacionWA(){
   if(!INV_DATOS)return;
   const link=location.origin+'/mi-agenda.html';
-  const msg=`Hola ${INV_DATOS.nombre}! Ya tenés tu acceso a Mi Agenda:\n${link}\n\nCorreo: ${INV_DATOS.email}\nContraseña: ${INV_DATOS.pass}\n\nTe recomiendo cambiar la contraseña la primera vez que entres.`;
+  const msg=`Hola ${INV_DATOS.nombre}! Ya tienes tu acceso a Mi Agenda:\n${link}\n\nCorreo: ${INV_DATOS.email}\nContraseña: ${INV_DATOS.pass}\n\nTe recomiendo cambiar la contraseña la primera vez que entres.`;
   abrirWA(INV_DATOS.whatsapp,msg);
 }
 
@@ -2951,13 +2972,17 @@ async function guardarServicio(){
   if(!n){notify('El nombre es obligatorio','warn');return;}
   const btn=document.querySelector('#m-servicio .btn-primary');
   btn.disabled=true;btn.textContent='Guardando...';
-  let foto_url=null;
-  const fotoFile=document.getElementById('sv-foto').files[0];
-  if(fotoFile){
-    const ext=fotoFile.name.split('.').pop();
-    const fname=`servicios/${S.barberia.id}/${Date.now()}.${ext}`;
-    const {error:upErr}=await sb.storage.from('fotos').upload(fname,fotoFile,{upsert:true});
-    if(!upErr){
+  let foto_url=null,fotoFallo=null;
+  if(FOTO_SRV_CROPPED_BLOB){
+    const blob=FOTO_SRV_CROPPED_BLOB;
+    const fname=`servicios/${S.barberia.id}/${Date.now()}.${extDeMime(blob.type)}`;
+    const {error:upErr}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    if(upErr){
+      // No se corta el guardado: la fila se guarda igual y el aviso del final
+      // dice que quedó SIN la foto. Antes esto era silencioso Y mostraba el
+      // éxito verde, así que la foto se perdía sin que nadie se enterara.
+      fotoFallo=upErr.message;
+    } else {
       const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
       foto_url=url.publicUrl;
     }
@@ -2996,18 +3021,32 @@ async function guardarServicio(){
     );
     await loadBarberoServicios();
   }
-  await loadServicios();closeM('m-servicio');notify('Servicio guardado ✓');renderConfig();
+  FOTO_SRV_CROPPED_BLOB=null;
+  await loadServicios();closeM('m-servicio');
+  if(fotoFallo){
+    console.error('La foto del servicio no se pudo subir:',fotoFallo);
+    notify('Servicio guardado, pero la foto no se subió.','warn');
+  } else notify('Servicio guardado ✓');
+  renderConfig();
   btn.disabled=false;btn.textContent='Guardar';
 }
 
+// Mismo criterio que previewFotoSrv. 1:1 a 512x512: el logo de la alianza se
+// muestra en .alianza-logo de club.html, 44x44 cuadrado (38x38 en móvil).
+let FOTO_ALZ_CROPPED_BLOB=null;
 function previewFotoAlz(input){
   if(input.files&&input.files[0]){
-    const reader=new FileReader();
-    reader.onload=e=>{
-      const prev=document.getElementById('alz-foto-preview');
-      prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
-    };
-    reader.readAsDataURL(input.files[0]);
+    if(!puedeSubirFotos()){input.value='';return;}
+    abrirRecorteImagen(input.files[0],1,512,512,blob=>{
+      FOTO_ALZ_CROPPED_BLOB=blob;
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const prev=document.getElementById('alz-foto-preview');
+        prev.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+      };
+      reader.readAsDataURL(blob);
+    });
+    input.value='';
   }
 }
 
@@ -3036,13 +3075,14 @@ async function guardarAlianza(){
   if(!n||!ben){notify('Nombre y beneficio son obligatorios','warn');return;}
   const btn=document.getElementById('btn-guardar-alz');
   btn.disabled=true;btn.textContent='Guardando...';
-  let logo_url=null;
-  const fotoFile=document.getElementById('alz-foto').files[0];
-  if(fotoFile){
-    const ext=fotoFile.name.split('.').pop();
-    const fname=`alianzas/${S.barberia.id}/${Date.now()}.${ext}`;
-    const {error:upErr}=await sb.storage.from('fotos').upload(fname,fotoFile,{upsert:true});
-    if(!upErr){
+  let logo_url=null,fotoFallo=null;
+  if(FOTO_ALZ_CROPPED_BLOB){
+    const blob=FOTO_ALZ_CROPPED_BLOB;
+    const fname=`alianzas/${S.barberia.id}/${Date.now()}.${extDeMime(blob.type)}`;
+    const {error:upErr}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    if(upErr){
+      fotoFallo=upErr.message;
+    } else {
       const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
       logo_url=url.publicUrl;
     }
@@ -3064,7 +3104,13 @@ async function guardarAlianza(){
     ({error}=await sb.from('alianzas').insert(payload));
   }
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
-  await loadAlianzas();closeM('m-alianza');notify('Alianza guardada ✓');renderConfig();
+  FOTO_ALZ_CROPPED_BLOB=null;
+  await loadAlianzas();closeM('m-alianza');
+  if(fotoFallo){
+    console.error('El logo de la alianza no se pudo subir:',fotoFallo);
+    notify('Alianza guardada, pero el logo no se subió.','warn');
+  } else notify('Alianza guardada ✓');
+  renderConfig();
   btn.disabled=false;btn.textContent='Guardar';
 }
 
@@ -3211,7 +3257,7 @@ async function guardarNivelVip(){
 }
 
 async function eliminarNivelVip(id){
-  if(S.nivelesVip.length<=1){notify('No podés borrar el último nivel — tiene que quedar al menos uno configurado','warn');return;}
+  if(S.nivelesVip.length<=1){notify('No puedes borrar el último nivel — tiene que quedar al menos uno configurado','warn');return;}
   const nv=S.nivelesVip.find(x=>x.id===id);if(!nv)return;
   if(!confirm('¿Eliminar el nivel "'+nv.nombre+'"? Los clientes que calificaban para este nivel van a recalcular al nivel inmediato inferior.'))return;
   const {error}=await sb.from('niveles_vip').delete().eq('id',id);
@@ -6167,13 +6213,59 @@ function exportarExcel(tipo){
 // guardar el profesional (mismo momento en que ya subía la foto sin recorte).
 let CROPPER_INSTANCE=null, CROPPER_CALLBACK=null, CROPPER_TARGET=null;
 
-function abrirRecorteImagen(file,aspectRatio,targetW,targetH,onCropped){
+// La extensión y el contentType de toda foto salen del blob que DEVOLVIÓ el
+// recortador, nunca del nombre del archivo que eligió el usuario.
+//
+// Dos razones. La primera es de seguridad: `file.name.split('.').pop()` no
+// puede contener un punto, pero sí BARRAS, así que un nombre como
+// "foo.png/../../logos/OTRO/logo" escribía fuera de la carpeta del negocio.
+// La segunda es de corrección: canvas.toBlob() con un tipo que el navegador
+// no soporta cae EN SILENCIO a PNG, y en ese caso guardar un ".webp" dejaría
+// un PNG adentro con la extensión y el Content-Type equivocados.
+function extDeMime(mime){
+  if(mime==='image/png') return 'png';
+  if(mime==='image/webp') return 'webp';
+  return 'jpg';
+}
+
+// Pre-chequeo de rol, SOLO para dar un mensaje claro.
+//
+// La barrera real es la política de storage (fotos_insert_dueno exige
+// auth_rol() = 'dueno'), que vive en la base y no se puede saltar desde el
+// navegador. Si este if se borrara, la subida seguiría siendo rechazada: lo
+// único que se perdería es el aviso. Por eso va en el momento de ELEGIR la
+// foto y no en el de guardar — así el profesional se entera antes de recortar,
+// no después.
+function puedeSubirFotos(){
+  if(S.perfil?.rol==='dueno') return true;
+  notify('Solo el dueño del negocio puede cambiar las fotos. Pídele que la suba él.','warn');
+  return false;
+}
+
+function abrirRecorteImagen(file,aspectRatio,targetW,targetH,onCropped,mime='image/jpeg',calidad=0.92){
   const reader=new FileReader();
   reader.onload=e=>{
     openM('m-recortar');
     const img=document.getElementById('recorte-img');
     CROPPER_CALLBACK=onCropped;
-    CROPPER_TARGET={w:targetW,h:targetH};
+    CROPPER_TARGET={w:targetW,h:targetH,mime,calidad};
+    // Sin este onerror, un archivo que el navegador no sabe decodificar deja
+    // el recortador abierto y VACÍO: img.onload nunca dispara, Cropper no se
+    // crea, y "aplicar" no hace nada porque aplicarRecorte() sale en el
+    // if(!CROPPER_INSTANCE). Callejón sin salida y mudo.
+    //
+    // El caso real es un .heic traído de un iPhone a un escritorio: Chrome y
+    // Firefox no lo decodifican (Safari en iOS sí). El accept del input
+    // empuja a iOS a convertirlo a JPEG, pero accept es una sugerencia, no
+    // una validación, así que no alcanza por sí solo.
+    img.onerror=()=>{
+      // Guarda: un src vacío no es un archivo ilegible. Si algo vaciara el
+      // src, el navegador dispara 'error' igual, y avisar ahí sería inventar
+      // un problema que no existe.
+      if(!img.getAttribute('src')) return;
+      cerrarRecorte();
+      notify('No pudimos abrir esa imagen. Prueba con un archivo JPG, PNG o WebP.','err');
+    };
     img.onload=()=>{
       if(CROPPER_INSTANCE)CROPPER_INSTANCE.destroy();
       CROPPER_INSTANCE=new Cropper(img,{aspectRatio,viewMode:1,autoCropArea:1});
@@ -6189,12 +6281,23 @@ function aplicarRecorte(){
     const cb=CROPPER_CALLBACK;
     cerrarRecorte();
     cb(blob);
-  },'image/jpeg',0.92);
+  },CROPPER_TARGET.mime,CROPPER_TARGET.calidad);
 }
 
 function cancelarRecorte(){ cerrarRecorte(); }
 
 function cerrarRecorte(){
+  // El onerror se desarma ANTES de todo lo demás, y en particular antes de
+  // CROPPER_INSTANCE.destroy().
+  //
+  // Cropper reemplaza el src del <img> cuando corrige la orientación EXIF
+  // (pasa con las fotos de celular), y al destruirse le devuelve el src
+  // original. El <img> se reutiliza entre recortes, así que un listener vivo
+  // durante esa reasignación podría disparar el aviso de error sobre un
+  // recorte que salió perfecto. Desarmarlo acá hace que eso sea imposible,
+  // sin depender de los detalles internos de Cropper.
+  const img=document.getElementById('recorte-img');
+  if(img) img.onerror=null;
   if(CROPPER_INSTANCE){CROPPER_INSTANCE.destroy();CROPPER_INSTANCE=null;}
   closeM('m-recortar');
   CROPPER_CALLBACK=null;CROPPER_TARGET=null;
@@ -6205,6 +6308,7 @@ let paletaDetectada=[];
 
 function subirLogo(input){
   if(!input.files||!input.files[0])return;
+  if(!puedeSubirFotos()){input.value='';return;}
   abrirRecorteImagen(input.files[0],1,512,512,blob=>subirLogoBlob(blob));
   input.value='';
 }
@@ -6222,19 +6326,34 @@ async function subirLogoBlob(blob){
   reader.readAsDataURL(blob);
   // Upload to Supabase
   if(S.barberia){
-    const fname=`logos/${S.barberia.id}/logo.jpg`;
-    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:'image/jpeg'});
-    if(!error){
-      const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
-      await sb.from('barberias').update({logo_url:url.publicUrl}).eq('id',S.barberia.id);
-      S.barberia.logo_url=url.publicUrl;
-      notify('Logo guardado ✓');
+    // La extensión sigue el formato que devolvió el recortador. Hoy es jpg
+    // para los cinco; cuando el tema por logo pase el logo a PNG/WebP, el
+    // nombre lo acompaña solo.
+    const fname=`logos/${S.barberia.id}/logo.${extDeMime(blob.type)}`;
+    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    if(error){
+      console.error('No se pudo subir el logo:',error.message);
+      notify('No pudimos guardar el logo. Revisa tu conexión e intenta de nuevo.','err');
+      return;
     }
+    const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
+    // La subida y la fila son dos pasos: si el archivo quedó pero barberias
+    // no se actualizó, el logo existe y nadie lo ve. Antes esto no se
+    // distinguía del éxito.
+    const {error:eUpd}=await sb.from('barberias').update({logo_url:url.publicUrl}).eq('id',S.barberia.id);
+    if(eUpd){
+      console.error('El logo se subió pero no se pudo guardar en el negocio:',eUpd.message);
+      notify('El logo se subió, pero no quedó asociado al negocio.','warn');
+      return;
+    }
+    S.barberia.logo_url=url.publicUrl;
+    notify('Logo guardado ✓');
   }
 }
 
 function subirPortada(input){
   if(!input.files||!input.files[0])return;
+  if(!puedeSubirFotos()){input.value='';return;}
   abrirRecorteImagen(input.files[0],1200/400,1200,400,blob=>subirPortadaBlob(blob));
   input.value='';
 }
@@ -6246,14 +6365,22 @@ async function subirPortadaBlob(blob){
   };
   reader.readAsDataURL(blob);
   if(S.barberia){
-    const fname=`portadas/${S.barberia.id}/portada.jpg`;
-    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:'image/jpeg'});
-    if(!error){
-      const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
-      await sb.from('barberias').update({foto_portada:url.publicUrl}).eq('id',S.barberia.id);
-      S.barberia.foto_portada=url.publicUrl;
-      notify('Portada guardada ✓');
+    const fname=`portadas/${S.barberia.id}/portada.${extDeMime(blob.type)}`;
+    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    if(error){
+      console.error('No se pudo subir la portada:',error.message);
+      notify('No pudimos guardar la portada. Revisa tu conexión e intenta de nuevo.','err');
+      return;
     }
+    const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
+    const {error:eUpd}=await sb.from('barberias').update({foto_portada:url.publicUrl}).eq('id',S.barberia.id);
+    if(eUpd){
+      console.error('La portada se subió pero no se pudo guardar en el negocio:',eUpd.message);
+      notify('La portada se subió, pero no quedó asociada al negocio.','warn');
+      return;
+    }
+    S.barberia.foto_portada=url.publicUrl;
+    notify('Portada guardada ✓');
   }
 }
 
