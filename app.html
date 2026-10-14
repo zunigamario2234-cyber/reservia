@@ -6439,12 +6439,30 @@ async function subirLogoBlob(blob){
     const antes=S.barberia.logo_url;
     S.barberia.logo_url=url.publicUrl;
     notify('Logo guardado ✓');
-    // El logo viejo con otra extensión queda sin referencias. Se borra
-    // DESPUÉS de que el update de barberias salió bien, nunca antes: si se
-    // borrara primero y el update fallara, el negocio se queda sin logo.
-    if(antes && antes!==url.publicUrl){
-      const viejo=antes.split('/fotos/')[1];
-      if(viejo) await sb.storage.from('fotos').remove([viejo.split('?')[0]]);
+    // El logo anterior queda huérfano SOLO cuando cambia la extensión. Se
+    // borra después de que el update de barberias salió bien, nunca antes:
+    // si se borrara primero y el update fallara, el negocio se queda sin
+    // logo.
+    //
+    // Se comparan RUTAS, no URLs. Con upsert, reemplazar logo.webp por
+    // logo.webp es el caso normal, y ahí la ruta vieja ES la nueva: borrar
+    // eliminaría el archivo que acabamos de subir. Comparar las URLs
+    // completas parecía alcanzar, pero no: un logo_url con ?v= o con otra
+    // forma del host daría "distinto" apuntando al mismo objeto.
+    //
+    // Y se valida que la ruta vieja cuelgue de logos/<id del negocio>/
+    // antes de tocar nada. Un logo_url corrupto o editado a mano no debe
+    // poder dirigir un borrado a otra parte. La política del bucket ya lo
+    // acota a la carpeta propia, pero la validación es gratis y no depende
+    // de que la política esté bien.
+    const rutaVieja=antes?(antes.split('/fotos/')[1]||'').split('?')[0]:'';
+    const prefijo=`logos/${S.barberia.id}/`;
+    if(rutaVieja && rutaVieja!==fname && rutaVieja.startsWith(prefijo) && rutaVieja.indexOf('..')===-1){
+      const {error:eDel}=await sb.storage.from('fotos').remove([rutaVieja]);
+      // Un borrado fallido no rompe nada ni muestra un error falso: el logo
+      // nuevo ya está subido, guardado y referenciado. Lo único que queda
+      // es un archivo de más que no se muestra en ninguna parte.
+      if(eDel) console.warn('El logo anterior quedó sin borrar:',rutaVieja,eDel.message);
     }
   }
 }
