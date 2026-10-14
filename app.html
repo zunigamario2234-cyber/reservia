@@ -6348,18 +6348,39 @@ function aplicarRecorte(){
   // whitelist del bucket. extDeMime(blob.type) hace que el nombre y el
   // Content-Type sigan al blob real, así que el respaldo no requiere nada
   // más.
-  let resuelto=false;
-  const entregar=blob=>{
-    if(resuelto)return; resuelto=true;
-    if(blob){ cb(blob); return; }
-    notify('No pudimos preparar esa imagen. Prueba con otro archivo.','err');
+  // El respaldo a PNG se dispara por los DOS caminos de falla, no solo por
+  // el tiempo: toBlob puede devolver null (el navegador no sabe serializar
+  // en ese formato) o no llamar nunca al callback. `reintentado` hace que
+  // el PNG se intente una sola vez, venga de donde venga la falla.
+  let resuelto=false, reintentado=false;
+  // `final` dice si este callback es el del ÚLTIMO intento. Importa por una
+  // carrera: si el formato original se cuelga, arranca el respaldo PNG, y
+  // DESPUÉS el original responde con null, ese null no es la palabra final
+  // — descartaría el PNG que viene en camino y mostraría un error cuando
+  // todavía hay un intento vivo. Un null no-final con el respaldo en vuelo
+  // simplemente se ignora.
+  const entregar=(blob,final)=>{
+    if(resuelto)return;
+    if(blob){ resuelto=true; cb(blob); return; }
+    if(final){
+      resuelto=true;
+      notify('No pudimos preparar esa imagen. Prueba con otro archivo.','err');
+      return;
+    }
+    if(reintentado)return;
+    reintentado=true;
+    console.warn('toBlob('+mime+') devolvio null; se reintenta en PNG');
+    lienzo.toBlob(b=>entregar(b,true),'image/png');
   };
   const respaldo=setTimeout(()=>{
-    if(resuelto)return;
+    if(resuelto||reintentado)return;
+    reintentado=true;
     console.warn('toBlob('+mime+') no respondio; se re-codifica en PNG');
-    lienzo.toBlob(entregar,'image/png');
+    lienzo.toBlob(b=>entregar(b,true),'image/png');
   },2500);
-  lienzo.toBlob(b=>{ clearTimeout(respaldo); entregar(b); },mime,calidad);
+  // El intento original es final solo si ya pedía PNG: no tiene sentido
+  // reintentar el mismo formato consigo mismo.
+  lienzo.toBlob(b=>{ clearTimeout(respaldo); entregar(b,mime==='image/png'); },mime,calidad);
 }
 
 function cancelarRecorte(){ cerrarRecorte(); }
