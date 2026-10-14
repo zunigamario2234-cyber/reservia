@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>test-tema</title>
+<style>
+@font-face{font-family:'Hanken Grotesk';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:400 800;font-display:swap}
+body{font-family:ui-monospace,Menlo,Consolas,monospace;padding:20px;font-size:13px}
+pre.ok{color:#0a7a3d}pre.fail{color:#c00}</style>
+</head><body>
+<pre id="resultado">corriendo...</pre>
+<script src="tema.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// Suite del tema por logo. Carga tema.js de verdad: no hay copia del
+// algoritmo acá, así que una mutación en tema.js tiene que poner esto rojo.
+// ═══════════════════════════════════════════════════════════════════════
+var fallas = [], total = 0;
+function check(nombre, obtenido, esperado) {
+  total++;
+  var o = typeof obtenido === 'object' ? JSON.stringify(obtenido) : String(obtenido);
+  var e = typeof esperado === 'object' ? JSON.stringify(esperado) : String(esperado);
+  if (o !== e) fallas.push(nombre + '\n      obtenido: ' + o + '\n      esperado: ' + e);
+}
+function cerca(nombre, obtenido, esperado, tol) {
+  total++;
+  if (Math.abs(obtenido - esperado) > tol)
+    fallas.push(nombre + '\n      obtenido: ' + obtenido + '\n      esperado: ' + esperado + ' ±' + tol);
+}
+function verdad(nombre, cond, detalle) {
+  total++;
+  if (!cond) fallas.push(nombre + (detalle ? '\n      ' + detalle : ''));
+}
+
+// ── A · hexValido: la puerta contra inyección de CSS ──────────────────
+['#2957D6','#2957d6','#FFFFFF','#000000','#1b2130'].forEach(function (v) {
+  check('A hexValido acepta ' + v, hexValido(v), true);
+});
+['#fff','#GGGGGG','red','rgb(0,0,0)','#2957D6;color:red','#2957D6;}body{display:none',
+ '#2957D688','#2957D6 ',' #2957D6','2957D6','var(--x)','',null,undefined,42,
+ '#2957D6\n','url(javascript:alert(1))'].forEach(function (v) {
+  check('A hexValido rechaza ' + JSON.stringify(v), hexValido(v), false);
+});
+
+// ── B · luminancia y contraste, valores conocidos ─────────────────────
+cerca('B luminancia #000000', luminancia('#000000'), 0, 1e-9);
+cerca('B luminancia #FFFFFF', luminancia('#FFFFFF'), 1, 1e-9);
+cerca('B luminancia #767676', luminancia('#767676'), 0.1811, 0.0005);
+cerca('B luminancia #2957D6', luminancia('#2957D6'), 0.1214, 0.0005);
+cerca('B contraste negro/blanco', contraste(0, 1), 21, 0.01);
+cerca('B contraste blanco/blanco', contraste(1, 1), 1, 1e-9);
+cerca('B #2957D6 vs blanco', contrasteHex('#2957D6', '#FFFFFF'), 6.13, 0.02);
+// #767676 es el gris más claro que sostiene texto blanco a 4,5:1.
+verdad('B #767676 sostiene blanco', contrasteHex('#767676', '#FFFFFF') >= 4.5,
+  'da ' + contrasteHex('#767676', '#FFFFFF').toFixed(3));
+verdad('B #777777 ya NO sostiene blanco', contrasteHex('#777777', '#FFFFFF') < 4.5,
+  'da ' + contrasteHex('#777777', '#FFFFFF').toFixed(3));
+
+// ── C · mezclar, con el redondeo fijado ───────────────────────────────
+check('C mezclar negro->blanco 0%', mezclar('#000000', '#FFFFFF', 0), '#000000');
+check('C mezclar negro->blanco 100%', mezclar('#000000', '#FFFFFF', 1), '#FFFFFF');
+check('C mezclar negro->blanco 50%', mezclar('#000000', '#FFFFFF', 0.5), '#808080');
+// El tinte del mockup: 90% blanco. Si alguien lo cambia a 0,80 esto cae.
+check('C tinte 90% de #2957D6', mezclar('#2957D6', '#FFFFFF', 0.90), '#EAEEFB');
+check('C borde 72% de #2957D6', mezclar('#2957D6', '#FFFFFF', 0.72), '#C3D0F4');
+
+// ── D · satHSV: la razón por la que no usamos HSL para clasificar ─────
+cerca('D satHSV del champan #9D968C', satHSV(157, 150, 140), 0.108, 0.002);
+cerca('D satHSV de #2957D6', satHSV(41, 87, 214), 0.808, 0.002);
+cerca('D satHSV de un gris', satHSV(120, 120, 120), 0, 1e-9);
+// #FEFFFF: HSL daria ~0,98 por el denominador que se va a cero. HSV no.
+verdad('D satHSV no explota cerca del blanco', satHSV(254, 255, 255) < 0.01,
+  'da ' + satHSV(254, 255, 255));
+verdad('D satHSL SI explota cerca del blanco (por eso no se usa)',
+  aHsl('#FEFFFF')[1] > 0.9, 'da ' + aHsl('#FEFFFF')[1]);
+
+// ── E · la banda muerta 0,183–0,216 ───────────────────────────────────
+// Ahi fallan BLANCO y OSCURO a la vez. #7D7D7D (L≈0,205) es el ancla.
+verdad('E #7D7D7D falla con blanco', contrasteHex('#7D7D7D', '#FFFFFF') < 4.5,
+  'da ' + contrasteHex('#7D7D7D', '#FFFFFF').toFixed(3));
+verdad('E #7D7D7D falla con el oscuro', contrasteHex('#7D7D7D', TXT_OSCURO) < 4.5,
+  'da ' + contrasteHex('#7D7D7D', TXT_OSCURO).toFixed(3));
+verdad('E oscurecerHasta saca a #7D7D7D de la banda',
+  contrasteHex(oscurecerHasta('#7D7D7D'), '#FFFFFF') >= 4.5);
+verdad('E aclararHasta saca a #7D7D7D de la banda',
+  contrasteHex(aclararHasta('#7D7D7D'), TXT_OSCURO) >= 4.5);
+// Barrido de la banda entera: ningun gris de ahi debe quedar sin salida.
+var bandaMal = 0;
+for (var g = 0x70; g <= 0x90; g++) {
+  var hx = hexDe(g, g, g);
+  if (contrasteHex(oscurecerHasta(hx), '#FFFFFF') < 4.5) bandaMal++;
+  if (contrasteHex(aclararHasta(hx), TXT_OSCURO) < 4.5) bandaMal++;
+}
+check('E barrido de la banda muerta, fallas', bandaMal, 0);
+
+// ── F · prueba de propiedad: 1.620 colores, LAS DOS direcciones ───────
+var N = 0, malClaro = 0, malOscuro = 0, malTonoC = 0, malTonoO = 0;
+for (var hh = 0; hh < 360; hh += 10) {
+  for (var si = 0; si < 5; si++) {
+    var ss = [0.08, 0.25, 0.5, 0.75, 1.0][si];
+    for (var li = 1; li <= 9; li++) {
+      var ll = li / 10;
+      var base = deHsl(hh / 360, ss, ll);
+      N++;
+      // dirección clara: texto BLANCO encima
+      var oc = oscurecerHasta(base);
+      if (contrasteHex(oc, '#FFFFFF') < 4.5) malClaro++;
+      // dirección oscura: texto #15181D encima
+      var ac = aclararHasta(base);
+      if (contrasteHex(ac, TXT_OSCURO) < 4.5) malOscuro++;
+      // el tono se preserva (solo donde hay saturación suficiente para
+      // que el tono signifique algo, y el resultado no esté saturado a
+      // los topes, donde el tono se pierde por definición)
+      if (ss >= 0.25) {
+        var t0 = aHsl(base)[0] * 360;
+        var hc = aHsl(oc), ho = aHsl(ac);
+        if (hc[1] > 0.02 && hc[2] > 0.02 && Math.abs(((hc[0] * 360 - t0 + 540) % 360) - 180) > 4) malTonoC++;
+        if (ho[1] > 0.02 && ho[2] < 0.98 && Math.abs(((ho[0] * 360 - t0 + 540) % 360) - 180) > 4) malTonoO++;
+      }
+    }
+  }
+}
+check('F colores barridos', N, 1620);
+check('F direccion CLARA sin alcanzar 4,5:1', malClaro, 0);
+check('F direccion OSCURA sin alcanzar 4,5:1', malOscuro, 0);
+check('F tono perdido en la direccion clara', malTonoC, 0);
+check('F tono perdido en la direccion oscura', malTonoO, 0);
+
+// ── G · las dos direcciones son distintas y van para donde deben ──────
+verdad('G en claro el acento se oscurece',
+  luminancia(oscurecerHasta('#8D877D')) <= luminancia('#8D877D'));
+verdad('G en oscuro el acento se aclara o se queda',
+  luminancia(aclararHasta('#3A3A80')) >= luminancia('#3A3A80'));
+check('G ajustarAcento claro == oscurecerHasta',
+  ajustarAcento('#8D877D', 'claro'), oscurecerHasta('#8D877D'));
+check('G ajustarAcento oscuro == aclararHasta',
+  ajustarAcento('#3A3A80', 'oscuro'), aclararHasta('#3A3A80'));
+// El respaldo '#FFFFFF' de aclararHasta CUMPLE el contraste, asi que una
+// inversion de la direccion pasaba la prueba de propiedad sin que nadie se
+// enterara: agotaba las 260 vueltas y devolvia blanco. Lo detecto una
+// mutacion. Un color saturado que necesita ajuste no puede terminar en
+// blanco ni en negro, y tiene que conservar su tono y su color.
+var osc1 = aclararHasta('#3A3A80');
+verdad('G aclararHasta no se rinde y devuelve blanco', osc1 !== '#FFFFFF', 'dio ' + osc1);
+verdad('G aclararHasta no devuelve negro', osc1 !== '#000000', 'dio ' + osc1);
+verdad('G aclararHasta conserva el tono',
+  Math.abs(aHsl(osc1)[0] * 360 - aHsl('#3A3A80')[0] * 360) < 6,
+  'de ' + (aHsl('#3A3A80')[0] * 360).toFixed(0) + '° a ' + (aHsl(osc1)[0] * 360).toFixed(0) + '°');
+verdad('G aclararHasta conserva saturacion', aHsl(osc1)[1] > 0.1, 'sat ' + aHsl(osc1)[1].toFixed(3));
+verdad('G aclararHasta SUBE la luminancia de verdad',
+  luminancia(osc1) > luminancia('#3A3A80') + 0.05,
+  luminancia('#3A3A80').toFixed(4) + ' -> ' + luminancia(osc1).toFixed(4));
+// Barrido: ningun color saturado debe caer en los topes.
+var topes = 0;
+for (var th = 0; th < 360; th += 15) {
+  for (var tl = 1; tl <= 4; tl++) {
+    var r0 = aclararHasta(deHsl(th / 360, 0.6, tl / 10));
+    if (r0 === '#FFFFFF' || r0 === '#000000') topes++;
+  }
+}
+check('G colores saturados que terminan en un tope', topes, 0);
+
+// ── H · textoSobre ────────────────────────────────────────────────────
+check('H sobre casi negro va blanco', textoSobre(MONO_CLARO).color, '#FFFFFF');
+check('H sobre blanco va el oscuro', textoSobre('#FFFFFF').color, TXT_OSCURO);
+verdad('H sobre casi negro cumple', textoSobre(MONO_CLARO).cumple);
+verdad('H sobre blanco cumple', textoSobre('#FFFFFF').cumple);
+verdad('H en la banda muerta NO cumple y lo dice', textoSobre('#7D7D7D').cumple === false);
+
+// ── I · clasificación, con los datos reales ───────────────────────────
+// EL CASO "TONO SUAVE": el champan de Sintonia, sHSV 0,121 con masa 2,18%.
+// Si alguien sube S_MONO a 0,25 o la masa minima a 5%, esto se pone rojo.
+check('I Sintonia (champan 0,121 / masa 2,18%) es SUTIL',
+  clasificar(0.0218, 0.916, 0.123), 'sutil');
+check('I Essentials (0,000 / 2,66%) es monocromatico',
+  clasificar(0.0266, 0.000, 0), 'monocromatico');
+check('I Tico (0,012 / 14,08%) es monocromatico',
+  clasificar(0.1408, 0.046, 0.072), 'monocromatico');
+check('I ZZ prueba (0,240 / 38,68%) es sutil',
+  clasificar(0.3868, 0.587, 0.209), 'sutil');
+check('I fraccion 5% con color alto es monocromatico', clasificar(0.20, 0.05, 0.9), 'monocromatico');
+  check('I fraccion 15% con color alto es color', clasificar(0.20, 0.15, 0.9), 'color');
+  check('I un azul de marca (0,81) es color', clasificar(0.20, 0.90, 0.81), 'color');
+// Y el borde inferior de masa: 0,4% es poco, 0,6% alcanza.
+check('I masa 0,4% con color igual es monocromatico', clasificar(0.004, 0.90, 0.5), 'monocromatico');
+check('I masa 0,6% con color es color', clasificar(0.006, 0.90, 0.5), 'color');
+
+// ── J · modo por la luminancia del fondo, no por el promedio ──────────
+check('J fondo #2F2F2F uniforme -> oscuro', modoPorFondo('#2F2F2F', true), 'oscuro');
+check('J fondo #040404 uniforme -> oscuro', modoPorFondo('#040404', true), 'oscuro');
+check('J fondo #C6CDCA uniforme -> claro', modoPorFondo('#C6CDCA', true), 'claro');
+check('J fondo oscuro NO uniforme -> claro', modoPorFondo('#2F2F2F', false), 'claro');
+
+// ── K · acentoPara ────────────────────────────────────────────────────
+// Contra el LITERAL, no contra la constante: comparar acentoPara(...) con
+// MONO_OSCURO seria tautologico — si alguien cambia la constante, cambian
+// los dos lados y la prueba no se enteraria. Lo detecto una mutacion.
+check('K mono en claro es #1B2130', acentoPara('monocromatico', 'claro', '#E8E8E8'), '#1B2130');
+check('K mono en oscuro es #FFFFFF', acentoPara('monocromatico', 'oscuro', '#E8E8E8'), '#FFFFFF');
+check('K la constante MONO_CLARO vale #1B2130', MONO_CLARO, '#1B2130');
+check('K la constante MONO_OSCURO vale #FFFFFF', MONO_OSCURO, '#FFFFFF');
+check('K la constante TXT_OSCURO vale #15181D', TXT_OSCURO, '#15181D');
+verdad('K sutil en oscuro conserva el tono del champan',
+  Math.abs(aHsl(acentoPara('sutil', 'oscuro', '#8D877D'))[0] * 360 - 37) < 6,
+  'tono ' + (aHsl(acentoPara('sutil', 'oscuro', '#8D877D'))[0] * 360).toFixed(0) + '°');
+
+// ── L · generarTema: los 11 tokens en los dos modos ───────────────────
+var LLAVES = ['--fondo','--tarjeta','--fondo-suave','--borde-suave','--borde','--texto',
+              '--texto-atenuado','--acento','--acento-tinte','--acento-borde','--texto-sobre-acento'];
+['claro','oscuro'].forEach(function (m) {
+  var t = generarTema({ color: '#2957D6', modo: m });
+  check('L ' + m + ' tiene 11 tokens', Object.keys(t).length, 11);
+  LLAVES.forEach(function (k) { verdad('L ' + m + ' trae ' + k, k in t); });
+});
+check('L oscuro: texto sobre acento es el oscuro',
+  generarTema({ color: '#FFFFFF', modo: 'oscuro' })['--texto-sobre-acento'], TXT_OSCURO);
+check('L claro: texto sobre acento es blanco',
+  generarTema({ color: '#2957D6', modo: 'claro' })['--texto-sobre-acento'], '#FFFFFF');
+// Los tokens derivados que PRODUCE generarTema, no mezclar() suelto: si el
+// 0,90 del tinte cambia adentro, esto tiene que caer. Lo detecto una mutacion.
+check('L claro: el tinte sale de la mezcla al 90%',
+  generarTema({ color: '#2957D6', modo: 'claro' })['--acento-tinte'], '#EAEEFB');
+check('L claro: el borde sale de la mezcla al 72%',
+  generarTema({ color: '#2957D6', modo: 'claro' })['--acento-borde'], '#C3D0F4');
+check('L oscuro: el tinte es blanco al 10%',
+  generarTema({ color: '#FFFFFF', modo: 'oscuro' })['--acento-tinte'], 'rgba(255,255,255,0.10)');
+// generarTema AJUSTA el acento por dentro: ninguna pantalla puede pintar
+// un acento sin contraste, ni pasandole un color crudo.
+['claro','oscuro'].forEach(function (m) {
+  ['#D8D8D8','#7D7D7D','#8D877D','#2957D6','#FFFF00'].forEach(function (crudo) {
+    var t = generarTema({ color: crudo, modo: m });
+    var a = t['--acento'], tx = t['--texto-sobre-acento'];
+    verdad('L ' + m + ' ' + crudo + ' -> acento con 4,5:1',
+      contrasteHex(a, tx) >= 4.5,
+      'acento ' + a + ' texto ' + tx + ' da ' + contrasteHex(a, tx).toFixed(2));
+  });
+});
+check('L un color invalido cae al azul Reservia',
+  generarTema({ color: '#2957D6;}body{x', modo: 'claro' })['--acento'], AZUL_RESERVIA);
+check('L sin color cae al azul Reservia',
+  generarTema({ modo: 'claro' })['--acento'], AZUL_RESERVIA);
+
+// ── M · acento contra la superficie: 3:1, no 4,5:1 ────────────────────
+verdad('M blanco sobre #2F2F2F cumple 3:1',
+  acentoContraSuperficie('#FFFFFF', '#2F2F2F').cumple);
+verdad('M el champan sobre #040404 cumple 3:1',
+  acentoContraSuperficie('#8D877D', '#040404').cumple);
+verdad('M #2F2F2F sobre #2F2F2F NO cumple y lo dice',
+  acentoContraSuperficie('#2F2F2F', '#2F2F2F').cumple === false);
+cerca('M el umbral de interfaz es 3', OBJ_UI, 3, 1e-9);
+
+// ── N · aplicarTema: setProperty y nunca un <style> ───────────────────
+var caja = document.createElement('div');
+document.body.appendChild(caja);
+var antesStyle = document.querySelectorAll('style').length;
+aplicarTema(generarTema({ color: '#2957D6', modo: 'claro' }), caja);
+check('N escribio --acento', caja.style.getPropertyValue('--acento').trim(), '#2957D6');
+check('N escribio --fondo', caja.style.getPropertyValue('--fondo').trim(), '#F5F6FA');
+check('N no creo ninguna etiqueta style', document.querySelectorAll('style').length, antesStyle);
+// Un valor hostil no debe poder entrar: generarTema lo filtra antes.
+var hostil = generarTema({ color: '#2957D6;}body{display:none', modo: 'claro' });
+aplicarTema(hostil, caja);
+verdad('N el valor hostil no llego al DOM',
+  caja.style.getPropertyValue('--acento').indexOf('}') === -1,
+  'quedo: ' + caja.style.getPropertyValue('--acento'));
+check('N sigue sin etiquetas style', document.querySelectorAll('style').length, antesStyle);
+
+// ── O · el prototipo viejo no debe seguir vivo ────────────────────────
+verdad('O no existe aplicarColores', typeof window.aplicarColores === 'undefined');
+verdad('O no existe cargarTemaGuardado', typeof window.cargarTemaGuardado === 'undefined');
+
+// ── P · la fuente: dígitos tabulares a 400 y 800 ──────────────────────
+// Hanken Grotesk trae HVAR, asi que los anchos PUEDEN variar por peso.
+// Se mide en el navegador porque no se puede afirmar de otro modo.
+(async function () {
+  var pesos = [400, 800], anchos = {};
+  // Hay que ESPERAR la carga: measureText con la fuente sin cargar mide el
+  // fallback y la prueba diria cualquier cosa.
+  var cargo = true;
+  try {
+    await Promise.all(pesos.map(function (w) {
+      return document.fonts.load(w + ' 100px "Hanken Grotesk"');
+    }));
+    await document.fonts.ready;
+  } catch (e) { cargo = false; }
+  verdad('P la fuente Hanken Grotesk carga', cargo && document.fonts.check('400 100px "Hanken Grotesk"'),
+    'si esto falla, las dos de abajo miden el fallback y no valen');
+  pesos.forEach(function (w) {
+    var c = document.createElement('canvas').getContext('2d');
+    c.font = w + ' 100px "Hanken Grotesk", system-ui, sans-serif';
+    var m = [];
+    for (var d = 0; d <= 9; d++) m.push(c.measureText(String(d)).width);
+    anchos[w] = m;
+    var unicos = m.filter(function (v, i, a) { return a.indexOf(v) === i; });
+    verdad('P los diez digitos miden igual a peso ' + w, unicos.length === 1,
+      'anchos distintos: ' + unicos.join(', '));
+  });
+  window.__anchos = anchos;
+
+  // ── Q · extraerPaleta con imágenes SINTÉTICAS ───────────────────────
+  // Generadas con canvas acá mismo: ningún logo real entra al repo, que es
+  // público. extraerPaleta reescala a 150x150 sin suavizar, así que las
+  // fuentes se generan a 150x150 y el mapeo es 1:1 y predecible.
+  // El anillo del borde son 3px, así que las figuras se dibujan adentro.
+  function lienzo(pintar) {
+    var c = document.createElement('canvas');
+    c.width = 150; c.height = 150;
+    pintar(c.getContext('2d'));
+    return c.toDataURL('image/png');
+  }
+
+  // Q1 · el caso de Sintonía, CON SEÑUELO.
+  // Fondo #040404, una franja grande de #212121 (gris sin croma, a
+  // distancia 50 del fondo) y 450px de beige #8D877D (distancia 225).
+  // Con U_DIST=70 el señuelo queda FUERA y gana el beige -> "sutil".
+  // Si alguien baja U_DIST a 40, el señuelo entra, es 40% contra 2%, la
+  // mediana de saturación se va a 0 y clasifica "monocromático".
+  var imgSutil = lienzo(function (x) {
+    x.fillStyle = '#040404'; x.fillRect(0, 0, 150, 150);
+    x.fillStyle = '#212121'; x.fillRect(5, 40, 140, 65);      // señuelo, ~40%
+    x.fillStyle = '#8D877D'; x.fillRect(20, 50, 30, 15);      // beige, 450px = 2%
+  });
+  var qs = await extraerPaleta(imgSutil);
+  verdad('Q1 extraerPaleta devolvio algo', qs !== null);
+  if (qs) {
+    check('Q1 fondo detectado', qs.fondo, '#040404');
+    verdad('Q1 fondo uniforme', qs.fondoUniforme === true, 'sd ' + qs.sdFondo);
+    check('Q1 clase (el senuelo NO debe ganar)', qs.clase, 'sutil');
+    check('Q1 modo', qs.modoSugerido, 'oscuro');
+    cerca('Q1 masa del primer plano', qs.masa * 100, 2.0, 0.6);
+    cerca('Q1 saturacion mediana', qs.satMediana, 0.113, 0.02);
+    verdad('Q1 el acento conserva el beige',
+      Math.abs(aHsl(qs.acentoSugerido)[0] * 360 - 34) < 8,
+      'acento ' + qs.acentoSugerido + ', tono ' + (aHsl(qs.acentoSugerido)[0] * 360).toFixed(0) + '°');
+    verdad('Q1 el acento no es blanco', qs.acentoSugerido !== '#FFFFFF', 'dio ' + qs.acentoSugerido);
+  }
+
+  // Q2 · el caso de Essentials: letras claras sobre gris oscuro uniforme.
+  var imgMono = lienzo(function (x) {
+    x.fillStyle = '#2F2F2F'; x.fillRect(0, 0, 150, 150);
+    x.fillStyle = '#E8E8E8';
+    x.fillRect(30, 60, 90, 12); x.fillRect(30, 80, 60, 12);   // ~3%
+  });
+  var qm = await extraerPaleta(imgMono);
+  verdad('Q2 extraerPaleta devolvio algo', qm !== null);
+  if (qm) {
+    check('Q2 fondo detectado', qm.fondo, '#2F2F2F');
+    verdad('Q2 fondo uniforme', qm.fondoUniforme === true, 'sd ' + qm.sdFondo);
+    check('Q2 clase', qm.clase, 'monocromatico');
+    check('Q2 modo', qm.modoSugerido, 'oscuro');
+    check('Q2 acento mono en oscuro', qm.acentoSugerido, '#FFFFFF');
+    verdad('Q2 saturacion practicamente nula', qm.satMediana < 0.06, 'sHSV ' + qm.satMediana);
+  }
+
+  // Q3 · fondo NO uniforme: el anillo mezcla claro y oscuro, así que la
+  // desviación se dispara y el modo automático no debe ser oscuro.
+  var imgNoUnif = lienzo(function (x) {
+    x.fillStyle = '#101010'; x.fillRect(0, 0, 75, 150);
+    x.fillStyle = '#E0E0E0'; x.fillRect(75, 0, 75, 150);
+    x.fillStyle = '#2957D6'; x.fillRect(50, 60, 50, 30);
+  });
+  var qn = await extraerPaleta(imgNoUnif);
+  verdad('Q3 extraerPaleta devolvio algo', qn !== null);
+  if (qn) {
+    verdad('Q3 fondo NO uniforme', qn.fondoUniforme === false, 'sd ' + qn.sdFondo);
+    check('Q3 modo claro aunque haya mitad oscura', qn.modoSugerido, 'claro');
+  }
+
+  // Q5 · logo con FONDO TRANSPARENTE: el caso que va a ser normal cuando
+  // la Entrega 1 exporte en PNG/WebP con alfa.
+  // La figura son 100px de 22500 = 0,44%. Con el filtro de alfa, `op`
+  // cuenta solo los 100 opacos y la masa es 100%. Sin el filtro, `op`
+  // cuenta los 22500 y la masa cae a 0,44%, por debajo del mínimo, y
+  // clasificaría "monocromático". Eso es lo que atrapa la mutación del alfa.
+  var imgTrans = lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);                 // fondo transparente
+    x.fillStyle = '#2957D6'; x.fillRect(70, 70, 10, 10);
+  });
+  var qt = await extraerPaleta(imgTrans);
+  verdad('Q5 extraerPaleta devolvio algo', qt !== null);
+  if (qt) {
+    check('Q5 clase con fondo transparente', qt.clase, 'color');
+    cerca('Q5 la masa se mide sobre los OPACOS', qt.masa, 1.0, 0.01);
+    cerca('Q5 saturacion del azul', qt.satMediana, 0.808, 0.02);
+  }
+
+  // Q6 · FONDO TRANSPARENTE: el modo sale del contraste, no de un negro
+  // inventado. Tres logos con alfa y distinto color.
+  function logoTransparente(color) {
+    return lienzo(function (x) {
+      x.clearRect(0, 0, 150, 150);
+      x.fillStyle = color; x.fillRect(35, 35, 80, 80);
+    });
+  }
+  var casos = [['blanco', '#FFFFFF', 'oscuro'], ['negro', '#000000', 'claro'],
+               ['azul Reservia', '#2957D6', 'claro']];
+  for (var ci = 0; ci < casos.length; ci++) {
+    var cn = casos[ci][0], cc = casos[ci][1], cm = casos[ci][2];
+    var qq = await extraerPaleta(logoTransparente(cc));
+    verdad('Q6 ' + cn + ': devolvio algo', qq !== null);
+    if (!qq) continue;
+    verdad('Q6 ' + cn + ': fondoTransparente', qq.fondoTransparente === true);
+    verdad('Q6 ' + cn + ': fondoUniforme false', qq.fondoUniforme === false);
+    check('Q6 ' + cn + ': fondo es null, no un negro inventado', qq.fondo, null);
+    verdad('Q6 ' + cn + ': el fondo NUNCA es #000000', qq.fondo !== '#000000');
+    check('Q6 ' + cn + ': modo por contraste', qq.modoSugerido, cm);
+  }
+  // Y el logo NEGRO transparente no se descarta entero: sin el filtro de
+  // distancia su primer plano existe.
+  var qneg = await extraerPaleta(logoTransparente('#000000'));
+  if (qneg) verdad('Q6 el logo negro transparente tiene primer plano',
+    qneg.masa > 0.9, 'masa ' + qneg.masa);
+
+  // Q8 · el UMBRAL DE ESQUINAS, cayendo a los dos lados del 20%.
+  // Los parches son 4 de 12x12 = 576 px (8% de 150 = 12).
+  var q8a = await extraerPaleta(lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#101010'; x.fillRect(0, 0, 8, 8);     // 64/576 = 11%
+    x.fillStyle = '#FFFFFF'; x.fillRect(45, 45, 60, 60);
+  }));
+  verdad('Q8a devolvio algo', q8a !== null);
+  if (q8a) {
+    verdad('Q8a esquinas 11% opacas -> transparente', q8a.fondoTransparente === true);
+    check('Q8a fondo null, no el #101010 de la esquina', q8a.fondo, null);
+  }
+  var q8b = await extraerPaleta(lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#2F2F2F'; x.fillRect(0, 0, 150, 12);  // 2 esquinas de 4 = 50%
+    x.fillStyle = '#E8E8E8'; x.fillRect(40, 60, 70, 20);
+  }));
+  verdad('Q8b devolvio algo', q8b !== null);
+  if (q8b) {
+    verdad('Q8b esquinas 50% opacas -> NO transparente', q8b.fondoTransparente === false);
+    verdad('Q8b tiene fondo de verdad', q8b.fondo !== null, 'fondo ' + q8b.fondo);
+  }
+
+  // Q9 · CÍRCULO opaco que toca los cuatro bordes, esquinas transparentes.
+  // Es la forma del PNG de Essentials: por anillo daba 20,4% opaco, al filo
+  // del umbral. Por esquinas no hay duda.
+  var q9 = await extraerPaleta(lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#2F2F2F'; x.beginPath(); x.arc(75, 75, 75, 0, 7); x.fill();
+    x.fillStyle = '#E8E8E8'; x.fillRect(45, 68, 60, 14);
+  }));
+  verdad('Q9 devolvio algo', q9 !== null);
+  if (q9) {
+    verdad('Q9 circulo que toca los bordes -> transparente', q9.fondoTransparente === true,
+      'fondo ' + q9.fondo);
+    check('Q9 fondo null', q9.fondo, null);
+    verdad('Q9 el circulo NO se descarta: hay primer plano', q9.masa > 0.5, 'masa ' + q9.masa);
+  }
+
+  // Q10 · WORDMARK transparente con letras tocando los bordes izquierdo y
+  // derecho. Por anillo, el anillo estaria lleno de LETRA y el filtro de
+  // distancia habria descartado el logo entero.
+  var q10 = await extraerPaleta(lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#2957D6';
+    x.fillRect(0, 65, 20, 20); x.fillRect(30, 65, 20, 20);
+    x.fillRect(60, 65, 20, 20); x.fillRect(100, 65, 50, 20);
+  }));
+  verdad('Q10 devolvio algo', q10 !== null);
+  if (q10) {
+    verdad('Q10 wordmark al borde -> transparente', q10.fondoTransparente === true);
+    verdad('Q10 las letras NO se descartan', q10.masa > 0.9, 'masa ' + q10.masa);
+    check('Q10 el representativo es el azul', q10.colorRepresentativo, '#2957D6');
+    check('Q10 clase', q10.clase, 'color');
+  }
+
+  // Q11 · PÍXELES CASI NEGROS: letras de color medio con bordes casi negros
+  // y ruido. satHSV le da 0,94 a (1,5,17) sin que tenga color real, y por
+  // eso ZZ prueba terminaba con acento #010511.
+  var q11 = await extraerPaleta(lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#010511'; x.fillRect(10, 10, 130, 50);
+    x.fillStyle = '#04040A'; x.fillRect(10, 100, 130, 40);
+    x.fillStyle = '#C0603C'; x.fillRect(40, 66, 70, 26);
+  }));
+  verdad('Q11 devolvio algo', q11 !== null);
+  if (q11) {
+    verdad('Q11 el casi negro NO gana el representativo',
+      q11.colorRepresentativo !== '#010511' && q11.colorRepresentativo !== '#04040A',
+      'repr ' + q11.colorRepresentativo);
+    verdad('Q11 el representativo tiene brillo de verdad',
+      Math.max.apply(null, rgbDe(q11.colorRepresentativo)) >= 50,
+      'repr ' + q11.colorRepresentativo);
+    verdad('Q11 el acento no es casi negro',
+      luminancia(q11.acentoSugerido) > 0.02, 'acento ' + q11.acentoSugerido +
+      ' L=' + luminancia(q11.acentoSugerido).toFixed(4));
+    verdad('Q11 conserva el tono de la letra',
+      Math.abs(aHsl(q11.colorRepresentativo)[0] * 360 - 17) < 15,
+      'tono ' + (aHsl(q11.colorRepresentativo)[0] * 360).toFixed(0) + '°');
+  }
+  verdad('Q11 tieneColorMedible rechaza (1,5,17)', tieneColorMedible(1, 5, 17) === false);
+  verdad('Q11 tieneColorMedible rechaza (4,4,6)', tieneColorMedible(4, 4, 6) === false);
+  verdad('Q11 tieneColorMedible acepta el champan de Sintonia (141,135,125)',
+    tieneColorMedible(141, 135, 125) === true);
+  verdad('Q11 satHSV SI explota en (1,5,17) — por eso hace falta la guarda',
+    satHSV(1, 5, 17) > 0.9, 'da ' + satHSV(1, 5, 17).toFixed(3));
+
+  // Q12 · un GRIS MEDIO es brillante pero no tiene color: lo tiene que
+  // frenar U_DIF_MIN, no el brillo. 70% gris y 30% naranja: con la guarda
+  // de diferencia, la mediana de saturación sale del naranja; sin ella, los
+  // grises son mayoría, la mediana se va a 0 y clasifica monocromático.
+  verdad('Q12 tieneColorMedible rechaza el gris #909090',
+    tieneColorMedible(144, 144, 144) === false);
+  verdad('Q12 ese gris es brillante: no lo frena U_BRILLO_MIN', 144 >= 50);
+  var q12 = await extraerPaleta(lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#909090'; x.fillRect(10, 10, 130, 90);   // 70%
+    x.fillStyle = '#C0603C'; x.fillRect(10, 105, 130, 35);  // 30%
+  }));
+  verdad('Q12 devolvio algo', q12 !== null);
+  if (q12) {
+    check('Q12 clase: el gris no debe arrastrar la mediana', q12.clase, 'color');
+    verdad('Q12 la saturacion sale del naranja', q12.satMediana > 0.5,
+      'sHSV ' + q12.satMediana.toFixed(3));
+    check('Q12 el representativo es el naranja', q12.colorRepresentativo, '#C0603C');
+  }
+  // Q7 · COLOR REPRESENTATIVO: dos colores, gana el más frecuente.
+  // 60% rojo y 40% azul. El promedio daría violeta, que no es ninguno.
+  var imgDos = lienzo(function (x) {
+    x.clearRect(0, 0, 150, 150);
+    x.fillStyle = '#FF0000'; x.fillRect(10, 10, 130, 78);   // 60%
+    x.fillStyle = '#0000FF'; x.fillRect(10, 88, 130, 52);   // 40%
+  });
+  var qd = await extraerPaleta(imgDos);
+  verdad('Q7 devolvio algo', qd !== null);
+  if (qd) {
+    check('Q7 el representativo es el ROJO', qd.colorRepresentativo, '#FF0000');
+    verdad('Q7 el promedio NO es ninguno de los dos (por eso no se usa)',
+      qd.colorMedio !== '#FF0000' && qd.colorMedio !== '#0000FF', 'promedio ' + qd.colorMedio);
+    verdad('Q7 el acento viene del rojo',
+      Math.abs(aHsl(qd.acentoSugerido)[0] * 360 - 0) < 10 ||
+      Math.abs(aHsl(qd.acentoSugerido)[0] * 360 - 360) < 10,
+      'acento ' + qd.acentoSugerido);
+  }
+  // Y Sintonía sigue dando beige con la regla nueva.
+  if (qs) verdad('Q7 Sintonia sigue dando beige por el representativo',
+    Math.abs(aHsl(qs.colorRepresentativo)[0] * 360 - 37) < 12,
+    'repr ' + qs.colorRepresentativo + ', tono ' + (aHsl(qs.colorRepresentativo)[0] * 360).toFixed(0) + '°');
+
+  // Q4 · una imagen que no carga: devuelve null, no revienta.
+  var qx = await extraerPaleta('data:image/png;base64,ZZZZ');
+  check('Q4 fuente invalida devuelve null', qx, null);
+
+  veredicto();
+})();
+
+// ── veredicto ─────────────────────────────────────────────────────────
+function veredicto() {
+var el = document.getElementById('resultado');
+var cab = 'test-tema · ' + total + ' comprobaciones\n';
+if (fallas.length === 0) {
+  el.className = 'ok';
+  el.textContent = cab + '\nTODO VERDE: ' + total + '/' + total + '\n\n' +
+    'anchos de digito medidos: 400 -> ' + window.__anchos[400][0] +
+    '  800 -> ' + window.__anchos[800][0];
+} else {
+  el.className = 'fail';
+  el.textContent = cab + '\nFALLAN ' + fallas.length + ' de ' + total + '\n\n  - ' + fallas.join('\n  - ');
+}
+}
+</script>
+</body></html>

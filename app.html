@@ -6,9 +6,11 @@
 <title>Reservia</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
+<script src="tema.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<style>@font-face{font-family:'Hanken Grotesk';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:400 800;font-display:swap}</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -677,11 +679,43 @@ input[readonly]{background:#111;color:#666;cursor:default}
           </label>
           <div style="font-size:10px;color:var(--text3);margin-top:6px">JPG, PNG o WebP · Se recorta cuadrado</div>
         </div>
-        <div id="paleta-colores" style="display:none">
-          <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Paleta detectada</div>
-          <div id="colores-preview" style="display:flex;gap:6px"></div>
-          <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="aplicarColores()">✓ Aplicar colores</button>
-          <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="resetColores()">↺ Restablecer</button>
+      </div>
+      <!-- TEMA POR LOGO. Los tokens del tema se escriben con setProperty
+           SOLO sobre #tema-vista, así que esta tarjeta es lo único que
+           cambia de aspecto: el resto del panel sigue igual. -->
+      <div id="tema-panel" style="display:none;margin-top:16px;padding-top:16px;border-top:0.5px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Color de la plataforma</div>
+        <div id="tema-estado" style="font-size:11px;color:var(--text3);margin-bottom:12px">Analizando tu logo…</div>
+        <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+          <div style="flex:0 0 250px">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Color del acento</div>
+            <div id="tema-muestras" style="display:flex;gap:7px;flex-wrap:wrap"></div>
+            <div style="font-size:11px;color:var(--text3);margin:14px 0 6px">Modo</div>
+            <select id="tema-modo" onchange="temaElegirModo(this.value)" style="font-size:12px;padding:6px 8px;width:100%">
+              <option value="auto">Automático (según tu logo)</option>
+              <option value="claro">Claro</option>
+              <option value="oscuro">Oscuro</option>
+            </select>
+            <div id="tema-aviso" style="font-size:11px;margin-top:12px;line-height:1.5"></div>
+            <button class="btn btn-primary btn-sm" id="btn-tema-guardar" style="margin-top:14px" onclick="temaGuardar()">Guardar tema</button>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Vista previa</div>
+            <div id="tema-vista" style="width:258px;border-radius:16px;overflow:hidden;border:1px solid var(--borde);background:var(--tarjeta);color:var(--texto);font-family:'Hanken Grotesk',system-ui,-apple-system,sans-serif">
+              <div id="tema-franja" style="padding:14px;display:flex;align-items:center;justify-content:center;min-height:62px">
+                <img id="tema-franja-logo" style="max-height:38px;max-width:150px;object-fit:contain" alt="">
+              </div>
+              <div style="padding:14px;background:var(--tarjeta)">
+                <div style="font-weight:800;letter-spacing:-0.01em;font-size:16px">Corte y barba</div>
+                <div style="color:var(--texto-atenuado);font-size:12px;margin-top:2px">Hoy 16:30 · Juan Pérez</div>
+                <div style="font-variant-numeric:tabular-nums;font-weight:800;font-size:23px;margin:11px 0 9px">$18.000</div>
+                <span style="display:inline-block;background:var(--acento-tinte);border:1px solid var(--acento-borde);border-radius:999px;padding:3px 11px;font-size:11px">Cliente VIP</span>
+                <div style="margin-top:13px">
+                  <span style="display:inline-block;background:var(--acento);color:var(--texto-sobre-acento);border-radius:11px;padding:9px 15px;font-size:13px;font-weight:600">Confirmar hora</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1519,7 +1553,14 @@ async function init(){
   document.getElementById('sb-rol').textContent = S.perfil?.rol==='dueno'?'Dueño':'Profesional';
   document.getElementById('sb-barberia').textContent = S.barberia?.nombre || '—';
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
-  nav('dashboard');cargarTemaGuardado();
+  nav('dashboard');
+  // El prototipo del tema guardaba un tema violeta en localStorage y lo
+  // aplicaba al arrancar. Ya no existe; se limpia la clave para que nadie
+  // la encuentre dentro de un año sin saber qué era. En try/catch porque
+  // localStorage lanza con el almacenamiento bloqueado — y el getItem del
+  // prototipo estaba FUERA de su try, así que en modo privado el panel
+  // moría en el arranque.
+  try { localStorage.removeItem('reservia-theme'); } catch (e) {}
   }catch(e){
     console.error(e);
     // Si ya había una sesión válida, redirigir a ingresar.html solo rebota
@@ -5418,6 +5459,9 @@ function renderProfesionals(){
 }
 
 function renderConfig(){
+  // El analisis del logo se dispara al entrar a Ajustes, una vez: es un
+  // decodificado de canvas y no vale la pena repetirlo en cada repintado.
+  if(S.barberia && !TEMA.an) temaRefrescar();
   if(S.barberia){
     if(S.barberia.logo_url){const prev=document.getElementById('logo-preview');prev.innerHTML=`<img src="${S.barberia.logo_url}" style="width:100%;height:100%;object-fit:contain;padding:4px">`; }
     if(S.barberia.foto_portada){const prevP=document.getElementById('portada-preview');prevP.innerHTML=`<img src="${S.barberia.foto_portada}" style="width:100%;height:100%;object-fit:cover">`; }
@@ -6304,7 +6348,6 @@ function cerrarRecorte(){
 }
 
 // ─── LOGO Y COLORES AUTOMÁTICOS ───
-let paletaDetectada=[];
 
 function subirLogo(input){
   if(!input.files||!input.files[0])return;
@@ -6320,8 +6363,10 @@ async function subirLogoBlob(blob){
     const preview=document.getElementById('logo-preview');
     preview.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:contain;padding:4px">`;
     // Extract colors
-    paletaDetectada=await extraerColores(e.target.result);
-    mostrarPaleta(paletaDetectada);
+    // Se analiza el blob LOCAL, que ya está acá: sin ir a la red y sin
+    // depender de CORS. temaRefrescar() sabe caer a logo_url cuando se
+    // entra a Ajustes sin subir nada.
+    temaRefrescar(e.target.result);
   };
   reader.readAsDataURL(blob);
   // Upload to Supabase
@@ -6384,150 +6429,138 @@ async function subirPortadaBlob(blob){
   }
 }
 
-function extraerColores(src){
-  return new Promise(resolve=>{
-    const img=new Image();
-    img.crossOrigin='anonymous';
-    img.onload=()=>{
-      const canvas=document.createElement('canvas');
-      const size=50;canvas.width=size;canvas.height=size;
-      const ctx=canvas.getContext('2d');
-      ctx.drawImage(img,0,0,size,size);
-      const data=ctx.getImageData(0,0,size,size).data;
-      const colores={};
-      for(let i=0;i<data.length;i+=8){
-        const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];
-        if(a<100)continue; // skip transparent/semi-transparent
-        const brightness=(r*299+g*587+b*114)/1000;
-        if(brightness<30||brightness>240)continue; // skip near-black and near-white
-        const rq=Math.round(r/24)*24;
-        const gq=Math.round(g/24)*24;
-        const bq=Math.round(b/24)*24;
-        const hex=`#${rq.toString(16).padStart(2,'0')}${gq.toString(16).padStart(2,'0')}${bq.toString(16).padStart(2,'0')}`;
-        colores[hex]=(colores[hex]||0)+1;
-      }
-      const sorted=Object.entries(colores).sort((a,b)=>b[1]-a[1]);
-      const dominantes=sorted.slice(0,6).map(x=>x[0]);
-      resolve(dominantes.length?dominantes:['#7c6af7','#5b8def','#38c9b0']);
-    };
-    img.onerror=()=>resolve(['#7c6af7','#5b8def','#38c9b0']);
-    img.src=src;
-  });
+
+
+// ─── TEMA POR LOGO ───────────────────────────────────────────────────────
+// Toda la aritmética vive en tema.js, que es el mismo archivo que va a usar
+// la Entrega 3 para los correos. Acá solo está la pantalla.
+//
+// El análisis del logo ocurre SOLO en este panel. Las páginas públicas y
+// los correos leen barberias.color_marca y modo_tema y no analizan nada: si
+// color_marca es NULL, usan el aspecto actual de Reservia.
+let TEMA = { an: null, color: null, modo: 'auto', src: null };
+
+async function temaRefrescar(src) {
+  const panel = document.getElementById('tema-panel');
+  if (!panel || !S.barberia) return;
+  if (!src && !S.barberia.logo_url) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  TEMA.src = src || S.barberia.logo_url;
+  document.getElementById('tema-estado').textContent = 'Analizando tu logo…';
+  const an = await extraerPaleta(TEMA.src);
+  TEMA.an = an;
+  TEMA.modo = S.barberia.modo_tema || 'auto';
+  // El color guardado manda sobre el sugerido: es la decisión del dueño.
+  TEMA.color = hexValido(S.barberia.color_marca) ? S.barberia.color_marca
+             : (an ? an.acentoSugerido : AZUL_RESERVIA);
+  document.getElementById('tema-modo').value = TEMA.modo;
+  temaPintar();
 }
 
-function mostrarPaleta(colores){
-  const panel=document.getElementById('paleta-colores');
-  const prev=document.getElementById('colores-preview');
-  panel.style.display='';
-  prev.innerHTML=colores.map((c,i)=>`
-    <div style="text-align:center">
-      <div style="width:36px;height:36px;border-radius:8px;background:${c};border:2px solid rgba(255,255,255,0.1);cursor:pointer" onclick="seleccionarColor(${i})" title="${c}"></div>
-      <div style="font-size:9px;color:var(--text3);margin-top:3px">${c}</div>
-    </div>`).join('');
+function temaModoEfectivo() {
+  if (TEMA.modo === 'claro' || TEMA.modo === 'oscuro') return TEMA.modo;
+  return TEMA.an ? TEMA.an.modoSugerido : 'claro';
 }
 
-let colorPrimario=null;let colorSecundario=null;
-
-function seleccionarColor(i){
-  if(!colorPrimario){colorPrimario=paletaDetectada[i];notify('Color primario seleccionado: '+colorPrimario);}
-  else if(!colorSecundario){colorSecundario=paletaDetectada[i];notify('Color secundario seleccionado. Ya puedes aplicar.');}
-  else{colorPrimario=paletaDetectada[i];colorSecundario=null;notify('Color primario cambiado');}
-}
-
-function aplicarColores(){
-  const filtrados=paletaDetectada.filter(c=>{
-    const r=parseInt(c.slice(1,3),16);
-    const g=parseInt(c.slice(3,5),16);
-    const b=parseInt(c.slice(5,7),16);
-    return(r*299+g*587+b*114)/1000>35;
-  });
-  const c1=colorPrimario||(filtrados[0]||paletaDetectada[0]||'#7c6af7');
-  const c2=colorSecundario||(filtrados[1]||filtrados[0]||paletaDetectada[1]||'#5b8def');
-  const h2r=h=>({r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)});
-  const {r,g,b}=h2r(c1);
-  const light=`rgba(${r},${g},${b},0.18)`;
-  const glow=`rgba(${r},${g},${b},0.3)`;
-
-  // Remove old theme
-  document.getElementById('custom-theme')?.remove();
-  
-  // Inject comprehensive stylesheet
-  const s=document.createElement('style');
-  s.id='custom-theme';
-  s.textContent=`
-    * { transition: background-color 0.3s, color 0.3s, border-color 0.3s !important; }
-    button.btn-primary, a.btn-primary { background: linear-gradient(135deg, ${c1}, ${c2}) !important; color: #fff !important; border: none !important; }
-    .nav-item.active { color: ${c1} !important; border-left-color: ${c1} !important; background: ${light} !important; }
-    .nav-item:hover { background: ${light} !important; }
-    .tab.active { color: ${c1} !important; border-bottom-color: ${c1} !important; }
-    .bar-fill { background: linear-gradient(90deg, ${c1}, ${c2}) !important; }
-    .gold { color: ${c1} !important; }
-    .up { color: ${c2} !important; }
-    .user-role { background: ${light} !important; color: ${c1} !important; border: none !important; }
-    .mc { border-color: #1e2030 !important; }
-    .mc:hover { border-color: ${c1} !important; }
-    input:focus, select:focus, textarea:focus { border-color: ${c1} !important; box-shadow: 0 0 0 3px ${glow} !important; }
-    .notif.ok { border-color: ${c1} !important; color: ${c1} !important; }
-    .modal { border-color: #2a2a40 !important; }
-    #logo-preview { border: 2px solid ${c1} !important; }
-    .step-dot.active, .step-dot.done { background: ${c1} !important; }
-    .plan-card.selected { border-color: ${c1} !important; }
-    .plan-price { color: ${c1} !important; }
-    h1 { color: ${c1} !important; -webkit-text-fill-color: ${c1} !important; }
-  `;
-  document.head.appendChild(s);
-
-  // Also directly update active nav items NOW (not just on hover)
-  document.querySelectorAll('.nav-item.active').forEach(el=>{
-    el.style.color=c1;el.style.borderLeftColor=c1;el.style.background=light;
-  });
-  document.querySelectorAll('.tab.active').forEach(el=>{
-    el.style.color=c1;el.style.borderBottomColor=c1;
-  });
-  document.querySelectorAll('.bar-fill').forEach(el=>{
-    el.style.background=`linear-gradient(90deg,${c1},${c2})`;
-  });
-  document.querySelectorAll('.btn-primary').forEach(el=>{
-    el.style.background=`linear-gradient(135deg,${c1},${c2})`;
-    el.style.color='#fff';
-  });
-  document.querySelectorAll('.gold').forEach(el=>el.style.color=c1);
-  document.querySelectorAll('.user-role').forEach(el=>{
-    el.style.background=light;el.style.color=c1;
-  });
-
-  // Update ALL CSS variables - this changes EVERYTHING instantly
-  const root=document.documentElement;
-  root.style.setProperty('--p1',c1);
-  root.style.setProperty('--p2',c2);
-  root.style.setProperty('--p3',c2);
-  root.style.setProperty('--p1-light',light);
-  root.style.setProperty('--p1-glow',glow);
-  root.style.setProperty('--bg4',`rgba(${r},${g},${b},0.12)`);
-  
-  localStorage.setItem('reservia-theme',JSON.stringify({c1,c2}));
-  notify('✓ Colores aplicados a toda la interfaz');
-}
-
-function resetColores(){
-  document.getElementById('custom-theme')?.remove();
-  localStorage.removeItem('reservia-theme');
-  colorPrimario=null;colorSecundario=null;
-  notify('Colores restablecidos al diseño original');
-}
-
-function cargarTemaGuardado(){
-  const t=localStorage.getItem('reservia-theme');
-  if(t){
-    try{
-      const{c1,c2}=JSON.parse(t);
-      colorPrimario=c1;colorSecundario=c2;
-      paletaDetectada=[c1,c2];
-      aplicarColores();
-    }catch(e){}
+function temaMuestras() {
+  const an = TEMA.an, vistos = {}, out = [];
+  const sumar = (hex, etq) => {
+    if (!hexValido(hex) || vistos[hex]) return;
+    vistos[hex] = 1; out.push({ hex: hex, etq: etq });
+  };
+  if (an) {
+    sumar(an.acentoSugerido, 'Sugerido');
+    sumar(an.colorRepresentativo, 'Del logo');
+    (an.paleta || []).forEach(h => sumar(h, ''));
   }
+  sumar(AZUL_RESERVIA, 'Reservia');
+  return out.slice(0, 8);
 }
 
+function temaElegirColor(hex) { if (hexValido(hex)) { TEMA.color = hex; temaPintar(); } }
+function temaElegirModo(m) { TEMA.modo = m; temaPintar(); }
+
+function temaPintar() {
+  const an = TEMA.an, modo = temaModoEfectivo();
+  const tokens = generarTema({ color: TEMA.color, modo: modo });
+  const acento = tokens['--acento'];
+
+  // Las muestras.
+  document.getElementById('tema-muestras').innerHTML = temaMuestras().map(m => {
+    const sel = m.hex === TEMA.color;
+    return `<button onclick="temaElegirColor('${m.hex}')" title="${m.hex}"
+      style="width:36px;height:36px;border-radius:9px;background:${m.hex};cursor:pointer;padding:0;
+      border:${sel ? '2px solid var(--p1)' : '1px solid var(--border)'};
+      box-shadow:${sel ? '0 0 0 2px var(--bg)' : 'none'}"></button>` +
+      (m.etq ? `<div style="font-size:9px;color:var(--text3);width:36px;text-align:center;margin-top:-2px">${m.etq}</div>` : '');
+  }).join('');
+
+  // El estado, según lo que encontramos en el logo. Sin inventar un color
+  // de marca donde no hay: si el logo es monocromático se dice.
+  const est = document.getElementById('tema-estado');
+  if (!an) {
+    est.textContent = 'No pudimos analizar tu logo. Puedes elegir un color a mano.';
+  } else if (an.clase === 'monocromatico') {
+    est.textContent = 'Tu logo es monocromático: no tiene un color de marca que tomar. El tema queda neutro, y puedes elegir un color a mano.';
+  } else if (an.clase === 'sutil') {
+    est.textContent = 'Tu logo tiene un tono suave. Lo usamos como acento, ajustado para que el texto encima se lea.';
+  } else {
+    est.textContent = 'Tomamos el color de tu logo.';
+  }
+
+  // La franja del logo usa el color de fondo del propio logo cuando ese
+  // fondo existe y es uniforme. Así un logo con fondo propio no se ve como
+  // un cuadrado pegado sobre la tarjeta. Si el fondo es transparente no hay
+  // color que usar y se deja la superficie de la tarjeta.
+  const franja = document.getElementById('tema-franja');
+  const sup = (an && an.fondoUniforme && hexValido(an.fondo)) ? an.fondo : tokens['--tarjeta'];
+  franja.style.background = sup;
+  const img = document.getElementById('tema-franja-logo');
+  if (TEMA.src) { img.src = TEMA.src; img.style.display = ''; } else { img.style.display = 'none'; }
+
+  // Los tokens van SOLO a la tarjeta de vista previa, con setProperty.
+  aplicarTema(tokens, document.getElementById('tema-vista'));
+
+  // Los avisos de contraste. El del acento contra la superficie se DICE
+  // cuando no llega a 3:1, en vez de esconderlo: un botón que no se
+  // distingue del fondo es un botón perdido.
+  const txt = textoSobre(acento);
+  const vs = acentoContraSuperficie(acento, sup);
+  const lineas = [];
+  lineas.push(`<span style="color:var(--text2)">Texto sobre el acento: <strong>${txt.contraste.toFixed(2)}:1</strong> ${txt.cumple ? '✓' : '⚠'}</span>`);
+  if (acento !== TEMA.color) {
+    lineas.push(`<span style="color:var(--text3)">Ajustamos el brillo de ${TEMA.color} a ${acento} para que el texto se lea.</span>`);
+  }
+  if (!vs.cumple) {
+    lineas.push(`<span style="color:#d4a853">⚠ El acento casi no se distingue del fondo del logo (${vs.contraste.toFixed(2)}:1, se recomienda 3:1). Prueba otro color o el otro modo.</span>`);
+  }
+  document.getElementById('tema-aviso').innerHTML = lineas.join('<br>');
+}
+
+async function temaGuardar() {
+  if (!S.barberia) return;
+  if (!puedeSubirFotos()) return;
+  if (!hexValido(TEMA.color)) { notify('Ese color no es válido', 'err'); return; }
+  const btn = document.getElementById('btn-tema-guardar');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  // Se guarda el modo CONCRETO, no 'auto': las páginas públicas y los
+  // correos no analizan el logo, así que necesitan un valor que honrar.
+  const modo = temaModoEfectivo();
+  const { error } = await sb.from('barberias')
+    .update({ color_marca: TEMA.color, modo_tema: modo }).eq('id', S.barberia.id);
+  btn.disabled = false; btn.textContent = 'Guardar tema';
+  if (error) {
+    console.error('No se pudo guardar el tema:', error.message);
+    notify('No pudimos guardar el tema. Intenta de nuevo.', 'err');
+    return;
+  }
+  S.barberia.color_marca = TEMA.color;
+  S.barberia.modo_tema = modo;
+  TEMA.modo = modo;
+  document.getElementById('tema-modo').value = modo;
+  notify('Tema guardado ✓');
+  temaPintar();
+}
 // ─── AUTOCOMPLETAR CLIENTE EN RESERVA ───
 function buscarClienteReserva(q){
   const box=document.getElementById('r-sugerencias');
