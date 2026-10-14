@@ -541,6 +541,60 @@ verdad('O no existe cargarTemaGuardado', typeof window.cargarTemaGuardado === 'u
   var qx = await extraerPaleta('data:image/png;base64,ZZZZ');
   check('Q4 fuente invalida devuelve null', qx, null);
 
+
+  // Q13 · las MUESTRAS: nada de "Del logo" cuando es monocromático.
+  // colorRepresentativo cae al promedio del primer plano cuando no hay
+  // grupos, y el WebP con pérdida le mete croma a píxeles neutros, así que
+  // ese promedio sale con un tinte que el logo no tiene.
+  if (qm) {
+    const mm = muestrasPara(qm);
+    check('Q13 mono: clase es monocromatico', qm.clase, 'monocromatico');
+    verdad('Q13 mono: NO ofrece "Del logo"',
+      mm.every(m => m.etq !== 'Del logo'),
+      'etiquetas: ' + mm.map(m => m.etq || '-').join(', '));
+    verdad('Q13 mono: SI ofrece el sugerido', mm.some(m => m.etq === 'Sugerido'));
+    verdad('Q13 mono: SI ofrece Reservia', mm.some(m => m.etq === 'Reservia'));
+    verdad('Q13 mono: ninguna muestra es el representativo con tinte',
+      mm.every(m => m.hex !== qm.colorRepresentativo) || qm.colorRepresentativo === qm.acentoSugerido,
+      'repr ' + qm.colorRepresentativo + ' · muestras ' + mm.map(m => m.hex).join(', '));
+  }
+  // Y con un logo que SÍ tiene color, el representativo tiene que estar
+  // OFRECIDO. No necesariamente bajo la etiqueta "Del logo": cuando el
+  // color ya cumple el contraste, acentoSugerido ES el representativo y la
+  // deduplicación lo muestra una sola vez, como "Sugerido". Eso es
+  // correcto; lo que no puede pasar es que no esté.
+  if (qs) {
+    const ms = muestrasPara(qs);
+    check('Q13 sutil: clase es sutil', qs.clase, 'sutil');
+    verdad('Q13 sutil: el representativo esta ofrecido',
+      ms.some(m => m.hex === qs.colorRepresentativo),
+      'repr ' + qs.colorRepresentativo + ' · muestras ' + ms.map(m => m.hex).join(', '));
+  }
+  // Y cuando el acento Y el representativo son DISTINTOS —el caso del modo
+  // claro, donde el acento se oscurece— los dos se ofrecen, y el
+  // representativo bajo su etiqueta.
+  const mdif = muestrasPara({ clase: 'sutil', acentoSugerido: '#7B766C',
+                              colorRepresentativo: '#8D877D', paleta: ['#8D877D'] });
+  check('Q13 acento y representativo distintos: dos muestras + Reservia', mdif.length, 3);
+  verdad('Q13 el representativo va como "Del logo"',
+    mdif.some(m => m.etq === 'Del logo' && m.hex === '#8D877D'),
+    'etiquetas: ' + mdif.map(m => (m.etq || '-') + '=' + m.hex).join(', '));
+  // Y el mismo caso, pero monocromatico: el representativo NO se ofrece.
+  const mmono = muestrasPara({ clase: 'monocromatico', acentoSugerido: '#1B2130',
+                               colorRepresentativo: '#3A3D38', paleta: [] });
+  verdad('Q13 mono: el representativo con tinte no aparece',
+    mmono.every(m => m.hex !== '#3A3D38'),
+    'muestras ' + mmono.map(m => m.hex).join(', '));
+  check('Q13 mono: solo el sugerido y Reservia', mmono.length, 2);
+  // Sin analisis, solo Reservia. Y nunca repite un hex.
+  const m0 = muestrasPara(null);
+  check('Q13 sin analisis: una sola muestra', m0.length, 1);
+  check('Q13 sin analisis: es Reservia', m0[0].hex, AZUL_RESERVIA);
+  const mrep = muestrasPara({ clase: 'color', acentoSugerido: '#2957D6',
+                              colorRepresentativo: '#2957D6', paleta: ['#2957D6'] });
+  check('Q13 deduplica hex repetidos', mrep.length, 1);
+  check('Q13 respeta el limite', muestrasPara({ clase: 'color', acentoSugerido: '#111111',
+    colorRepresentativo: '#222222', paleta: ['#333333','#444444','#555555','#666666','#777777','#888888'] }, 3).length, 3);
   veredicto();
 })();
 

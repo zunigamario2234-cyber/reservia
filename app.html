@@ -6540,20 +6540,9 @@ function temaModoEfectivo() {
   return TEMA.an ? TEMA.an.modoSugerido : 'claro';
 }
 
-function temaMuestras() {
-  const an = TEMA.an, vistos = {}, out = [];
-  const sumar = (hex, etq) => {
-    if (!hexValido(hex) || vistos[hex]) return;
-    vistos[hex] = 1; out.push({ hex: hex, etq: etq });
-  };
-  if (an) {
-    sumar(an.acentoSugerido, 'Sugerido');
-    sumar(an.colorRepresentativo, 'Del logo');
-    (an.paleta || []).forEach(h => sumar(h, ''));
-  }
-  sumar(AZUL_RESERVIA, 'Reservia');
-  return out.slice(0, 8);
-}
+// La lógica vive en tema.js (muestrasPara), que es pura y la cubre la
+// suite. Acá queda solo la lectura del estado.
+function temaMuestras() { return muestrasPara(TEMA.an, 8); }
 
 function temaElegirColor(hex) { if (hexValido(hex)) { TEMA.color = hex; temaPintar(); } }
 // El campo de texto valida con hexValido, la MISMA expresión que el check

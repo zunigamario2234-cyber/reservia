@@ -239,6 +239,33 @@ function paletaDeGrupos(grupos, n, minDist) {
   }
   return out;
 }
+// Las muestras que ve el dueño. Función pura para que la suite la cubra:
+// vivía en app.html y ahí no se podía probar.
+//
+// Cuando el logo es MONOCROMÁTICO no se ofrece "Del logo".
+// colorRepresentativo cae al promedio del primer plano cuando no hay
+// grupos de color, y ese promedio no es un color de la marca: es un número
+// sacado de miles de píxeles. Peor aún, el WebP con pérdida le mete croma a
+// píxeles neutros — medido: el mismo píxel que en el JPEG es #060606 sale
+// #070504 en el WebP, y #070707 sale #050807. Sobre miles de píxeles los
+// sesgos no se cancelan y el promedio aterriza con un tinte que el logo no
+// tiene. Ofrecer eso como "color de tu logo" justo después de decirle al
+// dueño que su logo no tiene color sería contradecirse.
+function muestrasPara(an, limite) {
+  limite = limite || 8;
+  var vistos = {}, out = [];
+  var sumar = function (hex, etq) {
+    if (!hexValido(hex) || vistos[hex]) return;
+    vistos[hex] = 1; out.push({ hex: hex, etq: etq });
+  };
+  if (an) {
+    sumar(an.acentoSugerido, 'Sugerido');
+    if (an.clase !== 'monocromatico') sumar(an.colorRepresentativo, 'Del logo');
+    (an.paleta || []).forEach(function (h) { sumar(h, ''); });
+  }
+  sumar(AZUL_RESERVIA, 'Reservia');
+  return out.slice(0, limite);
+}
 function acentoPara(clase, modo, colorBase) {
   if (clase === 'monocromatico') return modo === 'oscuro' ? MONO_OSCURO : MONO_CLARO;
   return ajustarAcento(colorBase, modo);
@@ -413,6 +440,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ajustarAcento: ajustarAcento, textoSobre: textoSobre,
     clasificar: clasificar, modoPorFondo: modoPorFondo, modoPorContraste: modoPorContraste,
     colorRepresentativo: colorRepresentativo, paletaDeGrupos: paletaDeGrupos,
+    muestrasPara: muestrasPara,
     acentoPara: acentoPara,
     generarTema: generarTema, acentoContraSuperficie: acentoContraSuperficie,
     aplicarTema: aplicarTema, mediana: mediana
