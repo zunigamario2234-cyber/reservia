@@ -213,6 +213,32 @@ function colorRepresentativo(grupos) {
   var G = grupos[mejor];
   return hexDe(mediana(G.r), mediana(G.g), mediana(G.b));
 }
+// La paleta que ve el dueño sale de la MEDIANA RGB de cada grupo, no de la
+// cubeta cuantizada. La cubeta es el color redondeado a múltiplos de 24,
+// que no existe en el logo: en Sintonía aparecían dos rosados apagados que
+// la marca no tiene, porque el redondeo los había corrido de lugar.
+//
+// Y se deduplica por distancia: dos cubetas vecinas dan medianas casi
+// iguales, y ofrecer seis variantes del mismo beige no es una paleta.
+function paletaDeGrupos(grupos, n, minDist) {
+  n = n || 6; minDist = minDist || 40;
+  var claves = Object.keys(grupos).sort(function (a, b) {
+    return grupos[b].r.length - grupos[a].r.length;
+  });
+  var out = [];
+  for (var i = 0; i < claves.length && out.length < n; i++) {
+    var G = grupos[claves[i]];
+    var hex = hexDe(mediana(G.r), mediana(G.g), mediana(G.b));
+    var cerca = false;
+    for (var j = 0; j < out.length; j++) {
+      var p = rgbDe(out[j]), q = rgbDe(hex);
+      var dr = p[0] - q[0], dg = p[1] - q[1], db = p[2] - q[2];
+      if (Math.sqrt(dr * dr + dg * dg + db * db) < minDist) { cerca = true; break; }
+    }
+    if (!cerca) out.push(hex);
+  }
+  return out;
+}
 function acentoPara(clase, modo, colorBase) {
   if (clase === 'monocromatico') return modo === 'oscuro' ? MONO_OSCURO : MONO_CLARO;
   return ajustarAcento(colorBase, modo);
@@ -361,7 +387,7 @@ function extraerPaleta(src, N) {
       var fracColor = nfg ? nmed / nfg : 0;
       var clase = clasificar(masa, fracColor, satMed);
       var modo = transparente ? modoPorContraste(medio) : modoPorFondo(fondo, uniforme);
-      var paleta = Object.keys(cuenta).sort(function (a, b) { return cuenta[b] - cuenta[a]; }).slice(0, 6);
+      var paleta = paletaDeGrupos(grupos, 6, 40);
       res({ fondo: fondo, lumFondo: fondo === null ? null : luminancia(fondo),
             sdFondo: sd, fondoUniforme: uniforme, fondoTransparente: transparente,
             masa: masa, satMediana: satMed, fraccionConColor: fracColor, colorMedio: medio, colorRepresentativo: repr,
@@ -386,7 +412,8 @@ if (typeof module !== 'undefined' && module.exports) {
     oscurecerHasta: oscurecerHasta, aclararHasta: aclararHasta,
     ajustarAcento: ajustarAcento, textoSobre: textoSobre,
     clasificar: clasificar, modoPorFondo: modoPorFondo, modoPorContraste: modoPorContraste,
-    colorRepresentativo: colorRepresentativo, acentoPara: acentoPara,
+    colorRepresentativo: colorRepresentativo, paletaDeGrupos: paletaDeGrupos,
+    acentoPara: acentoPara,
     generarTema: generarTema, acentoContraSuperficie: acentoContraSuperficie,
     aplicarTema: aplicarTema, mediana: mediana
   };

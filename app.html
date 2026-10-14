@@ -670,9 +670,14 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="card" style="margin-bottom:14px">
       <div class="card-hdr"><span class="card-title">Logo e identidad visual</span></div>
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
-        <div id="logo-preview" style="width:80px;height:80px;border-radius:12px;background:var(--bg4);border:1px dashed #7c6af7;display:flex;align-items:center;justify-content:center;font-size:32px;overflow:hidden;flex-shrink:0">🏢</div>
+        <!-- El fondo de esta miniatura lo pinta temaPintar() con el fondo
+             detectado del logo, o con un gris neutro si el logo es
+             transparente. Antes era var(--bg4) con un borde violeta del
+             prototipo, que mentía sobre cómo se ve el logo en otras
+             pantallas. -->
+        <div id="logo-preview" style="width:80px;height:80px;border-radius:12px;background:var(--bg4);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:32px;overflow:hidden;flex-shrink:0">🏢</div>
         <div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Sube el logo de tu negocio — los colores de la plataforma se ajustarán automáticamente</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Sube el logo de tu negocio. Si tiene un color de marca, lo vas a poder usar como acento más abajo.</div>
           <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg4);border:0.5px solid var(--p1);border-radius:8px;cursor:pointer;font-size:13px;color:var(--p1)">
             🎨 Subir logo
             <input type="file" id="logo-file" accept="image/jpeg,image/png,image/webp" onchange="subirLogo(this)" style="display:none">
@@ -689,7 +694,15 @@ input[readonly]{background:#111;color:#666;cursor:default}
         <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
           <div style="flex:0 0 250px">
             <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Color del acento</div>
-            <div id="tema-muestras" style="display:flex;gap:7px;flex-wrap:wrap"></div>
+            <div id="tema-muestras" style="display:flex;gap:9px;flex-wrap:wrap"></div>
+            <div style="display:flex;gap:7px;align-items:center;margin-top:11px">
+              <input type="color" id="tema-libre" onchange="temaElegirColor(this.value.toUpperCase())"
+                     title="Elegir un color cualquiera"
+                     style="width:34px;height:30px;padding:0;border:1px solid var(--border);border-radius:7px;background:none;cursor:pointer">
+              <input type="text" id="tema-hex" maxlength="7" placeholder="#2957D6" spellcheck="false"
+                     onchange="temaElegirHex(this.value)" onkeydown="if(event.key==='Enter')temaElegirHex(this.value)"
+                     style="flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:6px 8px;text-transform:uppercase">
+            </div>
             <div style="font-size:11px;color:var(--text3);margin:14px 0 6px">Modo</div>
             <select id="tema-modo" onchange="temaElegirModo(this.value)" style="font-size:12px;padding:6px 8px;width:100%">
               <option value="auto">Automático (según tu logo)</option>
@@ -5461,7 +5474,7 @@ function renderProfesionals(){
 function renderConfig(){
   // El analisis del logo se dispara al entrar a Ajustes, una vez: es un
   // decodificado de canvas y no vale la pena repetirlo en cada repintado.
-  if(S.barberia && !TEMA.an) temaRefrescar();
+  if(S.barberia && !TEMA.intentado) temaRefrescar();
   if(S.barberia){
     if(S.barberia.logo_url){const prev=document.getElementById('logo-preview');prev.innerHTML=`<img src="${S.barberia.logo_url}" style="width:100%;height:100%;object-fit:contain;padding:4px">`; }
     if(S.barberia.foto_portada){const prevP=document.getElementById('portada-preview');prevP.innerHTML=`<img src="${S.barberia.foto_portada}" style="width:100%;height:100%;object-fit:cover">`; }
@@ -6321,11 +6334,32 @@ function abrirRecorteImagen(file,aspectRatio,targetW,targetH,onCropped,mime='ima
 
 function aplicarRecorte(){
   if(!CROPPER_INSTANCE)return;
-  CROPPER_INSTANCE.getCroppedCanvas({width:CROPPER_TARGET.w,height:CROPPER_TARGET.h}).toBlob(blob=>{
-    const cb=CROPPER_CALLBACK;
-    cerrarRecorte();
-    cb(blob);
-  },CROPPER_TARGET.mime,CROPPER_TARGET.calidad);
+  const lienzo=CROPPER_INSTANCE.getCroppedCanvas({width:CROPPER_TARGET.w,height:CROPPER_TARGET.h});
+  const cb=CROPPER_CALLBACK, mime=CROPPER_TARGET.mime, calidad=CROPPER_TARGET.calidad;
+  cerrarRecorte();
+  // toBlob puede devolver null, y hay builds de Chromium donde con
+  // image/webp NO LLAMA NUNCA al callback — verificado acá con tres
+  // combinaciones de flags: png y jpeg responden, webp se cuelga.
+  //
+  // Sin este respaldo, el logo no se subía y no aparecía ningún error: el
+  // recortador se quedaba abierto para siempre. Ahora se cierra primero y,
+  // si el formato pedido no responde en 2,5 s o devuelve null, se
+  // re-codifica en PNG, que también conserva el alfa y también está en el
+  // whitelist del bucket. extDeMime(blob.type) hace que el nombre y el
+  // Content-Type sigan al blob real, así que el respaldo no requiere nada
+  // más.
+  let resuelto=false;
+  const entregar=blob=>{
+    if(resuelto)return; resuelto=true;
+    if(blob){ cb(blob); return; }
+    notify('No pudimos preparar esa imagen. Prueba con otro archivo.','err');
+  };
+  const respaldo=setTimeout(()=>{
+    if(resuelto)return;
+    console.warn('toBlob('+mime+') no respondio; se re-codifica en PNG');
+    lienzo.toBlob(entregar,'image/png');
+  },2500);
+  lienzo.toBlob(b=>{ clearTimeout(respaldo); entregar(b); },mime,calidad);
 }
 
 function cancelarRecorte(){ cerrarRecorte(); }
@@ -6352,7 +6386,18 @@ function cerrarRecorte(){
 function subirLogo(input){
   if(!input.files||!input.files[0])return;
   if(!puedeSubirFotos()){input.value='';return;}
-  abrirRecorteImagen(input.files[0],1,512,512,blob=>subirLogoBlob(blob));
+  // El LOGO sale en WebP con alfa, no en JPEG: la transparencia es lo que
+  // permite detectar que el logo no tiene fondo propio, y JPEG no tiene
+  // canal alfa — exportado así, lo transparente queda NEGRO y el análisis
+  // ve un fondo negro uniforme que no existe.
+  //
+  // Si el navegador no sabe codificar WebP, toBlob cae a PNG y
+  // extDeMime(blob.type) sigue al blob real, así que el nombre y el
+  // Content-Type acompañan solos. Los dos están en el whitelist del bucket.
+  //
+  // Portada, profesional, servicio y alianza siguen en JPEG: son fotos, no
+  // necesitan alfa, y en JPEG pesan mucho menos.
+  abrirRecorteImagen(input.files[0],1,512,512,blob=>subirLogoBlob(blob),'image/webp',0.92);
   input.value='';
 }
 
@@ -6391,8 +6436,16 @@ async function subirLogoBlob(blob){
       notify('El logo se subió, pero no quedó asociado al negocio.','warn');
       return;
     }
+    const antes=S.barberia.logo_url;
     S.barberia.logo_url=url.publicUrl;
     notify('Logo guardado ✓');
+    // El logo viejo con otra extensión queda sin referencias. Se borra
+    // DESPUÉS de que el update de barberias salió bien, nunca antes: si se
+    // borrara primero y el update fallara, el negocio se queda sin logo.
+    if(antes && antes!==url.publicUrl){
+      const viejo=antes.split('/fotos/')[1];
+      if(viejo) await sb.storage.from('fotos').remove([viejo.split('?')[0]]);
+    }
   }
 }
 
@@ -6438,7 +6491,10 @@ async function subirPortadaBlob(blob){
 // El análisis del logo ocurre SOLO en este panel. Las páginas públicas y
 // los correos leen barberias.color_marca y modo_tema y no analizan nada: si
 // color_marca es NULL, usan el aspecto actual de Reservia.
-let TEMA = { an: null, color: null, modo: 'auto', src: null };
+// `intentado` existe para que un logo que no se puede analizar no se
+// reintente en cada repintado de Ajustes: sin eso, un logo roto dispara un
+// decodificado de canvas cada vez que la pantalla se vuelve a pintar.
+let TEMA = { an: null, color: null, modo: 'auto', src: null, intentado: false };
 
 async function temaRefrescar(src) {
   const panel = document.getElementById('tema-panel');
@@ -6446,7 +6502,11 @@ async function temaRefrescar(src) {
   if (!src && !S.barberia.logo_url) { panel.style.display = 'none'; return; }
   panel.style.display = '';
   TEMA.src = src || S.barberia.logo_url;
+  TEMA.intentado = true;
   document.getElementById('tema-estado').textContent = 'Analizando tu logo…';
+  // extraerPaleta devuelve null si la imagen no carga o si getImageData
+  // lanza por canvas contaminado. temaPintar() lo maneja: muestra el aviso,
+  // deja el azul de Reservia elegible y el panel sigue usable.
   const an = await extraerPaleta(TEMA.src);
   TEMA.an = an;
   TEMA.modo = S.barberia.modo_tema || 'auto';
@@ -6478,6 +6538,19 @@ function temaMuestras() {
 }
 
 function temaElegirColor(hex) { if (hexValido(hex)) { TEMA.color = hex; temaPintar(); } }
+// El campo de texto valida con hexValido, la MISMA expresión que el check
+// de la base. Acepta con o sin #, y si no calza lo dice en vez de guardar
+// algo que la base va a rechazar.
+function temaElegirHex(v) {
+  let s = String(v || '').trim().toUpperCase();
+  if (s && s[0] !== '#') s = '#' + s;
+  if (!hexValido(s)) {
+    notify('Escribe un color como #2957D6 (seis dígitos)', 'warn');
+    document.getElementById('tema-hex').value = TEMA.color;
+    return;
+  }
+  temaElegirColor(s);
+}
 function temaElegirModo(m) { TEMA.modo = m; temaPintar(); }
 
 function temaPintar() {
@@ -6485,15 +6558,23 @@ function temaPintar() {
   const tokens = generarTema({ color: TEMA.color, modo: modo });
   const acento = tokens['--acento'];
 
-  // Las muestras.
+  // Las muestras. Cada una va en su propia columna para que la etiqueta
+  // quede DEBAJO de su botón: antes el div de la etiqueta era otro hijo del
+  // flex horizontal y aterrizaba al lado, no abajo.
   document.getElementById('tema-muestras').innerHTML = temaMuestras().map(m => {
     const sel = m.hex === TEMA.color;
-    return `<button onclick="temaElegirColor('${m.hex}')" title="${m.hex}"
-      style="width:36px;height:36px;border-radius:9px;background:${m.hex};cursor:pointer;padding:0;
-      border:${sel ? '2px solid var(--p1)' : '1px solid var(--border)'};
-      box-shadow:${sel ? '0 0 0 2px var(--bg)' : 'none'}"></button>` +
-      (m.etq ? `<div style="font-size:9px;color:var(--text3);width:36px;text-align:center;margin-top:-2px">${m.etq}</div>` : '');
+    return `<div style="display:flex;flex-direction:column;align-items:center;width:38px">
+      <button onclick="temaElegirColor('${m.hex}')" title="${m.hex}"
+        style="width:36px;height:36px;border-radius:9px;background:${m.hex};cursor:pointer;padding:0;
+        border:${sel ? '2px solid var(--p1)' : '1px solid var(--border)'}"></button>
+      <div style="font-size:9px;color:var(--text3);text-align:center;line-height:1.2;margin-top:3px;height:12px">${m.etq || ''}</div>
+    </div>`;
   }).join('');
+  // El campo libre refleja el color elegido, no lo pelea.
+  const hx = document.getElementById('tema-hex');
+  if (hx && document.activeElement !== hx) hx.value = TEMA.color;
+  const lb = document.getElementById('tema-libre');
+  if (lb) lb.value = TEMA.color.toLowerCase();
 
   // El estado, según lo que encontramos en el logo. Sin inventar un color
   // de marca donde no hay: si el logo es monocromático se dice.
@@ -6517,6 +6598,10 @@ function temaPintar() {
   franja.style.background = sup;
   const img = document.getElementById('tema-franja-logo');
   if (TEMA.src) { img.src = TEMA.src; img.style.display = ''; } else { img.style.display = 'none'; }
+  // La miniatura de arriba usa la misma superficie, para que no mienta
+  // sobre cómo se ve el logo.
+  const mini = document.getElementById('logo-preview');
+  if (mini) mini.style.background = sup;
 
   // Los tokens van SOLO a la tarjeta de vista previa, con setProperty.
   aplicarTema(tokens, document.getElementById('tema-vista'));
@@ -6554,10 +6639,27 @@ async function temaGuardar() {
     notify('No pudimos guardar el tema. Intenta de nuevo.', 'err');
     return;
   }
-  S.barberia.color_marca = TEMA.color;
-  S.barberia.modo_tema = modo;
-  TEMA.modo = modo;
-  document.getElementById('tema-modo').value = modo;
+  // Relectura: se confirma contra la base en vez de confiar en que el
+  // update hizo lo que pedimos. Si el check del hex rechazara el valor, el
+  // update traería error; pero una relectura también detecta el caso de que
+  // una política filtre la fila y el update no toque nada sin fallar.
+  const { data: fresco, error: eRead } = await sb.from('barberias')
+    .select('color_marca,modo_tema').eq('id', S.barberia.id).single();
+  if (eRead || !fresco) {
+    console.error('Guardado, pero no se pudo releer:', eRead && eRead.message);
+    notify('Tema guardado, pero no pudimos confirmarlo. Recarga la página.', 'warn');
+    return;
+  }
+  if (fresco.color_marca !== TEMA.color || fresco.modo_tema !== modo) {
+    console.error('La base quedó con otros valores:', fresco);
+    notify('El tema no quedó guardado como pedimos. Revisa e intenta de nuevo.', 'err');
+    return;
+  }
+  S.barberia.color_marca = fresco.color_marca;
+  S.barberia.modo_tema = fresco.modo_tema;
+  TEMA.color = fresco.color_marca;
+  TEMA.modo = fresco.modo_tema;
+  document.getElementById('tema-modo').value = fresco.modo_tema;
   notify('Tema guardado ✓');
   temaPintar();
 }
