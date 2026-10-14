@@ -368,7 +368,7 @@ function extraerPaleta(src, N) {
       var sd = Math.sqrt(ll.reduce(function (a, b) { return a + (b - mu) * (b - mu); }, 0) / (ll.length || 1));
       var uniforme = transparente ? false : (sd < U_FONDO_UNIFORME);
       var op = 0, sats = [], sr = 0, sg = 0, sb = 0, nfg = 0, nmed = 0;
-      var cuenta = {}, grupos = {};
+      var grupos = {};
       for (var j2 = 0; j2 < N; j2++) for (var i2 = 0; i2 < N; i2++) {
         var k2 = (j2 * N + i2) * 4;
         if (d[k2 + 3] < 100) continue;
@@ -385,19 +385,15 @@ function extraerPaleta(src, N) {
         sr += d[k2]; sg += d[k2 + 1]; sb += d[k2 + 2];
         var q = function (v) { return Math.round(v / 24) * 24; };
         var key = hexDe(q(d[k2]), q(d[k2 + 1]), q(d[k2 + 2]));
-        cuenta[key] = (cuenta[key] || 0) + 1;
-        // Un píxel sin color medible cuenta como saturación CERO, no se
-        // descarta. Es la diferencia que importa: un píxel casi blanco o
-        // casi negro es EVIDENCIA de que el logo no tiene color, así que
-        // sacarlo de la muestra sube la mediana artificialmente. Medido:
-        // descartándolos, Tico (logo blanco, #EBEDEE con diferencia 3)
-        // pasaba a "sutil" con un acento gris azulado, porque solo quedaba
-        // el borde de antialias con un tinte leve. Contándolos como 0,
-        // vuelve a ser monocromático, que es lo que es.
         // Los píxeles sin color medible NO entran a la muestra de
-        // saturación: se cuentan aparte, con la fracción. Así la mediana
+        // saturación: salen acá con el continue, y se cuentan aparte en
+        // nmed, que es lo que alimenta fraccionConColor. Así la mediana
         // describe el material que SÍ tiene color, y la fracción dice si
-        // ese material alcanza para hablar de un color de marca.
+        // ese material alcanza para hablar de un color de marca. Hacen
+        // falta las dos: Tico (logo blanco, #EBEDEE con diferencia 3) tiene
+        // saturación alta en lo poco que queda, pero solo el 4,6% de su
+        // primer plano tiene color medible, y por eso sale monocromático,
+        // que es lo que es.
         if (!tieneColorMedible(d[k2], d[k2 + 1], d[k2 + 2])) continue;
         nmed++;
         var st = satHSV(d[k2], d[k2 + 1], d[k2 + 2]);
