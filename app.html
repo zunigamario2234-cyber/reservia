@@ -6423,19 +6423,21 @@ function subirLogo(input){
 }
 
 async function subirLogoBlob(blob){
-  // Preview
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    const preview=document.getElementById('logo-preview');
-    preview.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:contain;padding:4px">`;
-    // Extract colors
-    // Se analiza el blob LOCAL, que ya está acá: sin ir a la red y sin
-    // depender de CORS. temaRefrescar() sabe caer a logo_url cuando se
-    // entra a Ajustes sin subir nada.
-    temaRefrescar(e.target.result);
-  };
-  reader.readAsDataURL(blob);
-  // Upload to Supabase
+  // La miniatura y el panel del tema se pintan DESPUÉS de que el logo quedó
+  // subido y asociado al negocio, nunca antes. Antes se pintaban al leer el
+  // blob, en paralelo con la subida: si la subida o el update fallaban, el
+  // panel mostraba un logo y unos colores que la base no tenía, y "Guardar
+  // tema" guardaba un color sacado de un logo que nadie más iba a ver.
+  //
+  // Se analiza el blob LOCAL (data URL), que ya está acá: sin ir a la red y
+  // sin depender de CORS. temaRefrescar() sabe caer a logo_url cuando se
+  // entra a Ajustes sin subir nada.
+  const dataUrl=await new Promise(res=>{
+    const reader=new FileReader();
+    reader.onload=e=>res(e.target.result);
+    reader.onerror=()=>res(null);
+    reader.readAsDataURL(blob);
+  });
   if(S.barberia){
     // La extensión sigue el formato que devolvió el recortador. Hoy es jpg
     // para los cinco; cuando el tema por logo pase el logo a PNG/WebP, el
@@ -6460,6 +6462,11 @@ async function subirLogoBlob(blob){
     const antes=S.barberia.logo_url;
     S.barberia.logo_url=url.publicUrl;
     notify('Logo guardado ✓');
+    if(dataUrl){
+      const preview=document.getElementById('logo-preview');
+      preview.innerHTML=`<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;padding:4px">`;
+      temaRefrescar(dataUrl);
+    }
     // El logo anterior queda huérfano SOLO cuando cambia la extensión. Se
     // borra después de que el update de barberias salió bien, nunca antes:
     // si se borrara primero y el update fallara, el negocio se queda sin
@@ -6533,20 +6540,28 @@ async function subirPortadaBlob(blob){
 // `intentado` existe para que un logo que no se puede analizar no se
 // reintente en cada repintado de Ajustes: sin eso, un logo roto dispara un
 // decodificado de canvas cada vez que la pantalla se vuelve a pintar.
-let TEMA = { an: null, color: null, modo: 'auto', src: null, intentado: false };
+// `turno` numera los análisis. Dos pueden superponerse (entrar a Ajustes
+// dispara uno con logo_url y subir un logo dispara otro con el blob), y el
+// que termina último no es necesariamente el que empezó último: gana el
+// último en EMPEZAR, y los anteriores descartan su resultado al volver.
+let TEMA = { an: null, color: null, modo: 'auto', src: null, intentado: false, turno: 0 };
 
 async function temaRefrescar(src) {
   const panel = document.getElementById('tema-panel');
   if (!panel || !S.barberia) return;
   if (!src && !S.barberia.logo_url) { panel.style.display = 'none'; return; }
   panel.style.display = '';
-  TEMA.src = src || S.barberia.logo_url;
+  const turno = ++TEMA.turno;
+  const fuente = src || S.barberia.logo_url;
+  TEMA.src = fuente;
   TEMA.intentado = true;
   document.getElementById('tema-estado').textContent = 'Analizando tu logo…';
-  // extraerPaleta devuelve null si la imagen no carga o si getImageData
-  // lanza por canvas contaminado. temaPintar() lo maneja: muestra el aviso,
-  // deja el azul de Reservia elegible y el panel sigue usable.
-  const an = await extraerPaleta(TEMA.src);
+  // extraerPaleta devuelve null si la imagen no carga, si getImageData
+  // lanza por canvas contaminado o si se agota el tiempo. temaPintar() lo
+  // maneja: muestra el aviso, deja el azul de Reservia elegible y el panel
+  // sigue usable.
+  const an = await extraerPaleta(fuente);
+  if (turno !== TEMA.turno) return;   // empezó otro análisis después
   TEMA.an = an;
   TEMA.modo = S.barberia.modo_tema || 'auto';
   // El color guardado manda sobre el sugerido: es la decisión del dueño.
@@ -6652,7 +6667,13 @@ function temaPintar() {
 
 async function temaGuardar() {
   if (!S.barberia) return;
-  if (!puedeSubirFotos()) return;
+  // Aviso propio, no el de puedeSubirFotos(): acá no se sube ninguna foto.
+  // Igual que allá, es solo el mensaje; la barrera real es la política de
+  // barberias en la base.
+  if (S.perfil?.rol !== 'dueno') {
+    notify('Solo el dueño puede cambiar el color de la plataforma', 'warn');
+    return;
+  }
   if (!hexValido(TEMA.color)) { notify('Ese color no es válido', 'err'); return; }
   const btn = document.getElementById('btn-tema-guardar');
   btn.disabled = true; btn.textContent = 'Guardando…';
