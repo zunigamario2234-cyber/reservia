@@ -326,12 +326,13 @@ function mediana(a) {
 // Tico perdía ocho de cada diez. A 150 sin suavizar queda a 0,2 puntos de
 // la resolución completa usando 1/12 de los píxeles.
 //
-// `ms` es el tiempo máximo de espera. Una imagen que nunca dispara onload ni
-// onerror (una red colgada al leer logo_url) dejaba el panel en "Analizando
-// tu logo…" para siempre. Al agotarse resuelve null, que el panel ya sabe
-// mostrar, y `listo` hace que una respuesta tardía no pise ese null: una
-// Promise resuelve una sola vez, pero sin la guarda el trabajo de canvas se
-// haría igual. Es inyectable para que la suite lo pruebe sin esperar.
+// `ms` es el tiempo máximo de espera. Con una imagen que nunca dispara
+// onload ni onerror, la promesa no resolvía, y temaRefrescar() la espera
+// con await después de mostrar "Analizando tu logo…". Al agotarse el tiempo
+// resuelve null, que el panel ya sabe mostrar, y `listo` hace que una
+// respuesta tardía no pise ese null: una Promise resuelve una sola vez,
+// pero sin la guarda el trabajo de canvas se haría igual. Es inyectable
+// para que la suite lo pruebe sin esperar.
 function extraerPaleta(src, N, ms) {
   N = N || 150;
   ms = ms || 8000;

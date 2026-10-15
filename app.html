@@ -6426,8 +6426,8 @@ async function subirLogoBlob(blob){
   // La miniatura y el panel del tema se pintan DESPUÉS de que el logo quedó
   // subido y asociado al negocio, nunca antes. Antes se pintaban al leer el
   // blob, en paralelo con la subida: si la subida o el update fallaban, el
-  // panel mostraba un logo y unos colores que la base no tenía, y "Guardar
-  // tema" guardaba un color sacado de un logo que nadie más iba a ver.
+  // panel podía mostrar un logo y unos colores que la base no tenía, y desde
+  // ahí "Guardar tema" podía guardar un color sacado de ese logo.
   //
   // Se analiza el blob LOCAL (data URL), que ya está acá: sin ir a la red y
   // sin depender de CORS. temaRefrescar() sabe caer a logo_url cuando se
@@ -6439,9 +6439,10 @@ async function subirLogoBlob(blob){
     reader.readAsDataURL(blob);
   });
   if(S.barberia){
-    // La extensión sigue el formato que devolvió el recortador. Hoy es jpg
-    // para los cinco; cuando el tema por logo pase el logo a PNG/WebP, el
-    // nombre lo acompaña solo.
+    // La extensión sigue el formato que devolvió el recortador. El logo se
+    // pide en WebP 0,92, y si el navegador no lo codifica (toBlob devuelve
+    // null o no responde) el recortador lo rehace en PNG: el nombre y el
+    // Content-Type acompañan al blob real.
     const fname=`logos/${S.barberia.id}/logo.${extDeMime(blob.type)}`;
     const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
     if(error){
