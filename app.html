@@ -6443,8 +6443,17 @@ async function subirLogoBlob(blob){
     // pide en WebP 0,92, y si el navegador no lo codifica (toBlob devuelve
     // null o no responde) el recortador lo rehace en PNG: el nombre y el
     // Content-Type acompañan al blob real.
-    const fname=`logos/${S.barberia.id}/logo.${extDeMime(blob.type)}`;
-    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    //
+    // El nombre es ÚNICO por subida (logo-<Date.now()>), no siempre
+    // logo.<ext>. Con un nombre fijo la URL pública no cambia entre subidas,
+    // y Supabase la sirve con Cache-Control: public, max-age=3600: el
+    // navegador que ya la tenía sigue mostrando el logo anterior hasta una
+    // hora, aunque el archivo en el bucket ya sea el nuevo. Una URL nueva no
+    // tiene nada en caché. Profesionales, servicios y alianzas ya suben así.
+    //
+    // Sin upsert: un nombre nuevo nunca debe pisar un archivo existente.
+    const fname=`logos/${S.barberia.id}/logo-${Date.now()}.${extDeMime(blob.type)}`;
+    const {error}=await sb.storage.from('fotos').upload(fname,blob,{contentType:blob.type});
     if(error){
       console.error('No se pudo subir el logo:',error.message);
       notify('No pudimos guardar el logo. Revisa tu conexión e intenta de nuevo.','err');
@@ -6454,10 +6463,21 @@ async function subirLogoBlob(blob){
     // La subida y la fila son dos pasos: si el archivo quedó pero barberias
     // no se actualizó, el logo existe y nadie lo ve. Antes esto no se
     // distinguía del éxito.
-    const {error:eUpd}=await sb.from('barberias').update({logo_url:url.publicUrl}).eq('id',S.barberia.id);
-    if(eUpd){
-      console.error('El logo se subió pero no se pudo guardar en el negocio:',eUpd.message);
-      notify('El logo se subió, pero no quedó asociado al negocio.','warn');
+    //
+    // El update devuelve la fila y se confirma que quedó con la URL nueva.
+    // Un update que una política filtra no da error: no toca ninguna fila
+    // y sigue de largo. Más abajo se BORRA el logo anterior, así que hay
+    // que saber que logo_url ya no lo apunta; sin esta confirmación el
+    // negocio podría quedar apuntando a un archivo borrado.
+    const {data:fila,error:eUpd}=await sb.from('barberias').update({logo_url:url.publicUrl}).eq('id',S.barberia.id).select('logo_url').maybeSingle();
+    if(eUpd||!fila||fila.logo_url!==url.publicUrl){
+      console.error('El logo se subió pero no se pudo guardar en el negocio:',eUpd?eUpd.message:fila);
+      notify('No pudimos guardar el logo. Intenta de nuevo.','err');
+      // El archivo recién subido no lo referencia nadie: el negocio sigue
+      // con su logo anterior, intacto. Se intenta borrar para no dejar un
+      // huérfano; si falla, es solo un archivo de más.
+      const {error:eLimpia}=await sb.storage.from('fotos').remove([fname]);
+      if(eLimpia) console.warn('El logo nuevo quedó huérfano:',fname,eLimpia.message);
       return;
     }
     const antes=S.barberia.logo_url;
@@ -6468,16 +6488,18 @@ async function subirLogoBlob(blob){
       preview.innerHTML=`<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;padding:4px">`;
       temaRefrescar(dataUrl);
     }
-    // El logo anterior queda huérfano SOLO cuando cambia la extensión. Se
-    // borra después de que el update de barberias salió bien, nunca antes:
-    // si se borrara primero y el update fallara, el negocio se queda sin
-    // logo.
+    // Con nombre único, el logo anterior queda huérfano en CADA subida, y
+    // también los de producción que siguen en logo.<ext> (jpg, jpeg, png o
+    // webp): todos cuelgan de logos/<id>/ y caen en esta misma limpieza la
+    // próxima vez que el dueño suba un logo. Se borra después de que el
+    // update de barberias salió bien, nunca antes: si se borrara primero y
+    // el update fallara, el negocio se queda sin logo.
     //
-    // Se comparan RUTAS, no URLs. Con upsert, reemplazar logo.webp por
-    // logo.webp es el caso normal, y ahí la ruta vieja ES la nueva: borrar
-    // eliminaría el archivo que acabamos de subir. Comparar las URLs
-    // completas parecía alcanzar, pero no: un logo_url con ?v= o con otra
-    // forma del host daría "distinto" apuntando al mismo objeto.
+    // Se comparan RUTAS, no URLs, y la ruta nueva nunca se borra: con
+    // nombre único no deberían coincidir, pero si logo_url ya apuntara al
+    // archivo recién subido, borrarlo dejaría al negocio sin logo. Comparar
+    // las URLs completas no alcanza: un logo_url con ?v= o con otra forma
+    // del host daría "distinto" apuntando al mismo objeto.
     //
     // Y se valida que la ruta vieja cuelgue de logos/<id del negocio>/
     // antes de tocar nada. Un logo_url corrupto o editado a mano no debe
