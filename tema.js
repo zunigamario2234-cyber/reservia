@@ -325,13 +325,29 @@ function mediana(a) {
 // Essentials desaparecía entero (0% de píxeles claros contra 1,9% real) y
 // Tico perdía ocho de cada diez. A 150 sin suavizar queda a 0,2 puntos de
 // la resolución completa usando 1/12 de los píxeles.
-function extraerPaleta(src, N) {
+//
+// `ms` es el tiempo máximo de espera. Una imagen que nunca dispara onload ni
+// onerror (una red colgada al leer logo_url) dejaba el panel en "Analizando
+// tu logo…" para siempre. Al agotarse resuelve null, que el panel ya sabe
+// mostrar, y `listo` hace que una respuesta tardía no pise ese null: una
+// Promise resuelve una sola vez, pero sin la guarda el trabajo de canvas se
+// haría igual. Es inyectable para que la suite lo pruebe sin esperar.
+function extraerPaleta(src, N, ms) {
   N = N || 150;
-  return new Promise(function (res) {
-    var img = new Image();
+  ms = ms || 8000;
+  return new Promise(function (resolver) {
+    var listo = false, reloj = null, img = new Image();
+    var res = function (v) {
+      if (listo) return;
+      listo = true;
+      clearTimeout(reloj);
+      resolver(v);
+    };
+    reloj = setTimeout(function () { res(null); }, ms);
     img.crossOrigin = 'anonymous';   // permite re-extraer del logo ya guardado
     img.onerror = function () { res(null); };
     img.onload = function () {
+      if (listo) return;
       var c = document.createElement('canvas');
       c.width = N; c.height = N;
       var x = c.getContext('2d');

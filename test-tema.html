@@ -595,6 +595,48 @@ verdad('O no existe cargarTemaGuardado', typeof window.cargarTemaGuardado === 'u
   check('Q13 deduplica hex repetidos', mrep.length, 1);
   check('Q13 respeta el limite', muestrasPara({ clase: 'color', acentoSugerido: '#111111',
     colorRepresentativo: '#222222', paleta: ['#333333','#444444','#555555','#666666','#777777','#888888'] }, 3).length, 3);
+
+  // Q14 · extraerPaleta se CUELGA: una imagen que no dispara onload ni
+  // onerror. Se reemplaza Image por una real cuyo src queda retenido hasta
+  // que la prueba lo suelte, y se cuentan los canvas creados para saber si
+  // la respuesta tardía hizo trabajo.
+  var ImageReal = window.Image, retenidas = [];
+  window.Image = function () {
+    var im = new ImageReal();
+    Object.defineProperty(im, 'src', {
+      configurable: true,
+      set: function (v) { retenidas.push(function () {
+        Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src').set.call(im, v);
+      }); },
+      get: function () { return ''; }
+    });
+    return im;
+  };
+  var crearReal = document.createElement.bind(document), canvasCreados = 0;
+  document.createElement = function (t) {
+    if (String(t).toLowerCase() === 'canvas') canvasCreados++;
+    return crearReal(t);
+  };
+  var espera = function (ms, v) { return new Promise(function (r) { setTimeout(function () { r(v); }, ms); }); };
+  try {
+    var pColgada = extraerPaleta(imgSutil, 150, 60);
+    var r14 = await Promise.race([pColgada, espera(1500, 'SIGUE COLGADA')]);
+    check('Q14 colgada: resuelve null al agotarse el tiempo', r14, null);
+    check('Q14 colgada: la imagen quedo retenida (la prueba sí colgó)', retenidas.length, 1);
+    // Ahora la imagen llega tarde, y es una imagen VÁLIDA: sin la guarda,
+    // onload haría el análisis completo.
+    retenidas.forEach(function (f) { f(); });
+    await espera(300);
+    check('Q14 tardia: no hace trabajo de canvas', canvasCreados, 0);
+    check('Q14 tardia: el resultado sigue siendo null', await pColgada, null);
+  } finally {
+    window.Image = ImageReal;
+    document.createElement = crearReal;
+  }
+  // Y una imagen que SÍ carga antes del tiempo no se ve afectada.
+  var q14ok = await extraerPaleta(imgSutil, 150, 5000);
+  verdad('Q14 a tiempo: devuelve el analisis', q14ok !== null && q14ok.clase === 'sutil',
+    'obtenido ' + (q14ok && q14ok.clase));
   veredicto();
 })();
 
