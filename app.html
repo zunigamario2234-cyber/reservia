@@ -6526,28 +6526,73 @@ function subirPortada(input){
 }
 
 async function subirPortadaBlob(blob){
-  const reader=new FileReader();
-  reader.onload=e=>{
-    document.getElementById('portada-preview').innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
-  };
-  reader.readAsDataURL(blob);
+  // La vista previa se pinta DESPUÉS de que la portada quedó subida y
+  // asociada al negocio, igual que el logo: antes se pintaba al leer el
+  // blob, en paralelo con la subida, así que una subida fallida dejaba al
+  // dueño mirando una portada que la base no tenía.
+  const dataUrl=await new Promise(res=>{
+    const reader=new FileReader();
+    reader.onload=e=>res(e.target.result);
+    reader.onerror=()=>res(null);
+    reader.readAsDataURL(blob);
+  });
   if(S.barberia){
-    const fname=`portadas/${S.barberia.id}/portada.${extDeMime(blob.type)}`;
-    const {error}=await sb.storage.from('fotos').upload(fname,blob,{upsert:true,contentType:blob.type});
+    // NOMBRE ÚNICO y sin upsert, el mismo arreglo que el logo en d0f4ec0.
+    // Supabase sirve los objetos públicos con Cache-Control: public,
+    // max-age=3600, así que reemplazar el archivo en la MISMA URL deja al
+    // navegador y a los proxies mostrando la portada vieja hasta una hora.
+    //
+    // En la portada esto pesa más que en el logo: se ve en TRES páginas
+    // públicas —reservar.html, club.html y unirse.html—, así que el que se
+    // queda con la imagen vieja no es solo el dueño que acaba de
+    // cambiarla: son sus clientes.
+    const fname=`portadas/${S.barberia.id}/portada-${Date.now()}.${extDeMime(blob.type)}`;
+    const {error}=await sb.storage.from('fotos').upload(fname,blob,{contentType:blob.type});
     if(error){
       console.error('No se pudo subir la portada:',error.message);
       notify('No pudimos guardar la portada. Revisa tu conexión e intenta de nuevo.','err');
       return;
     }
     const {data:url}=sb.storage.from('fotos').getPublicUrl(fname);
-    const {error:eUpd}=await sb.from('barberias').update({foto_portada:url.publicUrl}).eq('id',S.barberia.id);
-    if(eUpd){
-      console.error('La portada se subió pero no se pudo guardar en el negocio:',eUpd.message);
-      notify('La portada se subió, pero no quedó asociada al negocio.','warn');
+    // Se CONFIRMA la fila, no se asume: un update que no toca ninguna fila
+    // no devuelve error, así que sin esto una política que filtre la fila
+    // pasaría por éxito y la portada quedaría subida pero no referenciada.
+    const {data:fila,error:eUpd}=await sb.from('barberias').update({foto_portada:url.publicUrl}).eq('id',S.barberia.id).select('foto_portada').maybeSingle();
+    if(eUpd||!fila||fila.foto_portada!==url.publicUrl){
+      console.error('La portada se subió pero no se pudo guardar en el negocio:',eUpd?eUpd.message:fila);
+      notify('No pudimos guardar la portada. Intenta de nuevo.','err');
+      // Borrar el recién subido SOLO es seguro con nombre único: con el
+      // nombre fijo de antes, este remove habría borrado la portada
+      // VIGENTE, que es justo lo que mostró la mutación M3 del arnés del
+      // logo.
+      const {error:eLimpia}=await sb.storage.from('fotos').remove([fname]);
+      if(eLimpia) console.warn('La portada nueva quedó huérfana:',fname,eLimpia.message);
       return;
     }
+    const antes=S.barberia.foto_portada;
     S.barberia.foto_portada=url.publicUrl;
     notify('Portada guardada ✓');
+    if(dataUrl){
+      document.getElementById('portada-preview').innerHTML=`<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
+    }
+    // Con nombre único la portada anterior queda huérfana en CADA subida, y
+    // también las de producción que siguen en portada.<ext>: todas cuelgan
+    // de portadas/<id>/ y caen en esta misma limpieza la próxima vez que el
+    // dueño suba una. Se borra después de que el update salió bien, nunca
+    // antes.
+    //
+    // Se comparan RUTAS, no URLs, y la ruta nueva nunca se borra. Y se
+    // valida que la ruta vieja cuelgue de portadas/<id del negocio>/: un
+    // foto_portada corrupto o editado a mano no debe poder dirigir un
+    // borrado a otra carpeta.
+    const rutaVieja=antes?(antes.split('/fotos/')[1]||'').split('?')[0]:'';
+    const prefijo=`portadas/${S.barberia.id}/`;
+    if(rutaVieja && rutaVieja!==fname && rutaVieja.startsWith(prefijo) && rutaVieja.indexOf('..')===-1){
+      const {error:eDel}=await sb.storage.from('fotos').remove([rutaVieja]);
+      // Un borrado fallido no rompe nada: la portada nueva ya está subida,
+      // guardada y referenciada. Queda un archivo de más y nada más.
+      if(eDel) console.warn('La portada anterior quedó sin borrar:',rutaVieja,eDel.message);
+    }
   }
 }
 
