@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>test · tema en páginas públicas y lado escritor</title>
+<style>
+body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0b0c10;color:#d8dae0;padding:18px;line-height:1.5}
+pre{white-space:pre-wrap;font-size:12px}
+pre.ok{color:#5cd685}
+pre.fail{color:#ff6b6b}
+h1{font-size:14px;margin-bottom:10px;color:#9aa3af;font-weight:600}
+</style>
+</head>
+<body>
+<h1>test · tema en páginas públicas y lado escritor</h1>
+<pre id="resultado">corriendo…</pre>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// Prueba el tema público contra las PÁGINAS REALES y el lado escritor
+// contra las FUNCIONES REALES de app.html. No hay réplicas de la lógica
+// acá: todo lo que se afirma se afirma sobre el archivo que se despliega.
+//
+// CÓMO FUNCIONA. Baja la página por XHR, le quita la llamada `init();`
+// —que es lo único que la haría arrancar sola y pedir datos a la red— y la
+// monta en un iframe con srcdoc. srcdoc conserva el origen del padre, así
+// que se puede leer contentWindow y parchear sb, S y notify. Los src
+// relativos (tema.js, supabase-config.js) resuelven contra la URL de ESTE
+// archivo, que vive en la misma carpeta.
+//
+// ⚠ CÓMO CORRERLO. Necesita leer archivos vecinos por XHR, y Chrome lo
+// prohíbe desde file:// salvo con una bandera:
+//
+//   chrome --headless=old --allow-file-access-from-files \
+//          --virtual-time-budget=120000 --dump-dom \
+//          "file:///.../test-paginas-publicas-tema.html"
+//
+// Y el veredicto se lee en la CLASE del <pre id="resultado"> (ok o fail),
+// NUNCA buscando un texto de éxito en la salida: un grep de "TODO VERDE"
+// encuentra la cadena en este propio código y da verde siempre.
+//
+// ⚠ NADA DE TEMPORIZADORES PROPIOS que compitan con el reloj virtual. Con
+// --virtual-time-budget un setTimeout se dispara casi al instante en
+// tiempo real, así que un "tope" de 2 s declara colgado algo que solo iba
+// por el tercer await. Se espera con await y punto.
+// ═══════════════════════════════════════════════════════════════════════
+
+var total = 0, fallas = [];
+function check(nombre, obtenido, esperado) {
+  total++;
+  var ok = String(obtenido) === String(esperado);
+  if (!ok) fallas.push(nombre + '\n      obtenido: ' + obtenido + '\n      esperado: ' + esperado);
+  return ok;
+}
+function verdad(nombre, cond, detalle) {
+  total++;
+  if (!cond) fallas.push(nombre + (detalle ? '\n      ' + detalle : ''));
+  return !!cond;
+}
+
+function bajar(url) {
+  return new Promise(function (res, rej) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onload = function () { res(x.responseText); };
+    x.onerror = function () { rej(new Error('no se pudo bajar ' + url)); };
+    x.send();
+  });
+}
+
+// Monta un documento en un iframe srcdoc y espera a que termine de cargar.
+function montar(html) {
+  return new Promise(function (res) {
+    var f = document.createElement('iframe');
+    f.style.cssText = 'width:420px;height:300px;position:absolute;left:-9999px';
+    f.srcdoc = html;
+    f.addEventListener('load', function () { res(f.contentWindow); });
+    document.body.appendChild(f);
+  });
+}
+
+// ─── grupo P: la página pública ────────────────────────────────────────
+// Se le quita `init();` para controlar cuándo arranca y con qué datos.
+// Un documento srcdoc hereda la URL del padre, así que no tiene query
+// string y la página saldría en su primera línea:
+//   if(!BARBERIA_ID || !TOKEN){ mostrarError(...); return; }
+// En vez de reescribir esas líneas —que son código bajo prueba— se stubbea
+// el ENTORNO: un preludio inyectado antes del script de la página cambia
+// URLSearchParams para que devuelva el id y el token. El código de la
+// página no se toca ni una letra.
+var PRELUDIO = '<script>window.URLSearchParams=function(){return{get:function(k){' +
+  'return {id:"TEST-ID",barberia:"TEST-ID",k:"TOKEN-DE-PRUEBA"}[k]||null;}};};<\/script>';
+
+function prepararPagina(txt, opciones) {
+  opciones = opciones || {};
+  var out = txt.replace(/^init\(\);\s*$/m, '');
+  verdadGlobalInit = out.indexOf('\ninit();') === -1;
+  out = out.replace('<head>', '<head>' + PRELUDIO);
+  if (opciones.romperTema) {
+    // Simula el 404: el src apunta a un archivo que no existe, así que
+    // tema.js no define nada y las guardas typeof tienen que atajarlo.
+    out = out.replace('src="tema.js"', 'src="tema-ESTE-ARCHIVO-NO-EXISTE.js"');
+  }
+  return out;
+}
+var verdadGlobalInit = false;
+
+// Parchea sb/S/notify en la página y corre su init() con la fila dada.
+async function correrPagina(w, fila) {
+  // `sb` se declara con const en la página, así que NO se puede reasignar:
+  // se mutan sus propiedades. Reasignarlo lanza "Assignment to constant
+  // variable" y el arnés se cae antes de probar nada.
+  w.eval([
+    'window.__fila = ' + JSON.stringify(fila) + ';',
+    'sb.from = function(){ return { select: function(){ return { eq: function(){ return {',
+    '    single: async function(){ return { data: window.__fila, error: null }; }',
+    '  }; } }; } }; };',
+    'sb.rpc = async function(){ return { data: null, error: null }; };'
+  ].join('\n'));
+  await w.eval('init()');
+}
+
+function estiloRaiz(w) {
+  var s = w.document.documentElement.getAttribute('style');
+  return s === null ? '' : s;
+}
+function leer(w, nombre) {
+  return w.document.documentElement.style.getPropertyValue(nombre).trim();
+}
+
+async function grupoP(txtOriginal) {
+  var FONDO = '#08090d';
+
+  // P1 — sin color de marca: CERO setProperty.
+  var w1 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(w1, { nombre: 'Sin Tema', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: null, color_fondo_logo: null });
+  check('P1 sin color_marca, el style de <html> queda VACIO', estiloRaiz(w1), '');
+  verdad('P1 la pagina igual funciono (pinto el nombre)',
+         w1.document.getElementById('h-nombre').textContent.indexOf('Sin Tema') !== -1,
+         'h-nombre = ' + w1.document.getElementById('h-nombre').textContent);
+
+  // P2 — con color de marca: los cinco tokens, con los valores medidos.
+  var w2 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(w2, { nombre: 'ZZ prueba bucket', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: '#3104F2', color_fondo_logo: null });
+  check('P2 --acento',              leer(w2, '--acento'), '#8468FC');
+  check('P2 --acento-2 (igual al acento: degradado plano)', leer(w2, '--acento-2'), '#8468FC');
+  check('P2 --texto-sobre-acento',  leer(w2, '--texto-sobre-acento'), '#15181D');
+  check('P2 --acento-hover (aclarado 14%)',   leer(w2, '--acento-hover'), '#957DFC');
+  check('P2 --acento-2-hover',      leer(w2, '--acento-2-hover'), '#957DFC');
+  check('P2 --fondo-logo NO se toca si color_fondo_logo es NULL', leer(w2, '--fondo-logo'), '');
+
+  // P3 — los contrastes se RECALCULAN acá, no se copian de un informe.
+  // El acento se usa como texto (.ayuda b) y como borde (input:focus), así
+  // que se mide contra el fondo real de la página.
+  var ac = leer(w2, '--acento');
+  var sobre = leer(w2, '--texto-sobre-acento');
+  var hov = leer(w2, '--acento-hover');
+  var cAcentoFondo = w2.contrasteHex(ac, FONDO);
+  var cTextoAcento = w2.contrasteHex(sobre, ac);
+  var cHoverFondo  = w2.contrasteHex(hov, FONDO);
+  var cHoverTexto  = w2.contrasteHex(sobre, hov);
+  verdad('P3 acento vs fondo cumple 4.5 (texto)', cAcentoFondo >= 4.5, ac + ' vs ' + FONDO + ' = ' + cAcentoFondo.toFixed(2) + ':1');
+  verdad('P3 acento vs fondo cumple 3.0 (borde)', cAcentoFondo >= 3.0, cAcentoFondo.toFixed(2) + ':1');
+  verdad('P3 texto sobre acento cumple 4.5',      cTextoAcento >= 4.5, sobre + ' sobre ' + ac + ' = ' + cTextoAcento.toFixed(2) + ':1');
+  verdad('P3 hover vs fondo cumple 3.0',          cHoverFondo  >= 3.0, hov + ' vs ' + FONDO + ' = ' + cHoverFondo.toFixed(2) + ':1');
+  verdad('P3 texto sobre hover cumple 4.5',       cHoverTexto  >= 4.5, cHoverTexto.toFixed(2) + ':1');
+  // Y la prueba que mata el mutante de "pintar el color crudo": el acento
+  // aplicado NO puede ser el color_marca tal cual, porque ese da ~2:1.
+  verdad('P3 el acento NO es el color_marca crudo', ac.toUpperCase() !== '#3104F2',
+         'aplicado ' + ac + ', crudo #3104F2 da ' + w2.contrasteHex('#3104F2', FONDO).toFixed(2) + ':1');
+
+  // P4 — color_fondo_logo se honra SOLO si hay color de marca.
+  var w4 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(w4, { nombre: 'Con fondo', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: '#3104F2', color_fondo_logo: '#101820' });
+  check('P4 --fondo-logo se aplica con color de marca', leer(w4, '--fondo-logo'), '#101820');
+
+  var w5 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(w5, { nombre: 'Solo fondo', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: null, color_fondo_logo: '#101820' });
+  check('P4 con color_marca NULL, color_fondo_logo se IGNORA y el style queda vacio',
+        estiloRaiz(w5), '');
+
+  // P5 — hex inválidos: ni se aplican ni rompen la página.
+  var basura = ['rojo', '#12131f;}body{display:none', '#FFF', '', '#GGGGGG', 'javascript:alert(1)'];
+  for (var i = 0; i < basura.length; i++) {
+    var wb = await montar(prepararPagina(txtOriginal));
+    await correrPagina(wb, { nombre: 'Basura', whatsapp: null, foto_portada: null,
+                             logo_url: null, color_marca: basura[i], color_fondo_logo: basura[i] });
+    check('P5 color_marca invalido (' + JSON.stringify(basura[i]) + ') deja el style vacio',
+          estiloRaiz(wb), '');
+    verdad('P5 y la pagina sigue funcionando con (' + JSON.stringify(basura[i]) + ')',
+           wb.document.getElementById('h-nombre').textContent.indexOf('Basura') !== -1);
+  }
+
+  // P6 — tema.js NO disponible (404 simulado). Es la prueba que exige el
+  // try/catch y las guardas typeof: la página tiene que quedar EXACTA.
+  var w6 = await montar(prepararPagina(txtOriginal, { romperTema: true }));
+  verdad('P6 con tema.js roto, generarTema no existe en la pagina',
+         w6.eval('typeof generarTema') === 'undefined',
+         'typeof generarTema = ' + w6.eval('typeof generarTema'));
+  await correrPagina(w6, { nombre: 'Sin tema.js', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: '#3104F2', color_fondo_logo: '#101820' });
+  check('P6 sin tema.js, el style de <html> queda VACIO', estiloRaiz(w6), '');
+  verdad('P6 sin tema.js, la pagina SIGUE FUNCIONANDO (pinto el nombre)',
+         w6.document.getElementById('h-nombre').textContent.indexOf('Sin tema.js') !== -1,
+         'h-nombre = ' + w6.document.getElementById('h-nombre').textContent);
+  verdad('P6 sin tema.js, el formulario quedo pintado (init llego al final)',
+         !!w6.document.getElementById('form-alta') ||
+         w6.document.body.innerHTML.indexOf('WhatsApp') !== -1,
+         'no se encontro el formulario');
+
+  // P7 — la GUARDA typeof, aislada del try/catch.
+  //
+  // Sin esto, quitar la guarda no rompe ninguna prueba: el try/catch del
+  // llamador atrapa el ReferenceError y la página sigue igual, así que las
+  // dos defensas se tapan entre sí y la suite no distingue. Acá se llama a
+  // aplicarTemaPublico DIRECTAMENTE, sin try/catch de por medio: tiene que
+  // DEVOLVER false, no lanzar.
+  var w7 = await montar(prepararPagina(txtOriginal, { romperTema: true }));
+  var r7 = w7.eval([
+    '(function(){ try {',
+    '  var v = aplicarTemaPublico({ color_marca: "#3104F2", color_fondo_logo: "#101820" });',
+    '  return "devolvio:" + v;',
+    '} catch (e) { return "LANZO:" + e.name; } })()'
+  ].join('\n'));
+  check('P7 sin tema.js, aplicarTemaPublico DEVUELVE false y no lanza', r7, 'devolvio:false');
+  check('P7 y no escribio ninguna variable', estiloRaiz(w7), '');
+
+  // P8 — el TRY/CATCH, aislado de la guarda typeof.
+  //
+  // Caso que la guarda no puede atajar: tema.js SÍ cargó, así que
+  // typeof generarTema === 'function' y la guarda deja pasar, pero
+  // generarTema lanza. Solo el try/catch del llamador salva la página.
+  var w8 = await montar(prepararPagina(txtOriginal));
+  w8.eval('generarTema = function(){ throw new Error("boom desde generarTema"); };');
+  await correrPagina(w8, { nombre: 'Tema que explota', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: '#3104F2', color_fondo_logo: null });
+  check('P8 si generarTema lanza, el style queda VACIO', estiloRaiz(w8), '');
+  verdad('P8 y la pagina SIGUE FUNCIONANDO (pinto el nombre)',
+         w8.document.getElementById('h-nombre').textContent.indexOf('Tema que explota') !== -1,
+         'h-nombre = ' + w8.document.getElementById('h-nombre').textContent);
+  verdad('P8 y el formulario quedo pintado',
+         w8.document.body.innerHTML.indexOf('WhatsApp') !== -1,
+         'no se encontro el formulario');
+
+  verdad('P0 el arnes quito init() de la pagina', verdadGlobalInit);
+}
+
+// ─── grupo E: el lado escritor de app.html ─────────────────────────────
+function prepararApp(txt) {
+  return txt.replace(/^init\(\);\s*$/m, '');
+}
+
+// Deja S, sb y notify controlados y devuelve el registro de lo que pasó.
+function stubsApp(w, opciones) {
+  opciones = opciones || {};
+  w.eval([
+    'window.__reg = { orden: [], updates: [], uploads: [], notifs: [] };',
+    'notify = function (m, t) { window.__reg.notifs.push((t || "ok") + ": " + m); };',
+    'S.barberia = { id: "TEST-ID", logo_url: null, color_marca: null, modo_tema: "auto", color_fondo_logo: ' +
+      JSON.stringify(opciones.fondoPrevio === undefined ? null : opciones.fondoPrevio) + ' };',
+    'S.perfil = { rol: "dueno" };',
+    'sb.storage = { from: function(){ return {',
+    '  upload: async function (p) {',
+    '    window.__reg.orden.push("upload:inicio");',
+    '    window.__reg.uploads.push(p);',
+    '    await new Promise(function(r){ r(); });',
+    '    window.__reg.orden.push("upload:fin");',
+    '    return { error: null };',
+    '  },',
+    '  getPublicUrl: function (p) { return { data: { publicUrl: "https://x/storage/v1/object/public/fotos/" + p } }; },',
+    '  remove: async function (a) { window.__reg.orden.push("remove"); return { data: [], error: null }; }',
+    '}; } };',
+    'sb.from = function(){ return { update: function (o) {',
+    '    window.__reg.updates.push(JSON.parse(JSON.stringify(o)));',
+    '    return { eq: function () { return {',
+    '      select: function () { return { maybeSingle: async function () {',
+    '        var r = {};',
+    '        if ("logo_url" in o) r.logo_url = o.logo_url;',
+    '        if ("color_fondo_logo" in o) r.color_fondo_logo = o.color_fondo_logo;',
+    '        return { data: r, error: null };',
+    '      } }; },',
+    '      then: undefined',
+    '    }; } };',
+    '  },',
+    '  select: function(){ return { eq: function(){ return { single: async function(){',
+    '    var u = window.__reg.updates[window.__reg.updates.length - 1] || {};',
+    '    return { data: { color_marca: u.color_marca, modo_tema: u.modo_tema,',
+    '                     color_fondo_logo: ("color_fondo_logo" in u) ? u.color_fondo_logo : S.barberia.color_fondo_logo },',
+    '             error: null };',
+    '  } }; } }; }',
+    '}; };'
+  ].join('\n'));
+}
+
+async function grupoE(txtApp) {
+  // E1 — el análisis corre EN PARALELO con la subida, no antes.
+  // Se detecta por el ORDEN: si fuera secuencial, "analisis:fin" llegaría
+  // antes de "upload:inicio".
+  var wA = await montar(prepararApp(txtApp));
+  stubsApp(wA);
+  wA.eval([
+    'extraerPaleta = async function () {',
+    '  window.__reg.orden.push("analisis:inicio");',
+    '  for (var i = 0; i < 6; i++) await new Promise(function(r){ r(); });',
+    '  window.__reg.orden.push("analisis:fin");',
+    '  return { fondo: "#101820", fondoUniforme: true, fondoTransparente: false };',
+    '};',
+    'temaRefrescar = async function(){ return undefined; };'
+  ].join('\n'));
+  await wA.eval('subirLogoBlob(new Blob([new Uint8Array([1,2,3])],{type:"image/webp"}))');
+  var orden = wA.eval('window.__reg.orden.join(",")');
+  var iUp = orden.split(',').indexOf('upload:inicio');
+  var iFin = orden.split(',').indexOf('analisis:fin');
+  verdad('E1 el analisis corre en PARALELO con la subida', iUp !== -1 && iFin !== -1 && iUp < iFin,
+         'orden = ' + orden);
+
+  // E2 — un solo update, con las DOS columnas.
+  var ups = JSON.parse(wA.eval('JSON.stringify(window.__reg.updates)'));
+  check('E2 subirLogoBlob hace UN solo update', ups.length, 1);
+  verdad('E2 ese update trae logo_url', ups[0] && 'logo_url' in ups[0], JSON.stringify(ups[0]));
+  verdad('E2 ese update trae color_fondo_logo', ups[0] && 'color_fondo_logo' in ups[0], JSON.stringify(ups[0]));
+  check('E2 con fondo uniforme y opaco escribe el fondo', ups[0] && ups[0].color_fondo_logo, '#101820');
+  verdad('E2 NO escribe modo_tema', ups[0] && !('modo_tema' in ups[0]), JSON.stringify(ups[0]));
+  verdad('E2 NO escribe color_marca', ups[0] && !('color_marca' in ups[0]), JSON.stringify(ups[0]));
+
+  // E3 — análisis fallido en la SUBIDA: escribe NULL (el logo cambió, el
+  // valor viejo ya no describe nada).
+  var wB = await montar(prepararApp(txtApp));
+  stubsApp(wB, { fondoPrevio: '#AABBCC' });
+  wB.eval([
+    'extraerPaleta = async function () { return null; };',
+    'temaRefrescar = async function(){ return undefined; };'
+  ].join('\n'));
+  await wB.eval('subirLogoBlob(new Blob([new Uint8Array([1])],{type:"image/webp"}))');
+  var upsB = JSON.parse(wB.eval('JSON.stringify(window.__reg.updates)'));
+  verdad('E3 subida con analisis fallido incluye la columna', upsB[0] && 'color_fondo_logo' in upsB[0], JSON.stringify(upsB[0]));
+  check('E3 y la escribe en NULL, no deja el valor viejo', upsB[0] && upsB[0].color_fondo_logo, 'null');
+
+  // E4 — fondo NO uniforme en la subida: NULL.
+  var wC = await montar(prepararApp(txtApp));
+  stubsApp(wC);
+  wC.eval([
+    'extraerPaleta = async function () { return { fondo: "#101820", fondoUniforme: false, fondoTransparente: false }; };',
+    'temaRefrescar = async function(){ return undefined; };'
+  ].join('\n'));
+  await wC.eval('subirLogoBlob(new Blob([new Uint8Array([1])],{type:"image/webp"}))');
+  check('E4 fondo no uniforme -> NULL',
+        JSON.parse(wC.eval('JSON.stringify(window.__reg.updates)'))[0].color_fondo_logo, 'null');
+
+  // E5 — logo transparente en la subida: NULL.
+  var wD = await montar(prepararApp(txtApp));
+  stubsApp(wD);
+  wD.eval([
+    'extraerPaleta = async function () { return { fondo: "#101820", fondoUniforme: true, fondoTransparente: true }; };',
+    'temaRefrescar = async function(){ return undefined; };'
+  ].join('\n'));
+  await wD.eval('subirLogoBlob(new Blob([new Uint8Array([1])],{type:"image/webp"}))');
+  check('E5 logo transparente -> NULL',
+        JSON.parse(wD.eval('JSON.stringify(window.__reg.updates)'))[0].color_fondo_logo, 'null');
+
+  // ── temaGuardar: los TRES estados ───────────────────────────────────
+  // E6 — análisis VIGENTE con fondo bueno: escribe el fondo.
+  var wE = await montar(prepararApp(txtApp));
+  stubsApp(wE, { fondoPrevio: '#AABBCC' });
+  wE.eval([
+    'TEMA.color = "#3104F2"; TEMA.modo = "oscuro";',
+    'TEMA.turno = 3; TEMA.turnoResuelto = 3;',
+    'TEMA.an = { fondo: "#101820", fondoUniforme: true, fondoTransparente: false, modoSugerido: "oscuro" };'
+  ].join('\n'));
+  await wE.eval('temaGuardar()');
+  var upsE = JSON.parse(wE.eval('JSON.stringify(window.__reg.updates)'));
+  verdad('E6 analisis vigente: incluye color_fondo_logo', upsE[0] && 'color_fondo_logo' in upsE[0], JSON.stringify(upsE[0]));
+  check('E6 y escribe el fondo detectado', upsE[0] && upsE[0].color_fondo_logo, '#101820');
+
+  // E7 — análisis PENDIENTE: NO toca la columna.
+  var wF = await montar(prepararApp(txtApp));
+  stubsApp(wF, { fondoPrevio: '#AABBCC' });
+  wF.eval([
+    'TEMA.color = "#3104F2"; TEMA.modo = "oscuro";',
+    'TEMA.turno = 4; TEMA.turnoResuelto = 3;',   // el turno 4 todavia no resolvio
+    'TEMA.an = { fondo: "#101820", fondoUniforme: true, fondoTransparente: false, modoSugerido: "oscuro" };'
+  ].join('\n'));
+  await wF.eval('temaGuardar()');
+  var upsF = JSON.parse(wF.eval('JSON.stringify(window.__reg.updates)'));
+  verdad('E7 analisis PENDIENTE: NO incluye color_fondo_logo', upsF[0] && !('color_fondo_logo' in upsF[0]), JSON.stringify(upsF[0]));
+  verdad('E7 pero si guarda color_marca y modo_tema', upsF[0] && 'color_marca' in upsF[0] && 'modo_tema' in upsF[0], JSON.stringify(upsF[0]));
+
+  // E8 — análisis FALLIDO (turno resuelto, an null): NO toca la columna.
+  var wG = await montar(prepararApp(txtApp));
+  stubsApp(wG, { fondoPrevio: '#AABBCC' });
+  wG.eval([
+    'TEMA.color = "#3104F2"; TEMA.modo = "oscuro";',
+    'TEMA.turno = 2; TEMA.turnoResuelto = 2; TEMA.an = null;'
+  ].join('\n'));
+  await wG.eval('temaGuardar()');
+  var upsG = JSON.parse(wG.eval('JSON.stringify(window.__reg.updates)'));
+  verdad('E8 analisis FALLIDO: NO incluye color_fondo_logo', upsG[0] && !('color_fondo_logo' in upsG[0]), JSON.stringify(upsG[0]));
+
+  // E9 — análisis vigente con fondo NO uniforme: acá SÍ escribe NULL,
+  // porque el análisis es la autoridad y dice que no hay fondo que usar.
+  var wH = await montar(prepararApp(txtApp));
+  stubsApp(wH, { fondoPrevio: '#AABBCC' });
+  wH.eval([
+    'TEMA.color = "#3104F2"; TEMA.modo = "oscuro";',
+    'TEMA.turno = 1; TEMA.turnoResuelto = 1;',
+    'TEMA.an = { fondo: "#101820", fondoUniforme: false, fondoTransparente: false, modoSugerido: "oscuro" };'
+  ].join('\n'));
+  await wH.eval('temaGuardar()');
+  var upsH = JSON.parse(wH.eval('JSON.stringify(window.__reg.updates)'));
+  verdad('E9 fondo no uniforme con analisis vigente: incluye la columna', upsH[0] && 'color_fondo_logo' in upsH[0], JSON.stringify(upsH[0]));
+  check('E9 y la escribe en NULL', upsH[0] && upsH[0].color_fondo_logo, 'null');
+}
+
+// ─── veredicto ─────────────────────────────────────────────────────────
+(async function () {
+  var el = document.getElementById('resultado');
+  try {
+    var txtPagina = await bajar('unirse.html');
+    var txtApp = await bajar('app.html');
+    verdad('bajo unirse.html', txtPagina.length > 1000, 'largo = ' + txtPagina.length);
+    verdad('bajo app.html', txtApp.length > 100000, 'largo = ' + txtApp.length);
+    await grupoP(txtPagina);
+    await grupoE(txtApp);
+  } catch (e) {
+    fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n')[1]);
+  }
+  var cab = 'test-paginas-publicas-tema · ' + total + ' comprobaciones\n';
+  if (fallas.length === 0) {
+    el.className = 'ok';
+    el.textContent = cab + '\nTODO VERDE: ' + total + '/' + total;
+  } else {
+    el.className = 'fail';
+    el.textContent = cab + '\nFALLAN ' + fallas.length + ' de ' + total + '\n\n  - ' + fallas.join('\n  - ');
+  }
+})();
+</script>
+</body>
+</html>
