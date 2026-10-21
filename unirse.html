@@ -13,13 +13,35 @@
 <script src="supabase-config.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
+/* TEMA POR LOGO (Entrega 2) — SOLO el grupo del acento.
+
+   Los valores por defecto son EXACTAMENTE los de siempre, así que un
+   negocio sin color_marca ve esta página idéntica a antes: nadie escribe
+   estas variables salvo aplicarTemaPublico(), que sale sin tocar nada
+   cuando no hay color. Eso incluye el HOVER, que antes estaba escrito con
+   los hex #6b59e6 y #4a7cde y ahora vive en sus propias variables con esos
+   mismos valores.
+
+   Las superficies (fondo, tarjeta, texto, bordes) NO se teman acá: los
+   tokens oscuros de generarTema son más CLAROS que esta página (#15181D
+   contra #08090d, #F4F5F7 contra #e8e6e0), así que aplicarlos cambiaría el
+   diseño en vez de poner el color de la marca. El modo claro es una
+   entrega aparte; mientras tanto esta página es oscura siempre. */
+:root{
+  --acento:#7c6af7;
+  --acento-2:#5b8def;          /* segundo tono del degradado de hoy */
+  --acento-hover:#6b59e6;      /* el hover exacto de hoy */
+  --acento-2-hover:#4a7cde;
+  --texto-sobre-acento:#fff;
+  --fondo-logo:#12131f;
+}
 body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
 .portada-wrap{width:100%;max-height:200px;overflow:hidden;background:#0d0e18}
 .portada-wrap img{width:100%;height:200px;object-fit:cover;display:block}
 @media(max-width:480px){.portada-wrap img{height:120px}}
 .header{padding:24px;text-align:center}
 .header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
-.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
+.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:var(--fondo-logo);flex-shrink:0}
 .header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
 .container{max-width:480px;margin:0 auto;padding:0 16px 40px}
 .card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
@@ -29,16 +51,21 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8
 .hero-sub{font-size:13px;color:#888;line-height:1.6}
 label{font-size:11px;color:#555;display:block;margin-bottom:4px}
 input{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:11px 12px;font-size:16px;width:100%;transition:border-color 0.15s;font-family:inherit}
-input:focus{outline:none;border-color:#7c6af7}
+input:focus{outline:none;border-color:var(--acento)}
 .form-group{margin-bottom:14px}
 .wsp-row{display:flex;align-items:stretch;gap:0}
 .wsp-prefijo{display:flex;align-items:center;padding:0 12px;background:#12131f;border:0.5px solid #252525;border-right:none;border-radius:8px 0 0 8px;font-size:14px;color:#777;flex-shrink:0}
 .wsp-row input{border-radius:0 8px 8px 0}
 .ayuda{font-size:11px;color:#555;margin-top:5px;line-height:1.5}
-.ayuda b{color:#7c6af7;font-weight:600}
+.ayuda b{color:var(--acento);font-weight:600}
 .btn{width:100%;padding:13px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
-.btn-primary{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
-.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,#6b59e6,#4a7cde)}
+/* Con color_marca NULL los dos tonos son los de siempre y el degradado
+   queda idéntico, hover incluido. Con color de marca, aplicarTemaPublico()
+   iguala los dos tonos, así que el MISMO linear-gradient se ve PLANO: es el
+   diseño aprobado, sin degradados, sin duplicar la regla ni pelear con
+   especificidad. */
+.btn-primary{background:linear-gradient(135deg,var(--acento),var(--acento-2));color:var(--texto-sobre-acento)}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,var(--acento-hover),var(--acento-2-hover))}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
 .btn-wa{display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;margin-top:12px}
 .btn-wa:hover{background:#003318}
@@ -70,7 +97,68 @@ input:focus{outline:none;border-color:#7c6af7}
   </div>
 </div>
 
+<!-- tema.js al final del body, nunca en el <head>: es un archivo más en la
+     ruta crítica y esta página tiene que pintar aunque él no llegue. Si
+     falla, aplicarTemaPublico() lo detecta con sus guardas typeof y la
+     página se ve exactamente como antes del tema. -->
+<script src="tema.js"></script>
 <script>
+// ─── TEMA POR LOGO, lado público ───────────────────────────────────────────
+// La aritmética viene de tema.js, el mismo archivo del panel y de los
+// correos de la Entrega 3. Esta página NO analiza ningún logo: solo lee
+// columnas. extraerPaleta() existe en tema.js pero acá no se llama nunca.
+//
+// POR QUÉ generarTema Y NO color_marca CRUDO: medido, #3104F2 —el color de
+// ZZ prueba— sobre el fondo #08090d de esta página da ~2:1. Y acá el acento
+// se usa COMO TEXTO (.ayuda b) y como BORDE (input:focus), así que sería
+// ilegible. generarTema(color,'oscuro') lo aclara hasta #8468FC, que da
+// 5.09:1 contra el fondo y 4.55:1 con el texto oscuro que lleva encima.
+// Medido en ocho colores, incluidos negro y blanco puros: el piso es
+// 5.04:1, sobre el 4.5 de texto y el 3.0 de borde.
+//
+// TODO ESTO ES OPCIONAL POR DISEÑO. Si tema.js no cargó —404, red caída,
+// bloqueador— las guardas typeof lo detectan y la función sale sin escribir
+// nada. Esta página da de alta clientes en el Club: que el color no se
+// aplique es un detalle, que la página no funcione es perder al cliente.
+function aplicarTemaPublico(barb){
+  // Guardas typeof: si tema.js no cargó, estos nombres no existen y
+  // referenciarlos lanzaría ReferenceError. Con typeof no lanza.
+  if(typeof hexValido!=='function' || typeof generarTema!=='function' || typeof mezclar!=='function'){
+    console.warn('tema.js no está disponible; la página queda con su aspecto por defecto');
+    return false;
+  }
+  // Sin color de marca no se escribe NI UNA variable: el atributo style de
+  // <html> queda vacío y la página es la de antes. Es la regla acordada y
+  // es exactamente lo que verifica la prueba.
+  if(!barb || !hexValido(barb.color_marca)) return false;
+  const tokens = generarTema({ color: barb.color_marca, modo: 'oscuro' });
+  const raiz = document.documentElement;
+  // De los 11 tokens se aplican SOLO los del acento. En modo oscuro
+  // --acento-tinte y --acento-borde son blanco translúcido y no llevan el
+  // color de la marca; además esta página no los usa, así que no se tocan.
+  //
+  // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
+  // valor que no pase hexValido no debe poder convertirse en una regla. Con
+  // setProperty el peor caso es una variable ignorada.
+  raiz.style.setProperty('--acento', tokens['--acento']);
+  raiz.style.setProperty('--acento-2', tokens['--acento']);   // iguales = degradado plano
+  raiz.style.setProperty('--texto-sobre-acento', tokens['--texto-sobre-acento']);
+  // El hover ACLARA, no oscurece. En modo oscuro el acento queda justo en
+  // el piso de contraste (4.51-4.55:1 contra el texto que lleva encima), así
+  // que oscurecerlo lo rompe: medido, mezclar con negro al 14% baja a
+  // 3.51:1 y falla. Aclarando al 14% sube a 5.61:1. El hover de hoy
+  // oscurece y el temado aclara: es a propósito.
+  const hover = mezclar(tokens['--acento'], '#FFFFFF', 0.14);
+  raiz.style.setProperty('--acento-hover', hover);
+  raiz.style.setProperty('--acento-2-hover', hover);
+  // El fondo del logo se honra SOLO si además hay color de marca: un
+  // negocio sin color no debe cambiar de aspecto por haber subido un logo.
+  if(hexValido(barb.color_fondo_logo)){
+    raiz.style.setProperty('--fondo-logo', barb.color_fondo_logo);
+  }
+  return true;
+}
+
 // Las credenciales las define supabase-config.js, cargado en el <head>. Misma
 // guarda que reservar.html y club.html: sin esto la página queda viva pero
 // inservible —entera en pantalla, congelada en "Cargando…", con el botón
@@ -260,9 +348,26 @@ async function init(){
 
   // Select acotado, mismo criterio que club.html: se piden las columnas que se
   // usan y ninguna más. Este select es lo que hay que imitar, no select('*').
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url').eq('id',BARBERIA_ID).single();
+  //
+  // modo_tema NO se pide: esta página es oscura y punto. 12 de los 13
+  // negocios tienen modo_tema='auto' (el default), así que leerlo solo
+  // abriría la pregunta de qué hacer con 'auto' sin que nadie se beneficie
+  // todavía. Queda para la entrega del modo claro.
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
+
+  // El tema va ANTES de pintar nombre, portada y logo, para que el cambio
+  // de color ocurra en el mismo repintado en que aparece el contenido. No
+  // elimina el parpadeo —el color vive en la base y hay que ir a buscarlo—
+  // pero lo mete dentro del cambio que el visitante ya espera.
+  //
+  // En try/catch: el tema es decoración y esta página da de alta clientes.
+  // Si algo adentro lanza —tema.js a medio cargar, un token inesperado— el
+  // alta tiene que seguir funcionando igual. Sin este try/catch, una
+  // excepción acá cortaría init() y dejaría la página congelada.
+  try { aplicarTemaPublico(barb); }
+  catch(e){ console.warn('No se pudo aplicar el tema; sigue el aspecto por defecto:', e && e.message); }
 
   document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
   document.title = 'Unirme al Club VIP — ' + barb.nombre;
