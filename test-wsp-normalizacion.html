@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>test · wspClave y wspChile</title>
+<style>
+body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0b0c10;color:#d8dae0;padding:18px;line-height:1.5}
+pre{white-space:pre-wrap;font-size:12px}
+pre.ok{color:#5cd685}
+pre.fail{color:#ff6b6b}
+h1{font-size:14px;margin-bottom:10px;color:#9aa3af;font-weight:600}
+</style>
+</head>
+<body>
+<h1>test · wspClave y wspChile, contra las funciones reales de app.html</h1>
+<pre id="resultado">corriendo…</pre>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// Prueba wspClave(), wspChile() y abrirWA() tal como están en app.html: el
+// arnés baja el archivo por XHR, le quita la llamada init() y lo monta en
+// un iframe srcdoc, que conserva el origen del padre. No hay copia de la
+// lógica acá.
+//
+// LO QUE IMPORTA DE VERDAD: wspClave() tiene que devolver EXACTAMENTE lo
+// que devuelve la columna generada de la base,
+//   right(regexp_replace(coalesce(whatsapp,''),'\D','','g'), 9)
+// porque es la clave con la que se decide si dos fichas son la misma
+// persona. Las doce formas de la tabla ESPERADO_SQL son las doce que
+// existen hoy en clientes, medidas el 2026-10-29, con su resultado
+// calculado a mano desde la expresión SQL.
+//
+// ⚠ Correr con --allow-file-access-from-files (lee app.html por XHR) y leer
+// el veredicto en la CLASE del <pre>, nunca buscando un texto de éxito.
+// ⚠ Sin temporizadores propios: compiten con --virtual-time-budget.
+// ═══════════════════════════════════════════════════════════════════════
+
+var total = 0, fallas = [];
+function check(nombre, obtenido, esperado) {
+  total++;
+  if (String(obtenido) !== String(esperado)) {
+    fallas.push(nombre + '\n      obtenido: ' + JSON.stringify(obtenido) +
+                         '\n      esperado: ' + JSON.stringify(esperado));
+    return false;
+  }
+  return true;
+}
+function verdad(nombre, cond, detalle) {
+  total++;
+  if (!cond) fallas.push(nombre + (detalle ? '\n      ' + detalle : ''));
+  return !!cond;
+}
+
+function bajar(url) {
+  return new Promise(function (res, rej) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onload = function () { res(x.responseText); };
+    x.onerror = function () { rej(new Error('no se pudo bajar ' + url)); };
+    x.send();
+  });
+}
+function montar(html) {
+  return new Promise(function (res) {
+    var f = document.createElement('iframe');
+    f.style.cssText = 'width:420px;height:300px;position:absolute;left:-9999px';
+    f.srcdoc = html;
+    f.addEventListener('load', function () { res(f.contentWindow); });
+    document.body.appendChild(f);
+  });
+}
+
+// Las DOCE formas que existen hoy en clientes (medidas el 2026-10-29), con
+// un número de ejemplo por forma y lo que la expresión SQL devuelve para
+// él. "filas" es cuántas fichas tienen esa forma, para saber qué pesa.
+var ESPERADO_SQL = [
+  { forma: '+###########',    filas: 202, valor: '+56987542136',     sql: '987542136' },
+  { forma: '#########',       filas: 26,  valor: '987542136',        sql: '987542136' },
+  { forma: '###########',     filas: 19,  valor: '56987542136',      sql: '987542136' },
+  { forma: '#######',         filas: 2,   valor: '9498555',          sql: '9498555'   },
+  { forma: '+## # #### ####', filas: 2,   valor: '+56 9 8754 2136',  sql: '987542136' },
+  { forma: '+############',   filas: 2,   valor: '+560987542136',    sql: '987542136' },
+  { forma: '+## # ########',  filas: 1,   valor: '+56 9 87542136',   sql: '987542136' },
+  { forma: '########',        filas: 1,   valor: '94985551',         sql: '94985551'  },
+  { forma: '############',    filas: 1,   valor: '560987542136',     sql: '987542136' },
+  { forma: '+##########',     filas: 1,   valor: '+5687542136',      sql: '687542136' },
+  { forma: '+#########',      filas: 1,   valor: '+987542136',       sql: '987542136' },
+  { forma: '+## #########',   filas: 1,   valor: '+56 987542136',    sql: '987542136' }
+];
+
+(async function () {
+  var el = document.getElementById('resultado');
+  try {
+    var txt = await bajar('app.html');
+    verdad('bajo app.html', txt.length > 100000, 'largo = ' + txt.length);
+    var arnes = txt.replace(/^init\(\);\s*$/m, '');
+    verdad('el arnes quito init()', arnes.indexOf('\ninit();') === -1);
+    var w = await montar(arnes);
+    verdad('app.html expuso wspClave', typeof w.wspClave === 'function', 'typeof = ' + typeof w.wspClave);
+    verdad('app.html expuso wspChile', typeof w.wspChile === 'function', 'typeof = ' + typeof w.wspChile);
+    verdad('app.html expuso abrirWA',  typeof w.abrirWA  === 'function', 'typeof = ' + typeof w.abrirWA);
+
+    // ── A. wspClave contra la expresión SQL, forma por forma ──────────
+    ESPERADO_SQL.forEach(function (c) {
+      check('A wspClave("' + c.valor + '") = la columna generada  [' + c.forma + ', ' + c.filas + ' fichas]',
+            w.wspClave(c.valor), c.sql);
+    });
+
+    // ── B. wspClave reimplementa la expresión SQL, no solo estos doce ──
+    // Se compara contra una reimplementación independiente de
+    // right(regexp_replace(x,'\D','','g'),9) sobre entradas al azar, para
+    // que la prueba no dependa de los ejemplos elegidos a mano.
+    function sqlClave(x) {
+      var d = String(x == null ? '' : x).replace(/[^0-9]/g, '');
+      return d.length <= 9 ? d : d.substring(d.length - 9);
+    }
+    var piezas = ['+', '56', '9', ' ', '-', '(', ')', '0', '8', '7', '', '.', '/'];
+    var distintos = 0;
+    for (var i = 0; i < 600; i++) {
+      var s = '';
+      var n = 1 + (i % 9);
+      for (var j = 0; j < n; j++) s += piezas[(i * 7 + j * 3) % piezas.length];
+      if (w.wspClave(s) !== sqlClave(s)) distintos++;
+    }
+    check('B wspClave coincide con la expresion SQL en 600 entradas generadas', distintos, 0);
+
+    // ── C. el caso que motivó todo esto ────────────────────────────────
+    check('C "+56987542136" y "987542136" dan la MISMA clave',
+          w.wspClave('+56987542136') === w.wspClave('987542136'), 'true');
+    check('C y la clave es la de la base', w.wspClave('+56987542136'), '987542136');
+    // El criterio viejo los separaba. Si alguien lo repone, esto falla.
+    verdad('C el criterio viejo (todos los digitos) SI los separaba',
+           '+56987542136'.replace(/\D/g, '') !== '987542136'.replace(/\D/g, ''),
+           'si esto falla, la premisa del arreglo era falsa');
+
+    // ── D. wspChile: a qué número se escribe ───────────────────────────
+    check('D 9 digitos pelados -> se le agrega el pais 56', w.wspChile('987542136'), '56987542136');
+    check('D +56 9 ... pegado',                          w.wspChile('+56987542136'), '56987542136');
+    check('D 56 9 ... sin el mas',                       w.wspChile('56987542136'), '56987542136');
+    check('D con espacios',                              w.wspChile('+56 9 8754 2136'), '56987542136');
+    check('D con guiones y parentesis',                  w.wspChile('(+56) 9-8754-2136'), '56987542136');
+    check('D 12 digitos con 0 de salida',                w.wspChile('+560987542136'), '56987542136');
+    check('D 7 digitos (no es movil) -> vacio',          w.wspChile('9498555'), '');
+    check('D 8 digitos -> vacio',                        w.wspChile('94985551'), '');
+    check('D fijo de 9 que no empieza en 9 -> vacio',    w.wspChile('221234567'), '');
+    check('D vacio -> vacio',                            w.wspChile(''), '');
+    check('D null -> vacio',                             w.wspChile(null), '');
+    check('D undefined -> vacio',                        w.wspChile(undefined), '');
+    check('D texto -> vacio',                            w.wspChile('no tiene'), '');
+
+    // ── E. wspChile nunca devuelve algo que no sea 569 + 8 digitos ─────
+    var malos = 0, ejemplo = '';
+    ESPERADO_SQL.forEach(function (c) {
+      var r = w.wspChile(c.valor);
+      if (r !== '' && !/^569[0-9]{8}$/.test(r)) { malos++; ejemplo = c.valor + ' -> ' + r; }
+    });
+    check('E ninguna de las 12 formas produce un numero mal armado', malos, 0);
+
+    // ── F. abrirWA: avisa y no abre cuando no se puede normalizar ──────
+    w.eval('window.__abiertas = []; window.__avisos = [];' +
+           'window.open = function(u){ window.__abiertas.push(u); return null; };' +
+           'notify = function(m,t){ window.__avisos.push((t||"ok")+": "+m); };');
+    var r1 = w.abrirWA('+56987542136', 'hola');
+    check('F con un movil valido, abrirWA devuelve true', r1, true);
+    check('F y abrio UNA url', w.eval('window.__abiertas.length'), 1);
+    check('F con el pais y el texto', w.eval('window.__abiertas[0]'),
+          'https://wa.me/56987542136?text=hola');
+    check('F sin avisos', w.eval('window.__avisos.length'), 0);
+
+    w.eval('window.__abiertas = []; window.__avisos = [];');
+    var r2 = w.abrirWA('9498555', 'hola');
+    check('F con 7 digitos, abrirWA devuelve false', r2, false);
+    check('F y NO abrio ninguna url', w.eval('window.__abiertas.length'), 0);
+    check('F y avisó al dueño', w.eval('window.__avisos.length'), 1);
+    verdad('F el aviso es de tipo warn y menciona el telefono',
+           w.eval('window.__avisos[0]').indexOf('warn:') === 0 &&
+           w.eval('window.__avisos[0]').toLowerCase().indexOf('tel') !== -1,
+           w.eval('window.__avisos[0]'));
+
+    // El caso de las 26 fichas: antes abría wa.me/9XXXXXXXX sin país.
+    w.eval('window.__abiertas = []; window.__avisos = [];');
+    w.abrirWA('987542136', 'hola');
+    check('F las 26 fichas de 9 digitos ahora abren CON el pais',
+          w.eval('window.__abiertas[0]'), 'https://wa.me/56987542136?text=hola');
+    verdad('F y antes abrian sin el pais (lo que el arreglo corrige)',
+           'https://wa.me/' + '987542136'.replace(/\D/g, '') === 'https://wa.me/987542136');
+
+    // ── G. el texto se codifica ────────────────────────────────────────
+    w.eval('window.__abiertas = [];');
+    w.abrirWA('+56987542136', 'Hola Juan & Cía: ¿mañana 10:30?');
+    verdad('G el mensaje va codificado en la url',
+           w.eval('window.__abiertas[0]').indexOf('%C2%BF') !== -1 &&
+           w.eval('window.__abiertas[0]').indexOf('&C') === -1,
+           w.eval('window.__abiertas[0]'));
+
+  } catch (e) {
+    fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n')[1]);
+  }
+
+  var cab = 'test-wsp-normalizacion · ' + total + ' comprobaciones\n';
+  if (fallas.length === 0) {
+    el.className = 'ok';
+    el.textContent = cab + '\nTODO VERDE: ' + total + '/' + total;
+  } else {
+    el.className = 'fail';
+    el.textContent = cab + '\nFALLAN ' + fallas.length + ' de ' + total + '\n\n  - ' + fallas.join('\n  - ');
+  }
+})();
+</script>
+</body>
+</html>
