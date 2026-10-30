@@ -2019,22 +2019,37 @@ function wspClave(valor){
 // ⚠ El prefijo es '56', NO '569'. El 9 del móvil ya viene dentro de los
 // nueve dígitos, así que '569'+últimos9 lo DUPLICA y produce doce dígitos:
 // 987542136 saldría como 569987542136 en vez de 56987542136. Lo pilló la
-// prueba E del arnés, que exige que las doce formas de la base produzcan
-// siempre 569 + ocho dígitos. Y la forma correcta es la que ya tienen 202
-// de las 259 fichas: +56987542136, once dígitos.
+// prueba E del arnés, que exige que las formas de la base produzcan siempre
+// 569 + ocho dígitos. Y la forma correcta es la que ya tienen 202 de las
+// 260 fichas: +56987542136, once dígitos.
+//
+// ⚠ ES ESTRICTA A PROPÓSITO, y la primera versión no lo era. Tomaba los
+// últimos 9 dígitos de cualquier número largo y les pegaba el país, así que
+// convertía CELULARES EXTRANJEROS en números chilenos falsos: un móvil de
+// Brasil, +55 11 9XXXX-XXXX, termina en nueve dígitos que empiezan con 9,
+// así que salía como un +569 que le pertenece a otra persona en Chile. El
+// dueño habría escrito a un desconocido creyendo que era su cliente.
+//
+// Ahora solo se limpia lo que es inequívocamente ruido de marcado —ceros de
+// salida por delante y un 56 repetido— y después se EXIGE la forma: o
+// 569 + ocho dígitos, o el móvil pelado de nueve. Todo lo demás devuelve ''
+// y abrirWA avisa en vez de abrir un chat equivocado.
+//
+// Lo que esto descarta de la base, medido: la ficha de 13 dígitos y dos de
+// las de 12 (una que empieza 5699, o sea el 9 ya duplicado, y otra 5690,
+// que no es un móvil). Recupera la que empieza 0569, que es un cero de
+// salida delante de un número correcto.
+//
+// Límite conocido y aceptado: un número pelado de nueve dígitos que empieza
+// con 9 también es un móvil válido en Perú, y no hay forma de distinguirlo
+// sin más contexto. Se asume Chile porque la aplicación es chilena y 26
+// fichas están guardadas así.
 function wspChile(valor){
-  const d = String(valor==null?'':valor).replace(/\D/g,'');
-  // 9 dígitos que empiezan en 9: el móvil sin país. El caso de las 26.
-  if(d.length===9 && d[0]==='9') return '56'+d;
-  // 11 dígitos que empiezan en 569: ya viene completo. El caso de las 202.
-  if(d.length===11 && d.slice(0,3)==='569') return d;
-  // Más de 11: el 0 de salida, un 56 repetido o basura por delante. Se
-  // toman los últimos 9 y se valida que sean un móvil. Cubre las 3 fichas
-  // de 12 dígitos.
-  if(d.length>11){
-    const u = d.slice(-9);
-    if(u[0]==='9') return '56'+u;
-  }
+  let d = String(valor==null?'':valor).replace(/\D/g,'');
+  d = d.replace(/^0+/,'');              // 00 o 0 de salida
+  if(/^5656/.test(d)) d = d.slice(2);   // 56 repetido por pegar dos veces el país
+  if(/^569\d{8}$/.test(d)) return d;    // ya viene completo
+  if(/^9\d{8}$/.test(d))   return '56'+d;
   return '';
 }
 

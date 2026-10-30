@@ -139,7 +139,10 @@ var ESPERADO_SQL = [
     check('D 56 9 ... sin el mas',                       w.wspChile('56987542136'), '56987542136');
     check('D con espacios',                              w.wspChile('+56 9 8754 2136'), '56987542136');
     check('D con guiones y parentesis',                  w.wspChile('(+56) 9-8754-2136'), '56987542136');
-    check('D 12 digitos con 0 de salida',                w.wspChile('+560987542136'), '56987542136');
+    // El 0 acá NO es inicial: va DESPUÉS del país, así que la regla estricta
+    // no lo quita y el número se rechaza. Los ceros de salida de verdad —al
+    // principio— los cubre el grupo D2.
+    check('D 0 INTERNO despues del pais -> vacio',        w.wspChile('+560987542136'), '');
     check('D 7 digitos (no es movil) -> vacio',          w.wspChile('9498555'), '');
     check('D 8 digitos -> vacio',                        w.wspChile('94985551'), '');
     check('D fijo de 9 que no empieza en 9 -> vacio',    w.wspChile('221234567'), '');
@@ -147,6 +150,50 @@ var ESPERADO_SQL = [
     check('D null -> vacio',                             w.wspChile(null), '');
     check('D undefined -> vacio',                        w.wspChile(undefined), '');
     check('D texto -> vacio',                            w.wspChile('no tiene'), '');
+
+    // ── D2. ceros de salida y 56 repetido: ruido de marcado, se limpia ──
+    check('D2 con 0 de salida delante',      w.wspChile('0569 8754 2136'), '56987542136');
+    check('D2 con 00 de salida delante',     w.wspChile('0056987542136'),  '56987542136');
+    check('D2 con el 56 repetido',           w.wspChile('5656987542136'),  '56987542136');
+    check('D2 con 0 delante del movil',      w.wspChile('0987542136'),     '56987542136');
+
+    // ── D3. CELULARES EXTRANJEROS: ninguno puede salir como chileno ─────
+    // Es el agujero de la primera versión: tomaba los últimos 9 dígitos y
+    // les pegaba el país, así que un móvil de Brasil se convertía en un
+    // +569 que le pertenece a otra persona en Chile.
+    var extranjeros = [
+      ['+55 11 98765-4321', 'Brasil (sus ultimos 9 empiezan en 9)'],
+      ['+55 11 99876-5432', 'Brasil, otro'],
+      ['+51 987 654 321',   'Peru con pais'],
+      ['+54 9 11 8765-4321','Argentina con el 9 de movil'],
+      ['+54 11 8765-4321',  'Argentina sin el 9'],
+      ['+57 300 876 5432',  'Colombia'],
+      ['+58 412 876 5432',  'Venezuela'],
+      ['+1 415 876 5432',   'Estados Unidos'],
+      ['+34 698 765 432',   'Espana'],
+      ['+52 1 55 8765 4321','Mexico']
+    ];
+    extranjeros.forEach(function (c) {
+      check('D3 ' + c[1] + ' NO se convierte en chileno', w.wspChile(c[0]), '');
+    });
+
+    // Y el caso exacto que motivó la corrección, explicitado: el número
+    // brasileño y el chileno que comparten los últimos 9 dígitos no pueden
+    // dar el mismo resultado.
+    verdad('D3 Brasil y Chile con los mismos 9 digitos finales dan resultados DISTINTOS',
+           w.wspChile('+5511987654321') !== w.wspChile('987654321'),
+           'Brasil: "' + w.wspChile('+5511987654321') + '"  Chile: "' + w.wspChile('987654321') + '"');
+    check('D3 y el de Brasil es vacio', w.wspChile('+5511987654321'), '');
+    check('D3 y el chileno sí resuelve', w.wspChile('987654321'), '56987654321');
+
+    // ── D4. las formas de MÁS de 11 dígitos que hay hoy en la base ──────
+    // Medidas el 2026-10-30: una de 13 dígitos (5695…), una de 12 que
+    // empieza 5699 —el 9 ya duplicado—, una de 12 que empieza 5690 —no es
+    // móvil— y una de 12 que empieza 0569, que sí es recuperable.
+    check('D4 13 digitos que empiezan 5695 -> vacio', w.wspChile('5695123456789'), '');
+    check('D4 12 digitos que empiezan 5699 -> vacio', w.wspChile('569987542136'),  '');
+    check('D4 12 digitos que empiezan 5690 -> vacio', w.wspChile('569012345678'),  '');
+    check('D4 12 digitos que empiezan 0569 -> SI se recupera', w.wspChile('056987542136'), '56987542136');
 
     // ── E. wspChile nunca devuelve algo que no sea 569 + 8 digitos ─────
     var malos = 0, ejemplo = '';
