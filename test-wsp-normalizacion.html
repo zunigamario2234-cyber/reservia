@@ -95,10 +95,61 @@ var ESPERADO_SQL = [
     verdad('bajo app.html', txt.length > 100000, 'largo = ' + txt.length);
     var arnes = txt.replace(/^init\(\);\s*$/m, '');
     verdad('el arnes quito init()', arnes.indexOf('\ninit();') === -1);
+
+    // Las funciones ya NO viven en app.html: viven en wsp.js, que app.html
+    // carga. Si alguien las copiara de vuelta, estas dos lo cazan.
+    // El cierre del tag va partido en dos: una cadena con "</scr"+"ipt>"
+    // literal cerraría ESTE bloque <script> al parsear el HTML, y el arnés
+    // moría con "Invalid or unexpected token".
+    verdad('app.html carga wsp.js',
+           txt.indexOf('<script src="wsp.js"></scr' + 'ipt>') !== -1,
+           'falta el <script src="wsp.js">');
+    verdad('app.html ya NO define wspClave ni wspChile',
+           txt.indexOf('function wspClave') === -1 && txt.indexOf('function wspChile') === -1,
+           'alguna de las dos volvio a app.html');
+    verdad('wsp.js no define abrirWA (chocaria con el envoltorio de app.html)',
+           (await bajar('wsp.js')).indexOf('function abrirWA') === -1,
+           'wsp.js define abrirWA y la de app.html la pisaria');
+
     var w = await montar(arnes);
     verdad('app.html expuso wspClave', typeof w.wspClave === 'function', 'typeof = ' + typeof w.wspClave);
     verdad('app.html expuso wspChile', typeof w.wspChile === 'function', 'typeof = ' + typeof w.wspChile);
     verdad('app.html expuso abrirWA',  typeof w.abrirWA  === 'function', 'typeof = ' + typeof w.abrirWA);
+    verdad('wsp.js expuso wspAbrir',   typeof w.wspAbrir === 'function', 'typeof = ' + typeof w.wspAbrir);
+    verdad('wsp.js expuso wspLink',    typeof w.wspLink  === 'function', 'typeof = ' + typeof w.wspLink);
+    // El envoltorio de app.html y la función de wsp.js NO pueden ser la
+    // misma: si lo fueran, una se pisó a la otra y llamarla recursaría.
+    verdad('abrirWA y wspAbrir son funciones distintas', w.abrirWA !== w.wspAbrir);
+
+    // ── G2. el aviso cuando wsp.js no cargó ────────────────────────────
+    // Se monta app.html con el src de wsp.js roto y se exige que deje un
+    // console.error, no que falle en silencio.
+    // El capturador de console.error va ANTES del script de app.html, o el
+    // aviso se pierde: para cuando el padre pudiera parchear la consola, el
+    // script de la página ya corrió.
+    var CAPTURA = '<script>window.__errBoot="";var _ce=console.error;'
+                + 'console.error=function(){window.__errBoot+=Array.prototype.join.call(arguments," ")+"\\n";'
+                + 'return _ce.apply(console,arguments);};<\/scr' + 'ipt>';
+    var arnesRoto = arnes.replace('src="wsp.js"', 'src="wsp-NO-EXISTE.js"')
+                         .replace('<head>', '<head>' + CAPTURA);
+    verdad('el arnes rompio el src de wsp.js', arnesRoto.indexOf('wsp-NO-EXISTE.js') !== -1);
+    verdad('el arnes inyecto el capturador', arnesRoto.indexOf('__errBoot') !== -1);
+    var wRoto = await montar(arnesRoto);
+    verdad('sin wsp.js, wspChile no existe en la pagina',
+           wRoto.eval('typeof wspChile') === 'undefined',
+           'typeof = ' + wRoto.eval('typeof wspChile'));
+    var errores = wRoto.eval('window.__errBoot || "(no se capturo)"');
+    verdad('sin wsp.js, app.html dejo un console.error claro',
+           String(errores).indexOf('wsp.js NO se cargó') !== -1,
+           'capturado: ' + errores);
+
+    // ── H. wspLink: la URL sin abrir nada ──────────────────────────────
+    check('H wspLink con movil valido', w.wspLink('+56987542136', 'hola'),
+          'https://wa.me/56987542136?text=hola');
+    check('H wspLink sin mensaje',      w.wspLink('987542136'), 'https://wa.me/56987542136');
+    check('H wspLink con 7 digitos -> vacio', w.wspLink('9498555','hola'), '');
+    check('H wspLink con un movil de Brasil -> vacio', w.wspLink('+5511987654321','hola'), '');
+    check('H wspLink con null -> vacio', w.wspLink(null), '');
 
     // ── A. wspClave contra la expresión SQL, forma por forma ──────────
     ESPERADO_SQL.forEach(function (c) {

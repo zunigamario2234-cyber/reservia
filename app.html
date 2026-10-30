@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
+<script src="wsp.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
@@ -1983,88 +1984,24 @@ function badgeNivel(nv){
   const cls=idx>=0?PALETA_NIVELES[idx%PALETA_NIVELES.length]:'b-silver';
   return`<span class="badge ${cls}">${nv}</span>`;
 }
-// ─── TELÉFONOS: UNA SOLA NORMALIZACIÓN ───────────────────────────────────
-// Había dos criterios distintos conviviendo y eso ya costó 18 fichas
-// duplicadas en producción, en 2 negocios:
+// Los telefonos viven en wsp.js, cargado en el <head>: wspClave() para
+// deduplicar, wspChile() para normalizar, wspLink() para armar la URL y
+// abrirWA() para abrirla. Antes estaban aca y habia otras siete copias de
+// la misma logica repartidas por las paginas.
 //
-//   · la base usa whatsapp_norm, columna GENERADA en clientes y en reservas:
-//       right(regexp_replace(coalesce(whatsapp,''),'\D','','g'), 9)
-//     o sea los ÚLTIMOS 9 DÍGITOS.
-//   · impNormWsp() del importador usaba replace(/\D/g,''), TODOS los
-//     dígitos. Así "+56987542136" (11) y "987542136" (9) no se reconocían
-//     como la misma persona, mientras la base sí los considera iguales.
-//
-// wspClave() es ahora la única clave de deduplicado, y es la expresión de
-// la columna generada escrita en JavaScript. Si se cambia una, hay que
-// cambiar la otra: el arnés compara las dos contra las doce formas de
-// teléfono que hay hoy en la base.
-function wspClave(valor){
-  return String(valor==null?'':valor).replace(/\D/g,'').slice(-9);
+// abrirWA de wsp.js recibe el avisador como tercer argumento; en el panel
+// es notify(). Este envoltorio existe para no tocar los 16 sitios que ya
+// llaman abrirWA(wsp, msg) con dos argumentos.
+// Si wsp.js no cargó, los botones de WhatsApp van a lanzar ReferenceError
+// cada vez que alguien los toque, y sin este aviso el síntoma sería un
+// botón que no hace nada. No se intenta suplir la función: que falle
+// ruidoso es mejor que un enlace a un número equivocado.
+if(typeof wspChile !== 'function' || typeof wspAbrir !== 'function' || typeof wspLink !== 'function'){
+  console.error('wsp.js NO se cargó: los enlaces de WhatsApp no van a funcionar. '
+              + 'Revisa que <script src="wsp.js"> esté en el <head> y que el archivo se esté sirviendo.');
 }
 
-// wspChile() es para ARMAR el link de wa.me, que es otra pregunta: no
-// "¿son la misma persona?" sino "¿a qué número escribo?".
-//
-// Un móvil chileno es 9 + ocho dígitos, y wa.me necesita el país: 569…
-// Devuelve '' cuando no se puede normalizar, y quien llama decide qué
-// hacer. Antes abrirWA usaba todos los dígitos y con las 26 fichas
-// guardadas como 9 dígitos pelados armaba wa.me/9XXXXXXXX, SIN el 56, que
-// WhatsApp no resuelve como número chileno: el dueño apretaba el botón y
-// le abría una pantalla de error.
-//
-// Los descartes son a propósito. En la base hay 3 fichas con menos de 9
-// dígitos (7 y 8), que no son móviles y para las que no existe ningún
-// número al que escribir; inventarle un prefijo a eso abriría un chat con
-// un desconocido.
-// ⚠ El prefijo es '56', NO '569'. El 9 del móvil ya viene dentro de los
-// nueve dígitos, así que '569'+últimos9 lo DUPLICA y produce doce dígitos:
-// 987542136 saldría como 569987542136 en vez de 56987542136. Lo pilló la
-// prueba E del arnés, que exige que las formas de la base produzcan siempre
-// 569 + ocho dígitos. Y la forma correcta es la que ya tienen 202 de las
-// 260 fichas: +56987542136, once dígitos.
-//
-// ⚠ ES ESTRICTA A PROPÓSITO, y la primera versión no lo era. Tomaba los
-// últimos 9 dígitos de cualquier número largo y les pegaba el país, así que
-// convertía CELULARES EXTRANJEROS en números chilenos falsos: un móvil de
-// Brasil, +55 11 9XXXX-XXXX, termina en nueve dígitos que empiezan con 9,
-// así que salía como un +569 que le pertenece a otra persona en Chile. El
-// dueño habría escrito a un desconocido creyendo que era su cliente.
-//
-// Ahora solo se limpia lo que es inequívocamente ruido de marcado —ceros de
-// salida por delante y un 56 repetido— y después se EXIGE la forma: o
-// 569 + ocho dígitos, o el móvil pelado de nueve. Todo lo demás devuelve ''
-// y abrirWA avisa en vez de abrir un chat equivocado.
-//
-// Lo que esto descarta de la base, medido: la ficha de 13 dígitos y dos de
-// las de 12 (una que empieza 5699, o sea el 9 ya duplicado, y otra 5690,
-// que no es un móvil). Recupera la que empieza 0569, que es un cero de
-// salida delante de un número correcto.
-//
-// Límite conocido y aceptado: un número pelado de nueve dígitos que empieza
-// con 9 también es un móvil válido en Perú, y no hay forma de distinguirlo
-// sin más contexto. Se asume Chile porque la aplicación es chilena y 26
-// fichas están guardadas así.
-function wspChile(valor){
-  let d = String(valor==null?'':valor).replace(/\D/g,'');
-  d = d.replace(/^0+/,'');              // 00 o 0 de salida
-  if(/^5656/.test(d)) d = d.slice(2);   // 56 repetido por pegar dos veces el país
-  if(/^569\d{8}$/.test(d)) return d;    // ya viene completo
-  if(/^9\d{8}$/.test(d))   return '56'+d;
-  return '';
-}
-
-function abrirWA(wsp,msg){
-  const n = wspChile(wsp);
-  if(!n){
-    // No se abre nada: una URL de wa.me con un número inválido lleva a una
-    // pantalla de error de WhatsApp, y el dueño no tiene forma de saber que
-    // el problema es el teléfono guardado.
-    notify('Ese teléfono no parece un móvil chileno. Revísalo en la ficha del cliente.','warn');
-    return false;
-  }
-  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg),'_blank');
-  return true;
-}
+function abrirWA(wsp,msg){ return wspAbrir(wsp,msg,notify); }
 function linkClub(clienteId){ return S.barberia?.id&&clienteId?(location.origin+'/club.html?id='+S.barberia.id+'&cliente='+clienteId):''; }
 // Le manda al cliente SU link personal del Club VIP por WhatsApp.
 //
@@ -5005,7 +4942,7 @@ function renderEncuestas(){
           <span style="color:#e0a850;margin-left:8px">${'★'.repeat(e.puntaje||0)}${'☆'.repeat(5-(e.puntaje||0))}</span><br>
           <span style="font-size:11px;color:var(--text3)">${escapeHtml(servicioDe(e))} · ${e.respondida_at.slice(0,10)}</span></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${mala&&c?.whatsapp?`<a class="btn-wa" href="https://wa.me/${(c.whatsapp||'').replace(/\D/g,'')}" target="_blank" rel="noopener">📱 Contactar</a>`:''}
+          ${mala&&c?.whatsapp&&wspLink(c.whatsapp)?`<a class="btn-wa" href="${wspLink(c.whatsapp)}" target="_blank" rel="noopener">📱 Contactar</a>`:''}
           ${!e.vista_at?`<button class="btn btn-ghost btn-sm" onclick="marcarEncuestaVista('${e.id}')">Marcar vista</button>`:''}
         </div>
       </div>
@@ -5546,7 +5483,7 @@ function renderProfesionals(){
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Ventas cobradas</span><span>${fmt(ventas)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Comisión</span><span class="gold">${fmt(com)}</span></div>
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-        ${b.whatsapp?`<a class="btn-wa" href="https://wa.me/${(b.whatsapp||'').replace(/[^0-9]/g,'')}" target="_blank">📱 WhatsApp</a>`:''}
+        ${b.whatsapp&&wspLink(b.whatsapp)?`<a class="btn-wa" href="${wspLink(b.whatsapp)}" target="_blank">📱 WhatsApp</a>`:''}
         <button class="btn btn-ghost btn-sm" onclick="copiarLinkProfesional('${b.id}')" title="Copiar link de reserva individual">🔗 Link individual</button>
         <label class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer" title="Si lo das de baja deja de aparecer en la página de reservas y no puede entrar a Mi Agenda. Sus citas y comisiones se conservan.">
           <input type="checkbox" ${b.activo?'checked':''} onchange="toggleProfesionalActivo('${b.id}',this.checked)" style="width:auto"> Activo
