@@ -1012,6 +1012,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="imp-step-tab" id="imp-st-4" data-num="4">Resultado</div>
     </div>
 
+    <div id="imp-info-lectura" class="alert al-warn" style="display:none;margin-bottom:10px"></div>
+
     <!-- Paso 1: archivo -->
     <div class="imp-step-content active" id="imp-sc-1">
       <label class="imp-drop" for="imp-file">
@@ -1040,14 +1042,17 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="imp-summary">
         <div class="mc"><div class="mc-label">Nuevos</div><div class="mc-val" id="imp-cnt-nuevos" style="color:#00e096">0</div></div>
         <div class="mc"><div class="mc-label">Ya existen</div><div class="mc-val" id="imp-cnt-dup" style="color:#d4a853">0</div></div>
-        <div class="mc"><div class="mc-label">Con error</div><div class="mc-val" id="imp-cnt-err" style="color:#ff5555">0</div></div>
+        <div class="mc"><div class="mc-label">Repetidos en el archivo</div><div class="mc-val" id="imp-cnt-arch" style="color:var(--text3)">0</div></div>
+        <div class="mc"><div class="mc-label">Sin teléfono válido</div><div class="mc-val" id="imp-cnt-tel" style="color:#ff5555">0</div></div>
+        <div class="mc"><div class="mc-label">Sin nombre</div><div class="mc-val" id="imp-cnt-err" style="color:#ff5555">0</div></div>
       </div>
+      <div class="alert al-warn" style="margin-bottom:10px;font-size:12px">Ojo: <b>Actualizar</b> ahora solo <b>completa los campos vacíos</b> de la ficha con los datos del archivo. Nunca borra ni reemplaza lo que ya está guardado, y no toca el nombre ni el canal.</div>
       <div id="imp-bulk-dup" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:10px">
         Para los que ya existen:
         <select id="imp-bulk-accion" onchange="impAplicarAccionMasiva(this.value)" style="max-width:260px">
           <option value="">Elegir para cada uno abajo...</option>
           <option value="saltar">Saltar todos</option>
-          <option value="actualizar">Actualizar todos con datos del archivo</option>
+          <option value="actualizar">Actualizar todos (solo completa campos vacíos)</option>
         </select>
       </div>
       <div class="tbl-wrap" style="max-height:320px;overflow-y:auto">
@@ -1057,6 +1062,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div class="modal-footer" style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-primary" id="imp-btn-confirmar" onclick="impEjecutarImportacion()">Importar</button>
         <button class="btn btn-ghost" onclick="impIrPaso(2)">← Volver</button>
+        <button class="btn btn-ghost" id="imp-btn-problemas" onclick="impDescargarProblemas()" style="display:none">⬇ Descargar filas con problemas</button>
       </div>
     </div>
 
@@ -1618,7 +1624,30 @@ async function loadAll(){
   construirVentas();
 }
 
-async function loadClientes(){ const {data}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.clientes=data||[]; }
+// Trae TODOS los clientes del negocio, de a 1000: PostgREST corta cada
+// respuesta en 1000 filas y sin paginar el resto desaparecía en silencio (y el
+// importador dejaba de ver duplicados). El orden lleva el id como desempate:
+// created_at se repite en las altas masivas y, sin desempate, una página puede
+// repetir o saltarse filas. Si falla una página NO se deja una lista a medias:
+// se conserva la anterior, se avisa y S.clientesOk queda en false para que el
+// importador no trabaje con datos incompletos.
+async function loadClientes(){
+  const BLOQUE=1000, todos=[];
+  for(let desde=0;;desde+=BLOQUE){
+    const {data,error}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id)
+      .order('created_at',{ascending:false}).order('id',{ascending:true}).range(desde,desde+BLOQUE-1);
+    if(error){
+      console.error('No se pudo cargar la lista de clientes:',error.message);
+      S.clientesOk=false;
+      notify('No pudimos cargar todos tus clientes. Recarga la página; si sigue igual, avísanos.','err');
+      return false;
+    }
+    todos.push(...(data||[]));
+    if(!data||data.length<BLOQUE)break;
+  }
+  S.clientes=todos; S.clientesOk=true;
+  return true;
+}
 // Las dos fuentes de S.ventas lo reconstruyen al terminar. Así cualquier
 // recarga puntual —después de un cobro, de editar una cita— lo deja
 // sincronizado sin que haya que acordarse en cada punto de llamada, que es
@@ -2246,7 +2275,19 @@ async function guardarCliente(){
 // xlsx.js ya está cargado (ver <script> arriba, hoy solo se usaba para
 // exportar) — XLSX.read() lee .csv/.xlsx/.xls con la misma API, así que no
 // hace falta ninguna librería nueva para CSV.
-let IMP={headers:[],rows:[],mapping:{},processed:[]};
+//
+// FASE 1 (reglas que este bloque cumple, cada una con su prueba en
+// test-importador.html):
+//   · "Actualizar" NUNCA borra: solo completa campos vacíos de la ficha, y un
+//     campo que el archivo no trae no se envía en el update.
+//   · Duplicados con las MISMAS claves que la base: wspClave() (últimos 9
+//     dígitos, igual que la columna generada whatsapp_norm) y el correo en
+//     minúsculas. También DENTRO del archivo: la primera fila gana.
+//   · El teléfono se guarda normalizado con wspChile(). Si no da un celular
+//     chileno la fila queda fuera, con el motivo a la vista.
+//   · El CSV se decodifica a mano (UTF-8 estricto y, si falla, Windows-1252)
+//     antes de pasárselo a SheetJS, y la pantalla dice cuál se usó.
+let IMP={headers:[],rows:[],mapping:{},processed:[],codificacion:'',notaTelefono:''};
 
 const IMP_LABELS={nombre:'Nombre *',apellido:'Apellido',whatsapp:'WhatsApp *',email:'Correo',cumpleanos:'Cumpleaños',canal:'Canal de llegada',notas:'Notas',barbero_preferido:'Profesional preferido'};
 const IMP_ALIAS={
@@ -2261,14 +2302,80 @@ const IMP_ALIAS={
 };
 
 function impNormalizarHeader(h){ const combinantes=new RegExp('['+String.fromCharCode(0x0300)+'-'+String.fromCharCode(0x036f)+']','g'); return (h||'').toString().trim().toLowerCase().normalize('NFD').replace(combinantes,''); }
-function impNormWsp(w){ return (w||'').toString().replace(/\D/g,''); }
 
-function impAutoDetectar(headers){
+// Un valor de celda está vacío si es texto en blanco. Una fecha real (Date)
+// nunca está vacía.
+function impCeldaVacia(v){ return !(v instanceof Date) && (v==null||String(v).trim()===''); }
+
+// Nombre comparable: sin tildes, sin mayúsculas y con los espacios colapsados.
+// El nombre completo junta nombre + apellido porque en la base conviven las
+// dos formas ("Juan" + "Pérez" y "Juan Pérez" todo en nombre) y deben dar lo
+// mismo.
+function impNombreNorm(s){ return (s==null?'':String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim(); }
+function impNombreCompleto(nombre,apellido){ return impNombreNorm((nombre||'')+' '+(apellido||'')); }
+function impNombreVisible(c){ return ((c.nombre||'')+' '+(c.apellido||'')).trim(); }
+
+// Formato mínimo de un correo: algo@dominio.tld sin espacios. No intenta ser
+// exhaustivo; solo atajar lo que claramente no es un correo.
+function impEmailValido(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e); }
+
+// Limpia un teléfono tal como lo deja Excel y devuelve {tel, motivo}:
+// tel es el resultado de wspChile() ('' si no sirve) y motivo explica por qué
+// no sirve. Excel estropea los números de dos maneras:
+//   · notación científica: 9.87542136E8. Solo se acepta si la expansión es
+//     EXACTA (tantos decimales como exponente); si Excel cortó dígitos
+//     (9.8754213E8 = "98754213" + un cero inventado) el número ya no es el
+//     original y se rechaza en vez de adivinar.
+//   · sufijo decimal: 56987542136.0 o 987542136,0.
+function impLimpiarTel(valor){
+  let s;
+  if(typeof valor==='number'){
+    if(!Number.isInteger(valor)) return {tel:'',motivo:'Teléfono con decimales'};
+    s=String(valor);
+  } else {
+    s=(valor==null?'':String(valor)).trim();
+  }
+  if(!s) return {tel:'',motivo:'Sin teléfono'};
+  const m=s.match(/^[+-]?(\d+)(?:[.,](\d+))?\s*[eE]\s*\+?(\d+)$/);
+  if(m){
+    const dec=(m[2]||'').length, exp=parseInt(m[3],10);
+    if(dec>exp) return {tel:'',motivo:'Teléfono con decimales ('+s+')'};
+    if(dec<exp) return {tel:'',motivo:'Excel lo guardó en notación científica y cortó dígitos ('+s+')'};
+    s=m[1]+(m[2]||'');
+  } else if((s.match(/[.,]/g)||[]).length===1){
+    s=s.replace(/(\d)[.,]0+$/,'$1');
+  }
+  const tel=wspChile(s);
+  if(tel) return {tel,motivo:null};
+  const d=s.replace(/\D/g,'');
+  if(!d) return {tel:'',motivo:'Teléfono sin dígitos ('+s+')'};
+  if(/^(56)?0*[2-8]\d{8}$/.test(d)) return {tel:'',motivo:'Es un teléfono fijo, no un celular ('+s+')'};
+  if(d.length<9) return {tel:'',motivo:'Teléfono con solo '+d.length+' dígitos ('+s+')'};
+  return {tel:'',motivo:'No es un celular chileno ('+s+')'};
+}
+
+// Auto-detección por alias. Si el archivo trae DOS columnas candidatas a
+// teléfono (Teléfono y Celular) se elige la que tenga más celulares válidos;
+// en empate, la primera del archivo.
+function impAutoDetectar(headers,rows){
   const usados=new Set(), mapping={};
+  IMP.notaTelefono='';
   Object.keys(IMP_ALIAS).forEach(campo=>{
     const alias=IMP_ALIAS[campo].map(impNormalizarHeader);
-    const match=headers.find(h=>!usados.has(h)&&alias.includes(impNormalizarHeader(h)));
-    if(match){ mapping[campo]=match; usados.add(match); }
+    const cands=headers.filter(h=>!usados.has(h)&&alias.includes(impNormalizarHeader(h)));
+    if(!cands.length)return;
+    let elegido=cands[0];
+    if(campo==='whatsapp'&&cands.length>1&&rows&&rows.length){
+      let mejor=-1;
+      const detalle=[];
+      cands.forEach(h=>{
+        const n=rows.reduce((a,r)=>a+(impLimpiarTel(r.valores[h]).tel?1:0),0);
+        detalle.push(h+': '+n);
+        if(n>mejor){ mejor=n; elegido=h; }
+      });
+      IMP.notaTelefono='El archivo trae varias columnas de teléfono ('+detalle.join(' · ')+' celulares válidos). Usamos «'+elegido+'»; puedes cambiarla abajo.';
+    }
+    mapping[campo]=elegido; usados.add(elegido);
   });
   return mapping;
 }
@@ -2291,6 +2398,50 @@ function impParseFecha(v){
   return null;
 }
 
+// Un CSV guardado por Excel en español es Windows-1252 con ';'. Decodificarlo
+// como UTF-8 no solo cambia las tildes: el byte de la tilde se come el
+// separador siguiente y la columna del teléfono queda vacía. Por eso se
+// prueba UTF-8 ESTRICTO (fatal: lanza si hay bytes inválidos) y, si falla,
+// Windows-1252, que acepta cualquier byte.
+function impDecodificarCsv(buf){
+  let texto, codificacion;
+  try{
+    texto=new TextDecoder('utf-8',{fatal:true}).decode(buf);
+    codificacion='UTF-8';
+  }catch(e){
+    texto=new TextDecoder('windows-1252').decode(buf);
+    codificacion='Windows-1252 (CSV de Excel en español)';
+  }
+  if(texto.charCodeAt(0)===0xFEFF) texto=texto.slice(1);
+  return {texto,codificacion};
+}
+
+// Lee la hoja como MATRIZ (header:1, blankrows:true) para conocer el número
+// de fila REAL de cada dato: sheet_to_json con objetos se salta las filas
+// vacías y entonces "Fila 7" apuntaba a otra fila del archivo. Los
+// encabezados se hacen únicos igual que SheetJS (Nombre, Nombre_1,
+// __EMPTY). Una fila con solo espacios cuenta como vacía y se descarta.
+function impFilasDeHoja(sheet){
+  const aoa=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true,blankrows:true});
+  if(!aoa.length)return {headers:[],rows:[]};
+  const cuenta={};
+  const headers=aoa[0].map(h=>{
+    const base=impCeldaVacia(h)?'__EMPTY':String(h);
+    const n=(cuenta[base]==null)?0:cuenta[base]+1;
+    cuenta[base]=n;
+    return n?base+'_'+n:base;
+  });
+  const rows=[];
+  for(let i=1;i<aoa.length;i++){
+    const celdas=aoa[i];
+    if(headers.every((h,j)=>impCeldaVacia(celdas[j])))continue;
+    const valores={};
+    headers.forEach((h,j)=>{ valores[h]=celdas[j]==null?'':celdas[j]; });
+    rows.push({fila:i+1,valores});
+  }
+  return {headers,rows};
+}
+
 async function impLeerArchivo(input){
   const file=input.files[0];
   const errEl=document.getElementById('imp-file-error');
@@ -2298,26 +2449,27 @@ async function impLeerArchivo(input){
   if(!file)return;
   try{
     const buf=await file.arrayBuffer();
-    // raw:true en las dos llamadas es crítico: sin esto, SheetJS "adivina" tipos
-    // en celdas de CSV (un WhatsApp como "0956987654" se vuelve el número
-    // 956987654, perdiendo el 0 inicial) y reformatea fechas a m/d/yy con un
-    // corrimiento de un día según la zona horaria del navegador. Con raw:true
-    // las celdas de texto llegan intactas, y las fechas reales de un .xlsx
-    // llegan como Date de verdad (ver impParseFecha, que las lee en UTC).
-    // codepage:65001 (UTF-8) es igual de crítico para .csv: sin esto, SheetJS
-    // decodifica el ArrayBuffer de un CSV con tildes/ñ como si fuera Latin-1,
-    // dejando "José" como "JosÃ©" — y eso rompe además el auto-mapeo de
-    // columnas (un header "Teléfono" mal decodificado ya no matchea ningún
-    // alias). No afecta la lectura de .xlsx binario (usa su propia
-    // codificación interna, este flag es un no-op ahí).
-    const wb=XLSX.read(buf,{type:'array',raw:true,cellDates:true,codepage:65001});
+    let wb, codificacion='';
+    if(/\.csv$/i.test(file.name)||/csv/i.test(file.type||'')){
+      const dec=impDecodificarCsv(buf);
+      codificacion=dec.codificacion;
+      wb=XLSX.read(dec.texto,{type:'string',raw:true,cellDates:true});
+    } else {
+      // .xlsx / .xls: la codificación va dentro del archivo, no hay que
+      // adivinarla. raw:true evita que SheetJS reformatee teléfonos y fechas;
+      // las fechas reales llegan como Date (ver impParseFecha).
+      wb=XLSX.read(buf,{type:'array',raw:true,cellDates:true,codepage:65001});
+    }
     const sheet=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:true});
-    if(!rows.length)throw new Error('El archivo no tiene filas de datos.');
-    IMP.headers=Object.keys(rows[0]);
-    IMP.rows=rows;
-    IMP.mapping=impAutoDetectar(IMP.headers);
-    document.getElementById('imp-file-info').textContent=`${file.name} — ${rows.length} filas detectadas`;
+    const leido=impFilasDeHoja(sheet);
+    if(!leido.rows.length)throw new Error('El archivo no tiene filas de datos.');
+    IMP.headers=leido.headers;
+    IMP.rows=leido.rows;
+    IMP.codificacion=codificacion;
+    IMP.mapping=impAutoDetectar(IMP.headers,IMP.rows);
+    document.getElementById('imp-file-info').textContent=`${file.name} — ${leido.rows.length} filas detectadas`;
+    document.getElementById('imp-info-lectura').textContent=codificacion?('Archivo leído como '+codificacion+'.'):'';
+    document.getElementById('imp-info-lectura').style.display=codificacion?'':'none';
     impRenderMapeo();
     impIrPaso(2);
   }catch(e){
@@ -2328,18 +2480,19 @@ async function impLeerArchivo(input){
 
 function impRenderMapeo(){
   const cont=document.getElementById('imp-mapeo');
-  cont.innerHTML=Object.keys(IMP_LABELS).map(campo=>{
+  const nota=IMP.notaTelefono?`<div class="alert al-warn" style="margin-bottom:10px">${escHtml(IMP.notaTelefono)}</div>`:'';
+  cont.innerHTML=nota+Object.keys(IMP_LABELS).map(campo=>{
     const opts=['<option value="">No usar</option>'].concat(
-      IMP.headers.map(h=>`<option value="${h}" ${IMP.mapping[campo]===h?'selected':''}>${h}</option>`)
+      IMP.headers.map(h=>`<option value="${escHtml(h)}" ${IMP.mapping[campo]===h?'selected':''}>${escHtml(h)}</option>`)
     ).join('');
-    const crudo=IMP.mapping[campo]?IMP.rows[0]?.[IMP.mapping[campo]]:'';
+    const crudo=IMP.mapping[campo]?IMP.rows[0]?.valores?.[IMP.mapping[campo]]:'';
     const muestra=campo==='cumpleanos'?(impParseFecha(crudo)||''):(crudo??'');
     return `<div class="imp-map-row">
       <div class="imp-map-col" style="flex:0 0 160px">${IMP_LABELS[campo]}</div>
       <div class="imp-map-arrow">←</div>
       <div style="flex:1">
         <select onchange="impCambiarMapeo('${campo}',this.value)">${opts}</select>
-        ${muestra?`<div class="imp-map-sample">Ej: ${muestra}</div>`:''}
+        ${muestra?`<div class="imp-map-sample">Ej: ${escHtml(muestra)}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2357,80 +2510,191 @@ function impValidarMapeo(){
   document.getElementById('imp-mapeo-alerta').style.display=ok?'none':'';
 }
 
-function impConstruirPreview(){
-  const barberosPorNombre=new Map(S.barberos.map(b=>[b.nombre.trim().toLowerCase(),b.nombre]));
-  const clientesPorWsp=new Map();
-  S.clientes.forEach(c=>{ const k=impNormWsp(c.whatsapp); if(k)clientesPorWsp.set(k,c); });
+// "Actualizar" solo COMPLETA: devuelve los campos que el archivo trae con
+// valor y que la ficha tiene vacíos. El nombre, el canal y un WhatsApp ya
+// guardado nunca se tocan. Si no hay nada que completar, no hay update.
+const IMP_COMPLETABLES=[['apellido','apellido'],['whatsapp','WhatsApp'],['email','correo'],['cumpleanos','cumpleaños'],['notas','notas'],['barbero_preferido','profesional']];
+function impCamposACompletar(existente,data){
+  const payload={}, etiquetas=[];
+  IMP_COMPLETABLES.forEach(([k,et])=>{
+    if(impCeldaVacia(data[k])||!impCeldaVacia(existente[k]))return;
+    // El apellido no se completa si ya figura DENTRO del nombre de la ficha:
+    // "Juan Pérez" + apellido "Pérez" daría "Juan Pérez Pérez".
+    if(k==='apellido'&&(' '+impNombreNorm(existente.nombre)+' ').indexOf(' '+impNombreNorm(data.apellido)+' ')!==-1)return;
+    payload[k]=data[k]; etiquetas.push(et);
+  });
+  return {payload,etiquetas};
+}
 
-  IMP.processed=IMP.rows.map((row,i)=>{
-    const get=campo=>IMP.mapping[campo]?(row[IMP.mapping[campo]]??'').toString().trim():'';
-    // cumpleanos NO pasa por get() (que fuerza .toString()) porque una celda
-    // de fecha real de .xlsx llega como objeto Date — hay que pasarlo crudo
-    // a impParseFecha para que lo lea con getUTC*, no como texto ya roto.
-    const getRaw=campo=>IMP.mapping[campo]?row[IMP.mapping[campo]]:'';
-    const nombre=get('nombre'), whatsapp=get('whatsapp');
+// Devuelve false (y avisa) si no se pudo cargar la lista completa de
+// clientes: sin ella no se pueden detectar duplicados y se crearían fichas
+// repetidas.
+//
+// CLAVES DE DUPLICADO:
+//   · el TELÉFONO es la clave principal (wspClave: últimos 9 dígitos);
+//   · el CORREO solo cuenta si ADEMÁS coincide el nombre (sin tildes ni
+//     mayúsculas). Dos personas pueden compartir correo —una pareja, una
+//     madre y su hijo—: con el mismo correo y otro nombre la fila se importa
+//     como NUEVA, con un aviso «mismo correo que …».
+// Y las dos claves valen contra las fichas existentes y DENTRO del archivo.
+function impConstruirPreview(){
+  if(!S.clientesOk){
+    notify('No pudimos cargar tus clientes actuales, así que no se pueden detectar duplicados. Recarga la página e intenta de nuevo.','err');
+    return false;
+  }
+  const barberosPorNombre=new Map(S.barberos.map(b=>[b.nombre.trim().toLowerCase(),b.nombre]));
+  const porClave=new Map(), porEmail=new Map();   // porEmail: correo -> [fichas]
+  S.clientes.forEach(c=>{
+    const k=wspClave(c.whatsapp); if(k&&!porClave.has(k))porClave.set(k,c);
+    const e=(c.email||'').trim().toLowerCase();
+    if(e){ if(!porEmail.has(e))porEmail.set(e,[]); porEmail.get(e).push(c); }
+  });
+  // Lo ya "reclamado" por una fila anterior del archivo: la primera gana.
+  const vistoClave=new Map(), vistoEmail=new Map(); // vistoEmail: correo -> [{fila,nom}]
+
+  IMP.processed=IMP.rows.map(row=>{
+    const celda=campo=>IMP.mapping[campo]?row.valores[IMP.mapping[campo]]:'';
+    const get=campo=>{ const v=celda(campo); return (v==null?'':v).toString().trim(); };
+    const nombre=get('nombre');
+    const rawTel=celda('whatsapp');
+    const limpio=impLimpiarTel(rawTel);
+    // Un correo mal escrito no se guarda: la fila sigue, sin correo, y se avisa.
+    const emailTxt=get('email');
+    const correoInvalido=(emailTxt&&!impEmailValido(emailTxt))?emailTxt:'';
+    const email=correoInvalido?'':emailTxt;
     const data={
-      nombre, apellido:get('apellido'), whatsapp, email:get('email'),
-      cumpleanos:impParseFecha(getRaw('cumpleanos')),
+      nombre, apellido:get('apellido'), whatsapp:limpio.tel, email,
+      // cumpleanos NO pasa por get() (que fuerza .toString()) porque una celda
+      // de fecha real de .xlsx llega como objeto Date: se pasa crudo a
+      // impParseFecha, que lo lee con getUTC*.
+      cumpleanos:impParseFecha(celda('cumpleanos')),
       canal:get('canal')||'Importado',
       notas:get('notas'),
       barbero_preferido:null
     };
-    const error=(!nombre||!whatsapp)?'Falta nombre o WhatsApp':null;
+    const r={fila:row.fila,data,estado:'crear',motivo:'',avisos:[],correoInvalido:'',dupCliente:null,dupPor:'',dupFila:null,accion:'crear',completa:null,telCrudo:impCeldaVacia(rawTel)?'':String(rawTel)};
 
-    let avisoBarbero=null;
+    if(!nombre){ r.estado='error'; r.motivo='Falta el nombre'; r.accion='omitir'; return r; }
+    if(!limpio.tel){ r.estado='sin_tel'; r.motivo=limpio.motivo; r.accion='omitir'; return r; }
+
+    if(correoInvalido){
+      r.correoInvalido=correoInvalido;
+      r.avisos.push(`Fila ${row.fila}: correo inválido "${correoInvalido}" — no se guardó`);
+    }
     const bTexto=get('barbero_preferido');
     if(bTexto){
       const match=barberosPorNombre.get(bTexto.trim().toLowerCase());
       if(match)data.barbero_preferido=match;
-      else avisoBarbero=`Fila ${i+2}: profesional "${bTexto}" no coincide con ningún profesional actual — se importó sin asignar`;
+      else r.avisos.push(`Fila ${row.fila}: profesional "${bTexto}" no coincide con ningún profesional actual — se importó sin asignar`);
     }
 
-    // Dedup del import: por dígitos únicamente (a diferencia del criterio de
-    // string exacto que usa el resto de la app, ver guardarCliente()/
-    // procesarReserva()) — un archivo migrado de otra plataforma casi seguro
-    // trae formatos de número distintos a los ya guardados, y con match
-    // exacto la detección de duplicados no serviría de nada acá. No cambia
-    // ni reescribe cómo se compara whatsapp en el resto de Reservia.
-    let dupCliente=null;
-    if(!error){
-      const k=impNormWsp(whatsapp);
-      dupCliente=k?(clientesPorWsp.get(k)||null):null;
-    }
+    const clave=wspClave(limpio.tel), em=email.toLowerCase();
+    const nomN=impNombreCompleto(nombre,data.apellido);
 
-    return {fila:i+2,data,error,avisoBarbero,dupCliente,accion:error?'error':(dupCliente?'saltar':'crear')};
+    // Repetida DENTRO del archivo: la primera fila gana.
+    let previa=vistoClave.get(clave), previaPor='teléfono';
+    if(!previa&&em&&vistoEmail.has(em)){
+      const vistos=vistoEmail.get(em);
+      const mismo=vistos.find(v=>v.nom===nomN);
+      if(mismo){ previa=mismo.fila; previaPor='correo y nombre'; }
+      else r.avisos.push(`Fila ${row.fila}: mismo correo que la fila ${vistos[0].fila} del archivo — se importa como nueva`);
+    }
+    if(previa){
+      r.estado='dup_archivo'; r.dupFila=previa; r.accion='omitir'; r.avisos=[];
+      r.motivo='Igual a la fila '+previa+' del archivo (por '+previaPor+')';
+      return r;
+    }
+    vistoClave.set(clave,row.fila);
+    if(em){ if(!vistoEmail.has(em))vistoEmail.set(em,[]); vistoEmail.get(em).push({fila:row.fila,nom:nomN}); }
+
+    // Ya existe en el negocio: por los últimos 9 dígitos o por correo + nombre.
+    let dup=porClave.get(clave)||null, por='teléfono';
+    if(!dup&&em&&porEmail.has(em)){
+      const fichas=porEmail.get(em);
+      const mismo=fichas.find(c=>impNombreCompleto(c.nombre,c.apellido)===nomN);
+      if(mismo){ dup=mismo; por='correo y nombre'; }
+      else r.avisos.push(`Fila ${row.fila}: mismo correo que ${impNombreVisible(fichas[0])} — se importa como nueva`);
+    }
+    if(dup){
+      r.estado='existe'; r.dupCliente=dup; r.dupPor=por; r.accion='saltar';
+      r.completa=impCamposACompletar(dup,data);
+    }
+    return r;
   });
 
   impRenderPreview();
+  return true;
+}
+
+// Filas con problemas, para devolvérselas al dueño y que las arregle en su
+// planilla: las que no se importaron por no tener nombre o un teléfono
+// válido, y las que se importaron SIN el correo por estar mal escrito (solo
+// si de verdad se importan: estado crear, o existe con acción actualizar). Las
+// repetidas no están acá: no hay nada que arreglar.
+function impFilasConProblemas(){
+  const out=[];
+  IMP.processed.forEach(r=>{
+    const nombre=((r.data.nombre||'')+' '+(r.data.apellido||'')).trim();
+    if(r.estado==='error'||r.estado==='sin_tel') out.push({fila:r.fila,nombre,tel:r.telCrudo,motivo:r.motivo});
+    else if(r.correoInvalido&&(r.estado==='crear'||(r.estado==='existe'&&r.accion==='actualizar'))) out.push({fila:r.fila,nombre,tel:r.telCrudo,motivo:'Correo inválido ("'+r.correoInvalido+'"): la fila se importó sin correo'});
+  });
+  return out;
+}
+// Un valor que empieza con = + - @ lo toma Excel como fórmula: se le antepone
+// una comilla simple. Un teléfono "+55 11 …" quedaría con esa comilla a la
+// vista, que es el precio de que no se ejecute nada al abrir el archivo.
+function impCsvCelda(v){
+  let s=(v==null?'':String(v));
+  if(/^[=+\-@\t\r]/.test(s))s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+}
+// ';' y BOM UTF-8: es lo que Excel en español abre bien con doble clic.
+function impCsvProblemas(){
+  const filas=impFilasConProblemas().map(f=>[f.fila,f.nombre,f.tel,f.motivo]);
+  return '\uFEFF'+[['Fila','Nombre','Teléfono original','Motivo']].concat(filas).map(l=>l.map(impCsvCelda).join(';')).join('\r\n')+'\r\n';
+}
+function impDescargarProblemas(){
+  const blob=new Blob([impCsvProblemas()],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='filas-con-problemas.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
 function impRenderPreview(){
-  const nuevos=IMP.processed.filter(r=>!r.error&&!r.dupCliente).length;
-  const dups=IMP.processed.filter(r=>!r.error&&r.dupCliente).length;
-  const errores=IMP.processed.filter(r=>r.error).length;
+  const cuenta=e=>IMP.processed.filter(r=>r.estado===e).length;
+  const nuevos=cuenta('crear'), dups=cuenta('existe');
   document.getElementById('imp-cnt-nuevos').textContent=nuevos;
   document.getElementById('imp-cnt-dup').textContent=dups;
-  document.getElementById('imp-cnt-err').textContent=errores;
+  document.getElementById('imp-cnt-arch').textContent=cuenta('dup_archivo');
+  document.getElementById('imp-cnt-tel').textContent=cuenta('sin_tel');
+  document.getElementById('imp-cnt-err').textContent=cuenta('error');
   document.getElementById('imp-bulk-dup').style.display=dups>0?'flex':'none';
+  impMostrarBotonProblemas();
 
   document.getElementById('imp-preview').innerHTML=IMP.processed.map((r,idx)=>{
-    const estado=r.error?'<span class="badge b-red">Error</span>'
-      :r.dupCliente?'<span class="badge b-orange">Ya existe</span>'
+    const estado=r.estado==='error'?'<span class="badge b-red">Sin nombre</span>'
+      :r.estado==='sin_tel'?'<span class="badge b-red">Sin teléfono válido</span>'
+      :r.estado==='dup_archivo'?'<span class="badge b-silver">Repetida en el archivo</span>'
+      :r.estado==='existe'?`<span class="badge b-orange">Ya existe (por ${r.dupPor})</span>`
       :'<span class="badge b-green">Nuevo</span>';
     let accionHtml='—';
-    if(!r.error&&r.dupCliente){
+    if(r.estado==='existe'){
+      const detalle=r.completa.etiquetas.length?'Completaría: '+r.completa.etiquetas.join(', '):'Sin datos nuevos para completar';
       accionHtml=`<select onchange="impSetAccionFila(${idx},this.value)" style="max-width:160px">
         <option value="saltar" ${r.accion==='saltar'?'selected':''}>Saltar</option>
         <option value="actualizar" ${r.accion==='actualizar'?'selected':''}>Actualizar</option>
-      </select>`;
-    } else if(r.error){
-      accionHtml=`<span style="color:#ff5555;font-size:11px">${r.error}</span>`;
+      </select><div style="font-size:11px;color:var(--text3);margin-top:4px">${escHtml(detalle)}</div>`;
+    } else if(r.motivo){
+      accionHtml=`<span style="color:${r.estado==='dup_archivo'?'var(--text3)':'#ff5555'};font-size:11px">${escHtml(r.motivo)}</span>`;
     }
+    if(r.avisos.length) accionHtml+=r.avisos.map(a=>`<div style="font-size:11px;color:#d4a853;margin-top:4px">ℹ️ ${escHtml(a.replace(/^Fila \d+: /,''))}</div>`).join('');
+    const wsp=r.data.whatsapp||r.telCrudo||'—';
     return `<tr>
       <td data-label="Fila">${r.fila}</td>
-      <td data-label="Nombre">${r.data.nombre||'—'} ${r.data.apellido||''}</td>
-      <td data-label="WhatsApp">${r.data.whatsapp||'—'}</td>
-      <td data-label="Email">${r.data.email||'—'}</td>
+      <td data-label="Nombre">${escHtml(r.data.nombre)||'—'} ${escHtml(r.data.apellido)}</td>
+      <td data-label="WhatsApp">${escHtml(wsp)}</td>
+      <td data-label="Email">${escHtml(r.data.email)||'—'}</td>
       <td data-label="Estado">${estado}</td>
       <td data-label="Acción">${accionHtml}</td>
     </tr>`;
@@ -2439,15 +2703,16 @@ function impRenderPreview(){
   document.getElementById('imp-btn-confirmar').disabled=(nuevos+dups)===0;
 }
 
-function impSetAccionFila(idx,val){ IMP.processed[idx].accion=val; }
+function impMostrarBotonProblemas(){ document.getElementById('imp-btn-problemas').style.display=impFilasConProblemas().length?'':'none'; }
+function impSetAccionFila(idx,val){ IMP.processed[idx].accion=val; impMostrarBotonProblemas(); }
 function impAplicarAccionMasiva(val){
   if(!val)return;
-  IMP.processed.forEach(r=>{ if(!r.error&&r.dupCliente)r.accion=val; });
+  IMP.processed.forEach(r=>{ if(r.estado==='existe')r.accion=val; });
   impRenderPreview();
 }
 
 function impIrPaso(n){
-  if(n===3)impConstruirPreview();
+  if(n===3&&!impConstruirPreview())return;
   document.querySelectorAll('#m-importar-clientes .imp-step-content').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('#m-importar-clientes .imp-step-tab').forEach((t,i)=>{
     t.classList.remove('active');
@@ -2461,11 +2726,12 @@ async function impEjecutarImportacion(){
   const btn=document.getElementById('imp-btn-confirmar');
   btn.disabled=true; btn.textContent='Importando...';
 
-  const aCrear=IMP.processed.filter(r=>!r.error&&!r.dupCliente);
-  const aActualizar=IMP.processed.filter(r=>!r.error&&r.dupCliente&&r.accion==='actualizar');
-  const saltados=IMP.processed.filter(r=>r.error||(r.dupCliente&&r.accion==='saltar')).length;
-  const erroresFilas=IMP.processed.filter(r=>r.error).map(r=>`Fila ${r.fila}: ${r.error}`);
-  const avisos=IMP.processed.filter(r=>r.avisoBarbero).map(r=>r.avisoBarbero);
+  const aCrear=IMP.processed.filter(r=>r.estado==='crear');
+  const aActualizar=IMP.processed.filter(r=>r.estado==='existe'&&r.accion==='actualizar'&&r.completa.etiquetas.length);
+  const sinCambios=IMP.processed.filter(r=>r.estado==='existe'&&r.accion==='actualizar'&&!r.completa.etiquetas.length).length;
+  const saltados=IMP.processed.filter(r=>r.estado!=='crear'&&!(r.estado==='existe'&&r.accion==='actualizar')).length;
+  const erroresFilas=IMP.processed.filter(r=>r.estado==='error'||r.estado==='sin_tel').map(r=>`Fila ${r.fila}: ${r.motivo}`);
+  const avisos=[].concat(...IMP.processed.filter(r=>r.estado==='crear'||(r.estado==='existe'&&r.accion==='actualizar')).map(r=>r.avisos));
 
   let creados=0, actualizados=0;
 
@@ -2476,29 +2742,32 @@ async function impEjecutarImportacion(){
     else creados+=chunk.length;
   }
 
+  // El update lleva SOLO los campos que se completan: nunca barberia_id, nunca
+  // un campo que el archivo no trae, nunca un valor vacío.
   for(const r of aActualizar){
-    const payload={...r.data,barberia_id:S.barberia.id};
-    const {error}=await sb.from('clientes').update(payload).eq('id',r.dupCliente.id);
+    const {error}=await sb.from('clientes').update(r.completa.payload).eq('id',r.dupCliente.id);
     if(error)erroresFilas.push(`Fila ${r.fila}: error al actualizar — `+error.message);
     else actualizados++;
   }
 
   await loadClientes();renderClientes();renderDashboard();
-  impMostrarResultado({creados,actualizados,saltados,erroresFilas,avisos});
+  impMostrarResultado({creados,actualizados,sinCambios,saltados,erroresFilas,avisos});
   btn.disabled=false; btn.textContent='Importar';
   impIrPaso(4);
 }
 
-function impMostrarResultado({creados,actualizados,saltados,erroresFilas,avisos}){
+function impMostrarResultado({creados,actualizados,sinCambios,saltados,erroresFilas,avisos}){
   document.getElementById('imp-resultado').innerHTML=`
     <div class="imp-summary">
       <div class="mc"><div class="mc-label">Creados</div><div class="mc-val" style="color:#00e096">${creados}</div></div>
       <div class="mc"><div class="mc-label">Actualizados</div><div class="mc-val" style="color:#5b8def">${actualizados}</div></div>
+      <div class="mc"><div class="mc-label">Sin cambios</div><div class="mc-val" style="color:var(--text3)">${sinCambios}</div></div>
       <div class="mc"><div class="mc-label">Saltados</div><div class="mc-val" style="color:var(--text3)">${saltados}</div></div>
-      <div class="mc"><div class="mc-label">Errores</div><div class="mc-val" style="color:#ff5555">${erroresFilas.length}</div></div>
+      <div class="mc"><div class="mc-label">Con problemas</div><div class="mc-val" style="color:#ff5555">${erroresFilas.length}</div></div>
     </div>
-    ${erroresFilas.length?`<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase">Errores</div><div class="imp-warn-list">${erroresFilas.map(e=>`<div>⚠️ ${e}</div>`).join('')}</div></div>`:''}
-    ${avisos.length?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase">Avisos</div><div class="imp-warn-list">${avisos.map(a=>`<div>ℹ️ ${a}</div>`).join('')}</div></div>`:''}
+    ${erroresFilas.length?`<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase">Filas que no se importaron</div><div class="imp-warn-list">${erroresFilas.map(e=>`<div>⚠️ ${escHtml(e)}</div>`).join('')}</div></div>`:''}
+    ${impFilasConProblemas().length?`<div style="margin:10px 0"><button class="btn btn-ghost" onclick="impDescargarProblemas()">⬇ Descargar filas con problemas</button></div>`:''}
+    ${avisos.length?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase">Avisos</div><div class="imp-warn-list">${avisos.map(a=>`<div>ℹ️ ${escHtml(a)}</div>`).join('')}</div></div>`:''}
   `;
 }
 

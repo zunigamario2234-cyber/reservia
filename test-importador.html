@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>test · importador de clientes (Fase 1)</title>
+<style>
+body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0b0c10;color:#d8dae0;padding:18px;line-height:1.5}
+pre{white-space:pre-wrap;font-size:12px}
+pre.ok{color:#5cd685}
+pre.fail{color:#ff6b6b}
+h1{font-size:14px;margin-bottom:10px;color:#9aa3af;font-weight:600}
+</style>
+</head>
+<body>
+<h1>test · importador de clientes (Fase 1)</h1>
+<pre id="resultado">corriendo…</pre>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// Prueba el IMPORTADOR REAL de app.html: baja app.html, le quita `init();`,
+// la monta en un iframe y parchea sb, S y notify. Cada caso carga un archivo
+// como lo haría el usuario (impLeerArchivo → mapeo → vista previa →
+// impEjecutarImportacion) y mira lo que habría escrito en la base. NADA de
+// esto toca la base real: sb.from('clientes') es un simulador en memoria.
+//
+// CÓMO CORRERLO (igual que test-paginas-publicas-tema.html):
+//   chrome --headless --allow-file-access-from-files \
+//          --virtual-time-budget=120000 --dump-dom "file:///.../test-importador.html"
+// El veredicto se lee en la CLASE del <pre id="resultado"> (ok o fail), NUNCA
+// buscando un texto de éxito en la salida.
+//
+// ARCHIVOS DE PRUEBA DE MARIO: viven FUERA del repo, en el Escritorio. El
+// grupo Z los usa si los encuentra y, si no, lo dice en el informe (no falla,
+// pero tampoco da por probado lo que no probó).
+// ═══════════════════════════════════════════════════════════════════════
+
+var RUTA_ARCHIVOS_MARIO = 'file:///C:/Users/MARIO/Desktop/Reservia%20-%20archivos%20de%20prueba/';
+
+var total = 0, fallas = [], informe = [];
+function check(nombre, obtenido, esperado) {
+  total++;
+  var ok = String(obtenido) === String(esperado);
+  if (!ok) fallas.push(nombre + '\n      obtenido: ' + obtenido + '\n      esperado: ' + esperado);
+  return ok;
+}
+function verdad(nombre, cond, detalle) {
+  total++;
+  if (!cond) fallas.push(nombre + (detalle ? '\n      ' + detalle : ''));
+  return !!cond;
+}
+function bajar(url) {
+  return new Promise(function (res, rej) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onload = function () { res(x.responseText); };
+    x.onerror = function () { rej(new Error('no se pudo bajar ' + url)); };
+    x.send();
+  });
+}
+function montar(html) {
+  return new Promise(function (res) {
+    var f = document.createElement('iframe');
+    f.style.cssText = 'width:900px;height:600px;position:absolute;left:-9999px';
+    f.srcdoc = html;
+    f.addEventListener('load', function () { res(f.contentWindow); });
+    document.body.appendChild(f);
+  });
+}
+function prepararApp(txt) { return txt.replace(/^init\(\);\s*$/m, ''); }
+
+// ── bytes de archivos ────────────────────────────────────────────────────
+function utf8(s) { return new TextEncoder().encode(s); }
+// Windows-1252 para el rango Latin-1 que usamos (é, ñ, ó, í, á, ú): un byte por carácter.
+function cp1252(s) {
+  var a = new Uint8Array(s.length);
+  for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i) & 255;
+  return a;
+}
+
+// ── simulador de la base ────────────────────────────────────────────────
+// Registra todo lo que el importador escribiría. `clientes` es la tabla
+// inicial; las altas y los updates la modifican, así que un loadClientes()
+// posterior ve lo importado. fallaPagina: índice de la página de lectura que
+// debe devolver error (null = ninguna).
+function prepararSim(w, clientes, fallaPagina) {
+  w.eval([
+    'window.__reg = { inserts: [], updates: [], notifs: [], paginas: [] };',
+    'notify = function (m, t) { window.__reg.notifs.push((t || "ok") + ": " + m); };',
+    'renderClientes = function () {}; renderDashboard = function () {};',
+    'S.barberia = { id: "TEST-ID" }; S.barberos = [{ nombre: "Carlos" }, { nombre: "Marta" }];',
+    'window.__tabla = ' + JSON.stringify(clientes) + ';',
+    'window.__falla = ' + (fallaPagina == null ? 'null' : fallaPagina) + ';',
+    'sb.from = function (t) {',
+    '  if (t !== "clientes") throw new Error("tabla inesperada: " + t);',
+    '  return {',
+    '    select: function () { var q = { eq: function () { return q; }, order: function () { return q; },',
+    '      range: function (a, b) { var n = window.__reg.paginas.length; window.__reg.paginas.push([a, b]);',
+    '        if (window.__falla === n) return Promise.resolve({ data: null, error: { message: "falla simulada" } });',
+    '        return Promise.resolve({ data: window.__tabla.slice(a, b + 1), error: null }); } }; return q; },',
+    '    insert: function (rows) { window.__reg.inserts.push(JSON.parse(JSON.stringify(rows)));',
+    '      rows.forEach(function (r, i) { window.__tabla.unshift(Object.assign({ id: "n" + window.__tabla.length + "-" + i, created_at: "2026-10-31" }, r)); });',
+    '      return Promise.resolve({ error: null }); },',
+    '    update: function (p) { return { eq: function (c, id) {',
+    '      window.__reg.updates.push({ id: id, payload: JSON.parse(JSON.stringify(p)) });',
+    '      var f = window.__tabla.find(function (x) { return x.id === id; }); if (f) Object.assign(f, p);',
+    '      return Promise.resolve({ error: null }); } }; }',
+    '  };',
+    '};'
+  ].join('\n'));
+}
+function reg(w) { return JSON.parse(w.eval('JSON.stringify(window.__reg)')); }
+function cont(w) {
+  var g = function (id) { return w.document.getElementById(id).textContent; };
+  return { nuevos: g('imp-cnt-nuevos'), existen: g('imp-cnt-dup'), archivo: g('imp-cnt-arch'), tel: g('imp-cnt-tel'), err: g('imp-cnt-err') };
+}
+
+// Flujo real de un archivo. Devuelve lo que el usuario vería y lo que se escribió.
+async function importar(w, clientes, nombreArchivo, bytes, o) {
+  o = o || {};
+  prepararSim(w, clientes, o.fallaPagina);
+  await w.loadClientes();
+  w.eval('window.__reg.paginas = [];');
+  var file = new w.File([bytes], nombreArchivo, { type: o.tipo || '' });
+  await w.impLeerArchivo({ files: [file] });
+  if (o.mapeo) Object.keys(o.mapeo).forEach(function (c) { w.impCambiarMapeo(c, o.mapeo[c]); });
+  w.impIrPaso(3);
+  if (o.masiva) w.impAplicarAccionMasiva(o.masiva);
+  var prev = JSON.parse(w.eval('JSON.stringify((IMP.processed || []).map(function (r) { return { fila: r.fila, estado: r.estado, motivo: r.motivo, tel: r.data.whatsapp, nombre: r.data.nombre, por: r.dupPor, dupFila: r.dupFila, acc: r.accion, avisos: r.avisos, correoInvalido: r.correoInvalido, completa: r.completa ? r.completa.etiquetas : null }; }))'));
+  var c = cont(w);
+  if (o.ejecutar) await w.impEjecutarImportacion();
+  return { prev: prev, cont: c, reg: reg(w), codif: w.eval('IMP.codificacion'), info: w.document.getElementById('imp-info-lectura').textContent, nota: w.eval('IMP.notaTelefono'), mapping: JSON.parse(w.eval('JSON.stringify(IMP.mapping)')) };
+}
+function porFila(r, fila) { return r.prev.filter(function (x) { return x.fila === fila; })[0] || {}; }
+
+function ficha(id, extra) {
+  return Object.assign({ id: id, nombre: 'X', apellido: '', whatsapp: '', email: '', cumpleanos: null, canal: 'Reserva online', notas: '', barbero_preferido: null, created_at: '2026-01-01' }, extra || {});
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+async function grupoT(w) {                       // teléfonos
+  var L = function (v) { return JSON.parse(w.eval('JSON.stringify(impLimpiarTel(' + JSON.stringify(v) + '))')); };
+  var ok = function (nombre, valor, esperado) { check('T ' + nombre, L(valor).tel, esperado); };
+  ok('+56 9 8754 2136', '+56 9 8754 2136', '56987542136');
+  ok('9 dígitos pelados', '987542136', '56987542136');
+  ok('con 56 y sin +', '56987542136', '56987542136');
+  ok('con cero de salida', '0987542136', '56987542136');
+  ok('número (xlsx) de 11 dígitos', 56987542136, '56987542136');
+  ok('número (xlsx) de 9 dígitos', 987542136, '56987542136');
+  ok('notación científica EXACTA 9.87542136E8', '9.87542136E8', '56987542136');
+  ok('notación científica con coma 9,87542136E8', '9,87542136E8', '56987542136');
+  ok('sufijo .0', '56987542136.0', '56987542136');
+  ok('sufijo ,0', '987542136,0', '56987542136');
+  ok('puntos de miles 56.987.542.136', '56.987.542.136', '56987542136');
+  // lo que NO sirve, con motivo
+  var malo = function (nombre, valor, trozo) {
+    var r = L(valor);
+    verdad('T ' + nombre + ': tel vacío', r.tel === '', 'tel = ' + r.tel);
+    verdad('T ' + nombre + ': motivo con «' + trozo + '»', (r.motivo || '').indexOf(trozo) !== -1, 'motivo = ' + r.motivo);
+  };
+  malo('notación científica que cortó dígitos (9.8754213E8)', '9.8754213E8', 'notación científica');
+  malo('extranjero (Brasil)', '+55 11 91234 5678', 'No es un celular chileno');
+  malo('fijo de Santiago', '22 345 6789', 'fijo');
+  malo('8 dígitos', '8754 2136', 'solo 8 dígitos');
+  malo('texto', 'sin telefono', 'sin dígitos');
+  malo('vacío', '', 'Sin teléfono');
+  malo('decimales', 1234.5, 'decimales');
+}
+
+async function grupoD(w) {                       // deduplicado, contadores y filas
+  var existentes = [
+    ficha('c1', { nombre: 'Ana', whatsapp: '+56 9 8754 2136' }),
+    ficha('c2', { nombre: 'Luis', whatsapp: '911111111', email: 'LUIS@X.cl' })
+  ];
+  var csv = 'Nombre,Teléfono,Email\n' +
+    'Ana Nueva,987542136,\n' +                       // 2 existe por teléfono (otra forma de escribirlo)
+    'Luis,+56 9 2222 2222,luis@x.cl\n' +              // 3 existe por correo Y nombre (minúsculas)
+    'Nuevo Uno,+56 9 3333 3333,\n' +                  // 4 crear
+    '\n' +                                            // 5 línea vacía
+    '   ,   ,   \n' +                                 // 6 solo espacios: se salta
+    'Nuevo Repetido,933333333,\n' +                   // 7 repetida: igual a la 4 por teléfono
+    'Otro,+56 9 4444 4444,nuevo@x.cl\n' +             // 8 crear
+    'Otro,+56 9 5555 5555,NUEVO@x.cl\n' +             // 9 repetida: igual a la 8 por correo Y nombre
+    'Pepe,,\n' +                                      // 10 sin teléfono
+    'Brasil,+55 11 91234 5678,\n' +                   // 11 extranjero
+    ',+56 9 6666 6666,\n';                            // 12 sin nombre
+  var r = await importar(w, existentes, 'clientes.csv', utf8(csv), { ejecutar: true });
+  check('D fila 2: existe', porFila(r, 2).estado, 'existe');
+  check('D fila 2: por teléfono (últimos 9 dígitos, distinto formato)', porFila(r, 2).por, 'teléfono');
+  check('D fila 3: existe', porFila(r, 3).estado, 'existe');
+  check('D fila 3: por correo y nombre (mayúsculas/minúsculas)', porFila(r, 3).por, 'correo y nombre');
+  check('D fila 4: crear', porFila(r, 4).estado, 'crear');
+  check('D fila 7: repetida dentro del archivo', porFila(r, 7).estado, 'dup_archivo');
+  check('D fila 7: la primera gana (igual a la fila 4)', porFila(r, 7).dupFila, '4');
+  check('D fila 8: crear', porFila(r, 8).estado, 'crear');
+  check('D fila 9: repetida por correo', porFila(r, 9).estado, 'dup_archivo');
+  check('D fila 9: la primera gana (igual a la fila 8)', porFila(r, 9).dupFila, '8');
+  check('D fila 10: sin teléfono válido', porFila(r, 10).estado, 'sin_tel');
+  check('D fila 11: extranjero queda fuera', porFila(r, 11).estado, 'sin_tel');
+  check('D fila 12: sin nombre', porFila(r, 12).estado, 'error');
+  check('D la fila 5 (línea vacía) y la 6 (solo espacios) no existen como filas', r.prev.length, '9');
+  verdad('D la fila 6 (solo espacios) no aparece', porFila(r, 6).estado === undefined && porFila(r, 5).estado === undefined);
+  check('D contador nuevos', r.cont.nuevos, '2');
+  check('D contador ya existen', r.cont.existen, '2');
+  check('D contador repetidos en el archivo', r.cont.archivo, '2');
+  check('D contador sin teléfono válido', r.cont.tel, '2');
+  check('D contador sin nombre', r.cont.err, '1');
+  var filasInsert = [].concat.apply([], r.reg.inserts);
+  check('D se insertan solo los 2 nuevos', filasInsert.length, '2');
+  check('D el teléfono se guarda normalizado con wspChile', filasInsert.map(function (x) { return x.whatsapp; }).join(','), '56933333333,56944444444');
+  check('D no hubo updates (acción por defecto = saltar)', r.reg.updates.length, '0');
+  verdad('D ninguna fila fuera de la importación se escribió', filasInsert.every(function (x) { return x.nombre === 'Nuevo Uno' || x.nombre === 'Otro'; }));
+  verdad('D cada fila sin teléfono válido trae su motivo', porFila(r, 11).motivo.length > 0 && porFila(r, 10).motivo.length > 0);
+}
+
+async function grupoA(w) {                       // "Actualizar" solo completa
+  var existentes = [
+    ficha('c1', { nombre: 'Ana', whatsapp: '987542136', email: '', notas: 'VIP', canal: 'Reserva online' }),
+    ficha('c2', { nombre: 'Bea', whatsapp: '912345678', email: 'bea@vieja.cl', notas: '', cumpleanos: '1980-01-01' }),
+    ficha('c3', { nombre: 'Cami', whatsapp: '955550000', email: 'cami@x.cl' })
+  ];
+  var csv = 'Nombre,Apellido,Teléfono,Email,Cumpleaños,Notas,Profesional\n' +
+    'Ana,,+56 9 8754 2136,ana@x.cl,17/05/1990,otra nota,Carlos\n' +     // completa email, cumpleaños, profesional; NO notas (ya tiene)
+    'Bea,Rojas,912345678,,,,\n' +                                       // completa apellido; NO borra el correo ni el cumpleaños
+    'Cami,,955550000,cami@x.cl,,,\n';                                   // nada nuevo que completar
+  var r = await importar(w, existentes, 'a.csv', utf8(csv), { masiva: 'actualizar', ejecutar: true });
+  var up = {}; r.reg.updates.forEach(function (u) { up[u.id] = u.payload; });
+  check('A hay 2 updates (la ficha sin datos nuevos no genera update)', r.reg.updates.length, '2');
+  check('A Ana: solo completa campos vacíos', JSON.stringify(Object.keys(up.c1 || {}).sort()), JSON.stringify(['barbero_preferido', 'cumpleanos', 'email']));
+  check('A Ana: email completado', (up.c1 || {}).email, 'ana@x.cl');
+  check('A Ana: cumpleaños', (up.c1 || {}).cumpleanos, '1990-05-17');
+  check('A Ana: profesional', (up.c1 || {}).barbero_preferido, 'Carlos');
+  verdad('A Ana: NO pisa las notas que ya tenía', !('notas' in (up.c1 || {})));
+  verdad('A Ana: NO envía nombre, canal, whatsapp ni barberia_id', !('nombre' in up.c1) && !('canal' in up.c1) && !('whatsapp' in up.c1) && !('barberia_id' in up.c1));
+  check('A Bea: solo completa el apellido', JSON.stringify(Object.keys(up.c2 || {})), JSON.stringify(['apellido']));
+  verdad('A Bea: NO borra el correo (el archivo trae la columna vacía)', !('email' in (up.c2 || {})));
+  verdad('A Bea: NO borra el cumpleaños', !('cumpleanos' in (up.c2 || {})));
+  verdad('A Cami: sin update', !up.c3);
+  check('A la vista previa dice qué completaría (Ana)', porFila(r, 2).completa.join(','), 'correo,cumpleaños,profesional');
+  check('A la vista previa de Cami: nada para completar', porFila(r, 4).completa.length, '0');
+  var tabla = JSON.parse(w.eval('JSON.stringify(window.__tabla)'));
+  var ana = tabla.filter(function (x) { return x.id === 'c1'; })[0];
+  check('A en la base simulada, Ana conserva sus notas', ana.notas, 'VIP');
+  check('A en la base simulada, Ana conserva su canal', ana.canal, 'Reserva online');
+  var bea = tabla.filter(function (x) { return x.id === 'c2'; })[0];
+  check('A en la base simulada, Bea conserva su correo', bea.email, 'bea@vieja.cl');
+}
+
+async function grupoC(w) {                       // codificación del CSV
+  var contenido = 'Nombre;Teléfono;Email\r\nJosé Peña;+56 9 8754 2136;jose@x.cl\r\nMuñoz Núñez;9 1234 5678;\r\n';
+  var l = await importar(w, [], 'excel.csv', cp1252(contenido), {});
+  verdad('C Windows-1252: se detecta', l.codif.indexOf('Windows-1252') === 0, 'codif = ' + l.codif);
+  verdad('C Windows-1252: la pantalla lo avisa', l.info.indexOf('Windows-1252') !== -1, 'info = ' + l.info);
+  check('C Windows-1252: nombre con tilde y ñ', porFila(l, 2).nombre, 'José Peña');
+  check('C Windows-1252: el teléfono sobrevive (la tilde no se come el ;)', porFila(l, 2).tel, '56987542136');
+  check('C Windows-1252: segunda fila', porFila(l, 3).nombre, 'Muñoz Núñez');
+  check('C Windows-1252: el encabezado Teléfono se reconoce', l.mapping.whatsapp, 'Teléfono');
+  var u = await importar(w, [], 'utf.csv', utf8(contenido), {});
+  check('C UTF-8: se detecta', u.codif, 'UTF-8');
+  verdad('C UTF-8: la pantalla lo avisa', u.info.indexOf('UTF-8') !== -1, 'info = ' + u.info);
+  check('C UTF-8: nombre', porFila(u, 2).nombre, 'José Peña');
+  var b = await importar(w, [], 'bom.csv', utf8('\uFEFF' + contenido), {});
+  check('C UTF-8 con BOM: se lee igual', porFila(b, 2).nombre + '|' + b.mapping.nombre, 'José Peña|Nombre');
+  var p = await importar(w, [], 'pc.csv', utf8('Nombre;Telefono\nAna;911111111\n'), {});
+  check('C separador ; con UTF-8', porFila(p, 2).tel, '56911111111');
+  var t = await importar(w, [], 'tab.csv', utf8('Nombre\tTelefono\nAna\t911111111\n'), {});
+  check('C separador tabulador', porFila(t, 2).tel, '56911111111');
+}
+
+async function grupoX(w) {                       // xlsx
+  var X = w.XLSX;
+  var ws = X.utils.aoa_to_sheet([
+    ['Nombre', 'Celular', 'Cumpleaños', 'Email'],
+    ['Ana', 56987542136, new w.Date(w.Date.UTC(1990, 4, 17)), 'a@x.cl'],
+    ['Bea', '9.12345678E8', '17/05/1991', ''],            // científica EXACTA: se acepta
+    ['Carla', '9.8754213E8', '', ''],                      // científica con dígitos cortados: se rechaza
+    ['Dora', '56955551234.0', '', ''],                     // sufijo .0
+    ['Eva', 911223344, '', '']                             // número de 9 dígitos
+  ], { cellDates: true });
+  var wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Hoja1');
+  var bytes = new Uint8Array(X.write(wb, { type: 'array', bookType: 'xlsx', cellDates: true }));
+  var r = await importar(w, [], 'clientes.xlsx', bytes, { ejecutar: true });
+  check('X xlsx: no hay aviso de codificación', r.codif, '');
+  check('X xlsx: número de 11 dígitos', porFila(r, 2).tel, '56987542136');
+  check('X xlsx: científica exacta', porFila(r, 3).tel, '56912345678');
+  check('X xlsx: científica cortada queda fuera', porFila(r, 4).estado, 'sin_tel');
+  verdad('X xlsx: el motivo habla de notación científica', (porFila(r, 4).motivo || '').indexOf('notación científica') !== -1, porFila(r, 4).motivo);
+  check('X xlsx: sufijo .0', porFila(r, 5).tel, '56955551234');
+  check('X xlsx: número de 9 dígitos', porFila(r, 6).tel, '56911223344');
+  var ins = [].concat.apply([], r.reg.inserts);
+  var ana = ins.filter(function (x) { return x.nombre === 'Ana'; })[0] || {};
+  check('X xlsx: la fecha real llega sin correrse un día', ana.cumpleanos, '1990-05-17');
+  var bea = ins.filter(function (x) { return x.nombre === 'Bea'; })[0] || {};
+  check('X xlsx: fecha dd/mm/aaaa en texto', bea.cumpleanos, '1991-05-17');
+  check('X xlsx: se insertan 4 (Carla queda fuera)', ins.length, '4');
+}
+
+async function grupoM(w) {                       // dos columnas de teléfono
+  var csv = 'Nombre,Teléfono,Celular\nA,22 345 6789,+56 9 1111 1111\nB,22 345 6780,9 2222 2222\nC,+56 9 3333 3333,\n';
+  var r = await importar(w, [], 'dos.csv', utf8(csv), {});
+  check('M elige la columna con más celulares válidos (Celular: 2 contra Teléfono: 1)', r.mapping.whatsapp, 'Celular');
+  verdad('M avisa cuál usó', r.nota.indexOf('Celular') !== -1 && r.nota.indexOf('Teléfono: 1') !== -1, r.nota);
+  var e = await importar(w, [], 'empate.csv', utf8('Nombre,Telefono,Celular\nA,+56911111111,+56922222222\n'), {});
+  check('M en empate gana la primera columna del archivo', e.mapping.whatsapp, 'Telefono');
+  var u = await importar(w, [], 'una.csv', utf8('Nombre,Celular\nA,+56911111111\n'), {});
+  check('M con una sola columna no hay aviso', u.nota, '');
+}
+
+async function grupoF(w) {                       // 1500 filas y paginación
+  var csv = 'Nombre,Teléfono\n';
+  for (var i = 0; i < 1500; i++) csv += 'Cliente ' + i + ',9' + String(10000000 + i) + '\n';
+  var r = await importar(w, [], 'mil500.csv', utf8(csv), { ejecutar: true });
+  check('F 1500 filas: contador nuevos', r.cont.nuevos, '1500');
+  check('F 1500 filas: se insertan en bloques de 500', r.reg.inserts.map(function (x) { return x.length; }).join(','), '500,500,500');
+  var despues = w.eval('S.clientes.length');
+  check('F 1500 filas: tras importar, S.clientes los trae TODOS (paginado)', despues, '1500');
+  check('F 1500 filas: la recarga posterior pidió 2 páginas', r.reg.paginas.length, '2');
+
+  var tabla = []; for (var j = 0; j < 2500; j++) tabla.push(ficha('t' + j, { whatsapp: '9' + String(20000000 + j) }));
+  prepararSim(w, tabla, null);
+  var ret = await w.loadClientes();
+  check('F paginación: 2500 filas en la tabla → S.clientes tiene 2500', w.eval('S.clientes.length'), '2500');
+  check('F paginación: pidió 3 páginas con range de a 1000', JSON.stringify(reg(w).paginas), JSON.stringify([[0, 999], [1000, 1999], [2000, 2999]]));
+  check('F paginación: S.clientesOk', w.eval('S.clientesOk'), 'true');
+  check('F paginación: devuelve true', ret, 'true');
+
+  var exacta = []; for (var k = 0; k < 1000; k++) exacta.push(ficha('e' + k));
+  prepararSim(w, exacta, null);
+  await w.loadClientes();
+  check('F paginación: con exactamente 1000 filas pide una segunda página vacía', JSON.stringify(reg(w).paginas), JSON.stringify([[0, 999], [1000, 1999]]));
+  check('F paginación: con exactamente 1000 filas trae 1000', w.eval('S.clientes.length'), '1000');
+
+  // un error en la segunda página: NO se deja una lista a medias
+  prepararSim(w, tabla, 1);
+  w.eval('S.clientes = [{ id: "previo" }]; S.clientesOk = true;');
+  var ret2 = await w.loadClientes();
+  check('F error de lectura: devuelve false', ret2, 'false');
+  check('F error de lectura: S.clientesOk queda en false', w.eval('S.clientesOk'), 'false');
+  check('F error de lectura: se conserva la lista anterior (no queda a medias)', w.eval('S.clientes.map(function(c){return c.id;}).join(",")'), 'previo');
+  verdad('F error de lectura: avisa con notify de error', reg(w).notifs.some(function (n) { return n.indexOf('err:') === 0 && n.indexOf('No pudimos cargar todos tus clientes') !== -1; }), JSON.stringify(reg(w).notifs));
+  // y el importador se niega a comparar contra una lista incompleta
+  var file = new w.File([utf8('Nombre,Telefono\nAna,911111111\n')], 'x.csv', {});
+  await w.impLeerArchivo({ files: [file] });
+  w.eval('window.__reg.notifs = []; IMP.processed = [];');
+  w.impIrPaso(3);
+  check('F con la lista incompleta no se arma la vista previa', w.eval('IMP.processed.length'), '0');
+  verdad('F con la lista incompleta avisa que no se pueden detectar duplicados', reg(w).notifs.some(function (n) { return n.indexOf('no se pueden detectar duplicados') !== -1; }), JSON.stringify(reg(w).notifs));
+}
+
+async function grupoE(w) {                       // filas vacías y numeración real
+  var csv = 'Nombre,Teléfono\nAna,911111111\n\n\n   ,   \nBea,922222222\n,\nCami,933333333\n';
+  var r = await importar(w, [], 'v.csv', utf8(csv), {});
+  check('E solo quedan 3 filas con datos', r.prev.length, '3');
+  check('E la fila de Bea es la 6 del archivo (número REAL, no el índice)', porFila(r, 6).nombre, 'Bea');
+  check('E la fila de Cami es la 8 del archivo', porFila(r, 8).nombre, 'Cami');
+  var h = await importar(w, [], 'enc.csv', utf8('Nombre,Nombre,,Teléfono\nAna,Bea,x,911111111\n'), {});
+  check('E encabezados repetidos y vacíos se hacen únicos', JSON.stringify(w.eval('IMP.headers')), JSON.stringify(['Nombre', 'Nombre_1', '__EMPTY', 'Teléfono']));
+  var v = new w.File([utf8('Nombre,Telefono\n   ,   \n')], 'solo-vacias.csv', {});
+  var errEl = w.document.getElementById('imp-file-error');
+  await w.impLeerArchivo({ files: [v] });
+  verdad('E un archivo con solo filas vacías avisa que no hay datos', errEl.textContent.indexOf('no tiene filas de datos') !== -1, 'texto = ' + errEl.textContent);
+}
+
+async function grupoV(w) {                       // correo: solo cuenta si ADEMÁS coincide el nombre
+  var existentes = [
+    ficha('c1', { nombre: 'Ana', apellido: 'Pérez', whatsapp: '911111111', email: 'ana@x.cl' }),
+    ficha('c2', { nombre: 'Juan Soto', whatsapp: '922222222', email: 'juan@x.cl' })
+  ];
+  var csv = 'Nombre,Apellido,Teléfono,Email\n' +
+    'ana,perez,+56 9 3333 3333,ANA@x.cl\n' +          // 2 existe: mismo correo y mismo nombre (sin tildes ni mayúsculas)
+    'Beatriz,,+56 9 4444 4444,ana@x.cl\n' +           // 3 crear + aviso: mismo correo, OTRO nombre
+    'Juan,Soto,+56 9 5555 5555,juan@x.cl\n' +         // 4 existe: la ficha trae "Juan Soto" todo en el nombre
+    'Luis,Rojas,+56 9 6666 6666,luis@x.cl\n' +        // 5 crear (la primera de su correo)
+    'luis,ROJAS,+56 9 7777 7777,LUIS@x.cl\n' +        // 6 repetida en el archivo: mismo correo y mismo nombre
+    'Marta,Rojas,+56 9 8888 8888,luis@x.cl\n' +       // 7 crear + aviso: mismo correo que la fila 5, otro nombre
+    'Otra Persona,,+56 9 1111 1111,otro@x.cl\n';      // 8 existe por TELÉFONO aunque el correo y el nombre sean otros
+  var r = await importar(w, existentes, 'correo.csv', utf8(csv), { ejecutar: true });
+  check('V fila 2: existe por correo y nombre (sin tildes ni mayúsculas)', porFila(r, 2).estado + '|' + porFila(r, 2).por, 'existe|correo y nombre');
+  check('V fila 3: mismo correo con OTRO nombre se importa como nueva', porFila(r, 3).estado, 'crear');
+  verdad('V fila 3: avisa «mismo correo que Ana Pérez»', porFila(r, 3).avisos.join('|').indexOf('mismo correo que Ana Pérez') !== -1, JSON.stringify(porFila(r, 3).avisos));
+  check('V fila 4: nombre en una columna y apellido en la otra cuentan igual', porFila(r, 4).estado + '|' + porFila(r, 4).por, 'existe|correo y nombre');
+  check('V fila 5: la primera fila de ese correo se crea', porFila(r, 5).estado, 'crear');
+  check('V fila 6: repetida DENTRO del archivo por correo y nombre', porFila(r, 6).estado + '|' + porFila(r, 6).dupFila, 'dup_archivo|5');
+  check('V fila 7: mismo correo que otra fila del archivo pero OTRO nombre se crea', porFila(r, 7).estado, 'crear');
+  verdad('V fila 7: avisa «mismo correo que la fila 5»', porFila(r, 7).avisos.join('|').indexOf('mismo correo que la fila 5') !== -1, JSON.stringify(porFila(r, 7).avisos));
+  check('V fila 8: el teléfono sigue siendo la clave principal', porFila(r, 8).estado + '|' + porFila(r, 8).por, 'existe|teléfono');
+  var ins = [].concat.apply([], r.reg.inserts).map(function (x) { return x.nombre; }).join(',');
+  check('V se insertan Beatriz, Luis y Marta (las 3 nuevas)', ins, 'Beatriz,Luis,Marta');
+  var txt = w.document.getElementById('imp-resultado').textContent;
+  verdad('V el resultado repite los avisos de «mismo correo»', txt.indexOf('mismo correo que Ana Pérez') !== -1 && txt.indexOf('mismo correo que la fila 5') !== -1, txt);
+}
+
+async function grupoAp(w) {                      // el apellido no se completa si ya está dentro del nombre
+  var existentes = [
+    ficha('e1', { nombre: 'Juan Pérez', whatsapp: '911111111' }),
+    ficha('e2', { nombre: 'Juan', whatsapp: '922222222' }),
+    ficha('e3', { nombre: 'Ana de la Cruz', whatsapp: '933333333' }),
+    ficha('e4', { nombre: 'Perezoso', whatsapp: '944444444' })
+  ];
+  var csv = 'Nombre,Apellido,Teléfono\n' +
+    'Juan,Perez,911111111\n' +                  // 2 el apellido ya está en el nombre (sin tilde): NO se completa
+    'Juan,Soto,922222222\n' +                   // 3 la ficha no tiene apellido: se completa
+    'Ana,de la Cruz,933333333\n' +              // 4 apellido de varias palabras ya dentro del nombre: NO
+    'Perezoso,Perez,944444444\n';               // 5 «perez» está en «perezoso» pero NO como palabra: se completa
+  var r = await importar(w, existentes, 'ap.csv', utf8(csv), { masiva: 'actualizar', ejecutar: true });
+  var up = {}; r.reg.updates.forEach(function (u) { up[u.id] = u.payload; });
+  verdad('Ap «Juan Pérez» + apellido «Perez»: no hay update (evita «Juan Pérez Pérez»)', !up.e1, JSON.stringify(up.e1));
+  check('Ap la vista previa dice que no hay nada que completar en e1', porFila(r, 2).completa.length, '0');
+  check('Ap «Juan» + apellido «Soto»: se completa', (up.e2 || {}).apellido, 'Soto');
+  verdad('Ap apellido de varias palabras ya dentro del nombre: no se completa', !up.e3, JSON.stringify(up.e3));
+  check('Ap «Perezoso» + apellido «Perez»: se completa (no es una palabra del nombre)', (up.e4 || {}).apellido, 'Perez');
+  check('Ap hay exactamente 2 updates', r.reg.updates.length, '2');
+}
+
+async function grupoCo(w) {                      // formato del correo
+  var csv = 'Nombre,Teléfono,Email\n' +
+    'A,911111111,a b@x.cl\n' +                  // 2 con espacio
+    'B,922222222,ana@x\n' +                     // 3 sin punto en el dominio
+    'C,933333333,ana@x.c\n' +                   // 4 extensión de 1 letra
+    'D,944444444,ok@x.cl\n' +                   // 5 válido
+    'E,955555555,\n' +                          // 6 sin correo
+    'G,977777777,x@\n' +                        // 7 inválido
+    'H,988888888,x@\n';                         // 8 el MISMO inválido: no cuenta como duplicado
+  var r = await importar(w, [], 'co.csv', utf8(csv), { ejecutar: true });
+  var nombrePorFila = { 2: 'A', 3: 'B', 4: 'C', 7: 'G', 8: 'H' };
+  var insertadas = [].concat.apply([], r.reg.inserts);
+  [2, 3, 4, 7, 8].forEach(function (f) {
+    check('Co fila ' + f + ': un correo inválido NO frena la fila', porFila(r, f).estado, 'crear');
+    verdad('Co fila ' + f + ': avisa «correo inválido»', porFila(r, f).avisos.join('|').indexOf('correo inválido') !== -1, JSON.stringify(porFila(r, f).avisos));
+    var guardada = insertadas.filter(function (x) { return x.nombre === nombrePorFila[f]; })[0] || {};
+    check('Co fila ' + f + ': se guarda sin correo', guardada.email, '');
+  });
+  check('Co el correo válido se conserva', ([].concat.apply([], r.reg.inserts).filter(function (x) { return x.nombre === 'D'; })[0] || {}).email, 'ok@x.cl');
+  check('Co sin correo no avisa nada', porFila(r, 6).avisos.length, '0');
+  check('Co los 7 se insertan (el correo inválido no cuenta como duplicado)', [].concat.apply([], r.reg.inserts).length, '7');
+}
+
+async function grupoCs(w) {                      // CSV de filas con problemas
+  var csv = 'Nombre,Teléfono,Email\n' +
+    'Ana,911111111,a@x\n' +                     // 2 correo inválido (se importa sin correo)
+    'Bea,22 345 6789,\n' +                      // 3 fijo
+    ',911222333,\n' +                           // 4 sin nombre
+    'Cami,+55 11 91234 5678,\n' +               // 5 extranjero
+    'Dora,933333333,\n' +                       // 6 bien
+    'Dora Repetida,933333333,\n' +              // 7 repetida: NO es un problema para devolver
+    '"Eva ""la"" Grande",8754 2136,\n';         // 8 8 dígitos, con comillas en el nombre
+  var r = await importar(w, [], 'prob.csv', utf8(csv), {});
+  var botonVisible = w.document.getElementById('imp-btn-problemas').style.display;
+  check('Cs el botón «Descargar filas con problemas» se muestra', botonVisible, '');
+  var texto = w.eval('impCsvProblemas()');
+  var lineas = texto.split('\r\n');
+  check('Cs el encabezado', lineas[0].replace('\uFEFF', ''), '"Fila";"Nombre";"Teléfono original";"Motivo"');
+  verdad('Cs empieza con BOM (Excel en español lo abre en UTF-8)', texto.charCodeAt(0) === 0xFEFF);
+  check('Cs hay 5 filas con problemas (la repetida no) + encabezado + línea final vacía', lineas.length, '7');
+  check('Cs van ordenadas por fila: 2, 3, 4, 5, 8', lineas.slice(1, 6).map(function (l) { return l.split(';')[0]; }).join(','), '"2","3","4","5","8"');
+  verdad('Cs fila 2: motivo de correo inválido', lineas[1].indexOf('Correo inválido') !== -1 && lineas[1].indexOf('a@x') !== -1, lineas[1]);
+  verdad('Cs fila 3: trae el teléfono original y el motivo', lineas[2].indexOf('"22 345 6789"') !== -1 && lineas[2].indexOf('fijo') !== -1, lineas[2]);
+  verdad('Cs fila 4: sin nombre', lineas[3].indexOf('Falta el nombre') !== -1, lineas[3]);
+  verdad('Cs un teléfono que empieza con + no se ejecuta como fórmula en Excel (comilla simple)', lineas[4].indexOf('"\'+55 11 91234 5678"') !== -1, lineas[4]);
+  verdad('Cs las comillas dentro del nombre se duplican', lineas[5].indexOf('"Eva ""la"" Grande"') !== -1, lineas[5]);
+  verdad('Cs la fila repetida no está', texto.indexOf('Dora Repetida') === -1);
+  // la descarga real: se intercepta el clic del enlace y se mira el archivo
+  w.eval('window.__dl = null; window.__blob = null;' +
+         'URL.createObjectURL = function (b) { window.__blob = b; return "blob:prueba"; };' +
+         'HTMLAnchorElement.prototype.click = function () { window.__dl = this.download; };');
+  w.impDescargarProblemas();
+  check('Cs la descarga se llama filas-con-problemas.csv', w.eval('window.__dl'), 'filas-con-problemas.csv');
+  var bytes = new Uint8Array(await w.eval('window.__blob').arrayBuffer());
+  check('Cs el archivo descargado empieza con BOM UTF-8 (EF BB BF)', [bytes[0], bytes[1], bytes[2]].join(','), '239,187,191');
+  check('Cs el tipo del archivo', w.eval('window.__blob.type'), 'text/csv;charset=utf-8');
+
+  var s = await importar(w, [], 'limpio.csv', utf8('Nombre,Teléfono\nAna,911111111\n'), { ejecutar: true });
+  check('Cs sin problemas el botón del paso 3 queda oculto', w.document.getElementById('imp-btn-problemas').style.display, 'none');
+  verdad('Cs sin problemas el resultado no ofrece la descarga', w.document.getElementById('imp-resultado').textContent.indexOf('Descargar filas con problemas') === -1);
+  var c = await importar(w, [], 'con.csv', utf8('Nombre,Teléfono\nAna,911111111\nBea,\n'), { ejecutar: true });
+  verdad('Cs con problemas el resultado ofrece la descarga', w.document.getElementById('imp-resultado').textContent.indexOf('Descargar filas con problemas') !== -1);
+}
+
+async function grupoCs2(w) {                     // el CSV de problemas solo cuenta filas que de verdad se importan
+  var existentes = [
+    ficha('x1', { nombre: 'Existente Uno', whatsapp: '911111111' }),
+    ficha('x2', { nombre: 'Existente Dos', whatsapp: '922222222' })
+  ];
+  var csv = 'Nombre,Teléfono,Email\n' +
+    'Nueva,933333333,mal@\n' +                  // 2 crear + correo inválido: SÍ cuenta (se importa sin correo)
+    'Nueva Repetida,933333333,mal@\n' +         // 3 repetida en el archivo + correo inválido: NO (no se importa)
+    'Existente Uno,+56 9 1111 1111,mal@\n' +    // 4 ya existe, acción «Saltar» + correo inválido: NO (no se importa)
+    'Existente Dos,+56 9 2222 2222,mal@\n';     // 5 ya existe; pasa a «Actualizar»: SÍ cuenta
+  var filasProblema = function () { return JSON.parse(w.eval('JSON.stringify(impFilasConProblemas().map(function (f) { return f.fila; }))')).join(','); };
+  var r = await importar(w, existentes, 'omitidas.csv', utf8(csv), {});
+  check('Cs2 estados: crear, repetida, existe, existe', r.prev.map(function (x) { return x.estado; }).join(','), 'crear,dup_archivo,existe,existe');
+  check('Cs2 por defecto solo cuenta la fila 2 (crear)', filasProblema(), '2');
+  var texto = w.eval('impCsvProblemas()');
+  verdad('Cs2 la repetida con correo inválido NO aparece en el CSV', texto.indexOf('Nueva Repetida') === -1 && texto.indexOf('"3";') === -1, texto);
+  verdad('Cs2 la existente en «Saltar» con correo inválido NO aparece', texto.indexOf('Existente Uno') === -1 && texto.indexOf('"4";') === -1, texto);
+  verdad('Cs2 la fila a crear sí aparece con su motivo', texto.indexOf('"2";') !== -1 && texto.indexOf('se importó sin correo') !== -1, texto);
+  w.impSetAccionFila(3, 'actualizar');
+  check('Cs2 al pasar la fila 5 a «Actualizar» ya cuenta', filasProblema(), '2,5');
+  w.impSetAccionFila(3, 'saltar');
+  check('Cs2 al volver a «Saltar» deja de contar', filasProblema(), '2');
+
+  // el botón se reevalúa al cambiar la acción de una fila (antes solo se dibujaba con la vista previa)
+  var s = await importar(w, existentes, 'solo-existente.csv', utf8('Nombre,Teléfono,Email\nExistente Dos,+56 9 2222 2222,mal@\n'), {});
+  check('Cs2 si la única fila con correo inválido está en «Saltar», no hay nada que descargar (botón oculto)', w.document.getElementById('imp-btn-problemas').style.display, 'none');
+  w.impSetAccionFila(0, 'actualizar');
+  check('Cs2 al pasarla a «Actualizar» el botón aparece sin redibujar la vista previa', w.document.getElementById('imp-btn-problemas').style.display, '');
+  w.impSetAccionFila(0, 'saltar');
+  check('Cs2 y al volver a «Saltar» se oculta otra vez', w.document.getElementById('imp-btn-problemas').style.display, 'none');
+}
+
+async function grupoG(w) {                       // BRECHA CONOCIDA: encabezados en inglés (trabajo de la Fase 4)
+  var csv = 'First Name,Last Name,Mobile Phone,Email\nAna,Soto,+56 9 8754 2136,ana@x.cl\n';
+  var r = await importar(w, [], 'ingles.csv', utf8(csv), {});
+  var m = r.mapping;
+  informe.push('', '-- G. BRECHA CONOCIDA (Fase 4): encabezados en inglés --',
+    'fixture sintético «First Name, Last Name, Mobile Phone, Email» → autodetector:',
+    '   nombre   = ' + (m.nombre || 'NO RECONOCIDO'),
+    '   apellido = ' + (m.apellido || 'NO RECONOCIDO'),
+    '   whatsapp = ' + (m.whatsapp || 'NO RECONOCIDO'),
+    '   email    = ' + (m.email || 'NO RECONOCIDO'));
+  // Solo se afirma lo que el código promete HOY; la brecha se informa, no se esconde ni se arregla acá.
+  check('G «First Name» sí se reconoce como nombre', m.nombre, 'First Name');
+  check('G «Last Name» sí se reconoce como apellido', m.apellido, 'Last Name');
+}
+
+// ── archivos de prueba de Mario (viven FUERA del repo, en el Escritorio) ──
+// Lo esperado sale del mensaje del reviewer, NO del JSON: el formato del JSON
+// no se conoce, así que se muestra en el informe para compararlo a ojo.
+var ESPERADO_Z = {
+  '1': { nuevos: 300, tel: 0, arch: 0, err: 0, etiqueta: 'archivo 1 (encabezados en inglés)' },
+  '2': { nuevos: 300, tel: 0, arch: 0, err: 0, columna: 'Celular', etiqueta: 'archivo 2 (dos columnas de teléfono)' },
+  '3': { nuevos: 300, tel: 0, arch: 0, err: 0, etiqueta: 'archivo 3' },
+  '4': { filas: 15, nuevos: 6, arch: 2, tel: 6, err: 1, etiqueta: 'archivo 4 (casos difíciles)' },
+  '5': { nuevos: 1500, arch: 15, tel: 0, err: 0, etiqueta: 'archivo 5 (1500 filas)' }
+};
+function listarCarpeta(url) {                    // el listado de carpeta de Chrome en file:// trae addRow("nombre", ...)
+  return bajar(url).then(function (html) {
+    var nombres = [], re = /addRow\("([^"]+)"/g, m;
+    while ((m = re.exec(html))) nombres.push(m[1]);
+    return nombres;
+  }, function () { return []; });
+}
+function bajarBin(url) {
+  return new Promise(function (res, rej) {
+    var x = new XMLHttpRequest(); x.open('GET', url, true); x.responseType = 'arraybuffer';
+    x.onload = function () { if (x.status === 0 || x.status === 200) res(new Uint8Array(x.response)); else rej(new Error('estado ' + x.status)); };
+    x.onerror = function () { rej(new Error('no se pudo bajar ' + url)); };
+    x.send();
+  });
+}
+async function grupoZ(w) {
+  var json = null;
+  try { json = await bajar(RUTA_ARCHIVOS_MARIO + 'LEEME_resultados_esperados.json'); } catch (e) { json = null; }
+  var carpetas = [RUTA_ARCHIVOS_MARIO, RUTA_ARCHIVOS_MARIO + 'extraido/'];
+  var hallados = {};
+  for (var c = 0; c < carpetas.length; c++) {
+    var nombres = await listarCarpeta(carpetas[c]);
+    nombres.forEach(function (n) {
+      var d = (n.match(/^([1-5])\D/) || [])[1];
+      if (d && /\.(csv|xlsx|xls)$/i.test(n) && !hallados[d]) hallados[d] = carpetas[c] + encodeURIComponent(n).replace(/%2F/g, '/');
+    });
+  }
+  var faltan = ['1', '2', '3', '4', '5'].filter(function (d) { return !hallados[d]; });
+  if (!json || faltan.length) {
+    informe.push('', '-- Z. ARCHIVOS DE PRUEBA DE MARIO: INCOMPLETOS O AUSENTES --',
+      'JSON de resultados esperados: ' + (json ? 'encontrado' : 'NO ENCONTRADO') + '  (' + RUTA_ARCHIVOS_MARIO + 'LEEME_resultados_esperados.json)',
+      'Archivos 1-5 que faltan (esperados como «<n> ….csv/xlsx» en la carpeta o en «extraido/»): ' + (faltan.length ? faltan.join(', ') : 'ninguno'),
+      'Estas comprobaciones NO se hicieron: este arnés todavía no probó ninguno de los 5 archivos.');
+    return;
+  }
+  informe.push('', '-- Z. ARCHIVOS DE PRUEBA DE MARIO --', 'JSON del reviewer (para comparar a ojo; el arnés usa lo esperado que se le dictó):', json.length > 2500 ? json.slice(0, 2500) + ' …' : json);
+  for (var d = 1; d <= 5; d++) {
+    var esp = ESPERADO_Z[d], nombre = decodeURIComponent(hallados[d].split('/').pop());
+    var bytes = await bajarBin(hallados[d]);
+    var r = await importar(w, [], nombre, bytes, {});
+    var m0 = r.mapping, brecha = [];
+    ['nombre', 'whatsapp'].forEach(function (k) { if (!m0[k]) brecha.push(k); });
+    if (brecha.length) {                                       // se informa y se mapea a mano para poder seguir
+      informe.push('BRECHA FASE 4 en ' + esp.etiqueta + ': el autodetector NO reconoció ' + brecha.join(' ni ') + ' (encabezados: ' + w.eval('IMP.headers.join(" | ")') + ')');
+      var hs = JSON.parse(w.eval('JSON.stringify(IMP.headers)'));
+      var busca = { nombre: /first\s*name|nombre|^name$/i, whatsapp: /mobile|cel|phone|tel/i };
+      brecha.forEach(function (k) { var h = hs.filter(function (x) { return busca[k].test(x); })[0]; if (h) w.impCambiarMapeo(k, h); });
+      w.impIrPaso(3);
+      r.cont = cont(w);
+    }
+    var fila = esp.etiqueta + ': ';
+    check('Z ' + esp.etiqueta + ': nuevos', r.cont.nuevos, esp.nuevos);
+    check('Z ' + esp.etiqueta + ': repetidos en el archivo', r.cont.archivo, esp.arch);
+    check('Z ' + esp.etiqueta + ': sin teléfono válido', r.cont.tel, esp.tel);
+    check('Z ' + esp.etiqueta + ': sin nombre', r.cont.err, esp.err);
+    check('Z ' + esp.etiqueta + ': ya existen (la base simulada está vacía)', r.cont.existen, '0');
+    if (esp.columna) check('Z ' + esp.etiqueta + ': se elige la columna ' + esp.columna + ', no Teléfono', w.eval('IMP.mapping.whatsapp'), esp.columna);
+    if (esp.filas) check('Z ' + esp.etiqueta + ': filas con datos', w.eval('IMP.processed.length'), esp.filas);
+    informe.push(fila + 'codificación = ' + (r.codif || '(xlsx)') + ' · nuevos ' + r.cont.nuevos + ' · repetidos ' + r.cont.archivo + ' · sin teléfono ' + r.cont.tel + ' · sin nombre ' + r.cont.err);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+(async function () {
+  var el = document.getElementById('resultado');
+  try {
+    var txtApp = await bajar('app.html');
+    verdad('bajó app.html', txtApp.length > 100000, 'largo = ' + txtApp.length);
+    var w = await montar(prepararApp(txtApp));
+    verdad('las funciones del importador existen en app.html',
+      ['impLimpiarTel', 'impLeerArchivo', 'impConstruirPreview', 'impEjecutarImportacion', 'loadClientes', 'wspClave', 'wspChile']
+        .every(function (n) { return w.eval('typeof ' + n) === 'function'; }));
+    await grupoT(w);
+    await grupoD(w);
+    await grupoA(w);
+    await grupoC(w);
+    await grupoX(w);
+    await grupoM(w);
+    await grupoF(w);
+    await grupoE(w);
+    await grupoV(w);
+    await grupoAp(w);
+    await grupoCo(w);
+    await grupoCs(w);
+    await grupoCs2(w);
+    await grupoG(w);
+    await grupoZ(w);
+  } catch (e) {
+    fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n').slice(0, 3).join('\n      '));
+  }
+  var cab = 'test-importador · ' + total + ' comprobaciones\n';
+  var tablas = informe.length ? '\n' + informe.join('\n') + '\n' : '';
+  if (fallas.length === 0) {
+    el.className = 'ok';
+    el.textContent = cab + '\nTODO VERDE: ' + total + '/' + total + tablas;
+  } else {
+    el.className = 'fail';
+    el.textContent = cab + '\nFALLAN ' + fallas.length + ' de ' + total + '\n\n  - ' + fallas.join('\n  - ') + tablas;
+  }
+})();
+</script>
+</body>
+</html>
