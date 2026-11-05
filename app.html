@@ -1024,6 +1024,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" style="display:none" onchange="impLeerArchivo(this)">
       <div id="imp-file-info" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
       <div id="imp-file-error" class="alert al-err" style="display:none;margin-top:10px"></div>
+      <div id="imp-historial"></div>
     </div>
 
     <!-- Paso 2: mapeo de columnas -->
@@ -1071,6 +1072,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       <div id="imp-resultado"></div>
       <div class="modal-footer" style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-primary" onclick="closeM('m-importar-clientes')">Listo</button>
+        <button class="btn btn-ghost" id="imp-btn-deshacer" onclick="impDeshacerEsta()" style="display:none">↶ Deshacer esta importación</button>
       </div>
     </div>
   </div>
@@ -2185,6 +2187,7 @@ function initModal(id){
     document.getElementById('imp-preview').innerHTML='';
     document.getElementById('imp-resultado').innerHTML='';
     impIrPaso(1);
+    impCargarHistorial();
   }
   // El "(19%)" del selector estaba escrito a mano en el HTML y mentía apenas
   // el negocio configuraba otro iva_pct. Se arma al abrir el modal para que
@@ -2382,7 +2385,20 @@ function impAutoDetectar(headers,rows){
 
 // dd/mm/yyyy o dd-mm-yyyy (formato típico de exportaciones latam) además del
 // yyyy-mm-dd que ya entrega XLSX con dateNF para celdas de fecha reales.
+// Una fecha que no existe (31/02/2024) se descarta: el servidor la rechaza y
+// tumbaría la importación entera. Va como «sin cumpleaños», igual que un
+// texto que no es fecha.
+function impFechaReal(y,m,d){
+  const dt=new Date(Date.UTC(+y,+m-1,+d));
+  return dt.getUTCFullYear()===+y&&dt.getUTCMonth()===+m-1&&dt.getUTCDate()===+d&&+y>=1900&&+y<=2100;
+}
 function impParseFecha(v){
+  const f=impParseFechaCruda(v);
+  if(!f)return null;
+  const [y,m,d]=f.split('-');
+  return impFechaReal(y,m,d)?f:null;
+}
+function impParseFechaCruda(v){
   if(v==null||v==='')return null;
   if(v instanceof Date){
     // Celda de fecha real de un .xlsx: SheetJS la entrega en UTC-medianoche.
@@ -2467,6 +2483,7 @@ async function impLeerArchivo(input){
     IMP.rows=leido.rows;
     IMP.codificacion=codificacion;
     IMP.mapping=impAutoDetectar(IMP.headers,IMP.rows);
+    IMP.nombreArchivo=file.name;
     document.getElementById('imp-file-info').textContent=`${file.name} — ${leido.rows.length} filas detectadas`;
     document.getElementById('imp-info-lectura').textContent=codificacion?('Archivo leído como '+codificacion+'.'):'';
     document.getElementById('imp-info-lectura').style.display=codificacion?'':'none';
@@ -2722,38 +2739,93 @@ function impIrPaso(n){
   document.getElementById('imp-st-'+n).classList.add('active');
 }
 
+// La importación va al servidor en UNA llamada por cada 5000 filas
+// (importar_clientes_lote): se guarda todo o nada, con un lote que se puede
+// deshacer. El servidor vuelve a revisar duplicados, así que una lista
+// desactualizada o dos importaciones a la vez no crean fichas repetidas.
+const IMP_TOPE_LOTE=5000;
 async function impEjecutarImportacion(){
   const btn=document.getElementById('imp-btn-confirmar');
   btn.disabled=true; btn.textContent='Importando...';
 
   const aCrear=IMP.processed.filter(r=>r.estado==='crear');
   const aActualizar=IMP.processed.filter(r=>r.estado==='existe'&&r.accion==='actualizar'&&r.completa.etiquetas.length);
-  const sinCambios=IMP.processed.filter(r=>r.estado==='existe'&&r.accion==='actualizar'&&!r.completa.etiquetas.length).length;
-  const saltados=IMP.processed.filter(r=>r.estado!=='crear'&&!(r.estado==='existe'&&r.accion==='actualizar')).length;
+  let sinCambios=IMP.processed.filter(r=>r.estado==='existe'&&r.accion==='actualizar'&&!r.completa.etiquetas.length).length;
+  let saltados=IMP.processed.filter(r=>r.estado!=='crear'&&!(r.estado==='existe'&&r.accion==='actualizar')).length;
   const erroresFilas=IMP.processed.filter(r=>r.estado==='error'||r.estado==='sin_tel').map(r=>`Fila ${r.fila}: ${r.motivo}`);
   const avisos=[].concat(...IMP.processed.filter(r=>r.estado==='crear'||(r.estado==='existe'&&r.accion==='actualizar')).map(r=>r.avisos));
 
+  // Solo viajan los campos que se crean o se completan: el servidor decide el
+  // negocio (nunca llega un barberia_id) y nunca pisa un dato existente.
+  const filas=[];
+  aCrear.forEach(r=>filas.push({accion:'crear',datos:{
+    nombre:r.data.nombre, apellido:r.data.apellido, whatsapp:r.data.whatsapp, email:r.data.email,
+    cumpleanos:r.data.cumpleanos, canal:r.data.canal, notas:r.data.notas, barbero_preferido:r.data.barbero_preferido}}));
+  aActualizar.forEach(r=>filas.push({accion:'completar',cliente_id:r.dupCliente.id,datos:r.completa.payload}));
+
   let creados=0, actualizados=0;
-
-  for(let i=0;i<aCrear.length;i+=500){
-    const chunk=aCrear.slice(i,i+500).map(r=>({...r.data,barberia_id:S.barberia.id}));
-    const {error}=await sb.from('clientes').insert(chunk);
-    if(error)erroresFilas.push('Error al crear un bloque de clientes: '+error.message);
-    else creados+=chunk.length;
-  }
-
-  // El update lleva SOLO los campos que se completan: nunca barberia_id, nunca
-  // un campo que el archivo no trae, nunca un valor vacío.
-  for(const r of aActualizar){
-    const {error}=await sb.from('clientes').update(r.completa.payload).eq('id',r.dupCliente.id);
-    if(error)erroresFilas.push(`Fila ${r.fila}: error al actualizar — `+error.message);
-    else actualizados++;
+  IMP.lotes=[];
+  const archivo=IMP.nombreArchivo||'';
+  for(let i=0;i<filas.length;i+=IMP_TOPE_LOTE){
+    const trozo=filas.slice(i,i+IMP_TOPE_LOTE);
+    const {data,error}=await sb.rpc('importar_clientes_lote',{p_archivo:archivo,p_filas:trozo});
+    if(error){
+      erroresFilas.push('No se pudo importar'+(filas.length>IMP_TOPE_LOTE?' el bloque que empieza en la fila '+(i+1):'')+': '+error.message+(i?' Lo que se importó antes se puede deshacer más abajo.':' No se guardó nada.'));
+      break;
+    }
+    IMP.lotes.push(data.importacion_id);
+    creados+=data.creados; actualizados+=data.completados;
+    const crearEnviadas=trozo.filter(f=>f.accion==='crear').length;
+    const completarEnviadas=trozo.length-crearEnviadas;
+    saltados+=crearEnviadas-data.creados;                     // ya existían: el servidor no creó otra ficha
+    sinCambios+=completarEnviadas-data.completados;           // nada que completar
+    (data.avisos||[]).forEach(a=>avisos.push(a));
   }
 
   await loadClientes();renderClientes();renderDashboard();
   impMostrarResultado({creados,actualizados,sinCambios,saltados,erroresFilas,avisos});
+  document.getElementById('imp-btn-deshacer').style.display=IMP.lotes.length?'':'none';
   btn.disabled=false; btn.textContent='Importar';
   impIrPaso(4);
+}
+
+// ── Historial y «Deshacer» ──
+function impFechaHora(iso){
+  return new Date(iso).toLocaleString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+async function impCargarHistorial(){
+  const box=document.getElementById('imp-historial'); if(!box)return;
+  const {data,error}=await sb.from('importaciones_clientes')
+    .select('id,creado_en,archivo,creados,completados,estado,deshecha_en')
+    .order('creado_en',{ascending:false}).limit(10);
+  if(error||!data||!data.length){ box.innerHTML=''; return; }
+  const ahora=Date.now();
+  box.innerHTML=`<div style="font-size:11px;color:var(--text3);margin:16px 0 6px;text-transform:uppercase">Importaciones anteriores</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Archivo</th><th>Creados</th><th>Completados</th><th></th></tr></thead><tbody>`+
+    data.map(l=>{
+      const puede=l.estado==='aplicada'&&(ahora-new Date(l.creado_en).getTime())<30*864e5;
+      const accion=l.estado==='deshecha'?`<span style="color:var(--text3)">Deshecha el ${escHtml(impFechaHora(l.deshecha_en))}</span>`
+        :puede?`<button class="btn btn-ghost" onclick="impDeshacer('${l.id}')">Deshacer</button>`
+        :`<span style="color:var(--text3)">Pasaron más de 30 días</span>`;
+      return `<tr><td>${escHtml(impFechaHora(l.creado_en))}</td><td>${escHtml(l.archivo||'—')}</td><td>${l.creados}</td><td>${l.completados}</td><td>${accion}</td></tr>`;
+    }).join('')+`</tbody></table></div>`;
+}
+async function impDeshacer(id){
+  if(!confirm('¿Deshacer esta importación?\n\nSe borran los clientes que creó, salvo los que ya tienen visitas, encuestas, niveles VIP, códigos o reservas (esos se conservan). Los datos que completó en fichas que ya existían vuelven a como estaban, salvo que los hayas editado después.'))return;
+  const {data,error}=await sb.rpc('deshacer_importacion_clientes',{p_importacion_id:id});
+  if(error){ notify(error.message,'err'); return; }
+  const partes=[`${data.borrados} cliente${data.borrados===1?'':'s'} borrado${data.borrados===1?'':'s'}`];
+  if(data.campos_devueltos)partes.push(`${data.campos_devueltos} dato${data.campos_devueltos===1?'':'s'} devuelto${data.campos_devueltos===1?'':'s'}`);
+  if(data.conservados_con_actividad)partes.push(`${data.conservados_con_actividad} se conservaron por tener actividad`);
+  notify('Importación deshecha: '+partes.join(', ')+'.');
+  await loadClientes();renderClientes();renderDashboard();
+  impCargarHistorial();
+}
+async function impDeshacerEsta(){
+  // Botón del paso «Resultado»: deshace todos los lotes de esta importación.
+  for(const id of (IMP.lotes||[]).slice().reverse()){ await impDeshacer(id); }
+  IMP.lotes=[];
+  const b=document.getElementById('imp-btn-deshacer'); if(b)b.style.display='none';
 }
 
 function impMostrarResultado({creados,actualizados,sinCambios,saltados,erroresFilas,avisos}){

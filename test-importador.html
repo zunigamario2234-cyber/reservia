@@ -84,26 +84,56 @@ function cp1252(s) {
 // debe devolver error (null = ninguna).
 function prepararSim(w, clientes, fallaPagina) {
   w.eval([
-    'window.__reg = { inserts: [], updates: [], notifs: [], paginas: [] };',
+    'window.__reg = { inserts: [], updates: [], notifs: [], paginas: [], rpcs: [] };',
     'notify = function (m, t) { window.__reg.notifs.push((t || "ok") + ": " + m); };',
     'renderClientes = function () {}; renderDashboard = function () {};',
     'S.barberia = { id: "TEST-ID" }; S.barberos = [{ nombre: "Carlos" }, { nombre: "Marta" }];',
     'window.__tabla = ' + JSON.stringify(clientes) + ';',
     'window.__falla = ' + (fallaPagina == null ? 'null' : fallaPagina) + ';',
+    'window.__lotes = []; window.__rpcFalla = null;',
+    'function k9(t) { return String(t || "").replace(/\\D/g, "").slice(-9); }',
+    'sb.rpc = function (nombre, args) {',
+    '  window.__reg.rpcs.push({ nombre: nombre, archivo: args.p_archivo, n: (args.p_filas || []).length, id: args.p_importacion_id });',
+    '  if (window.__rpcFalla) return Promise.resolve({ data: null, error: { message: window.__rpcFalla } });',
+    '  if (nombre === "deshacer_importacion_clientes") {',
+    '    var l = window.__lotes.find(function (x) { return x.id === args.p_importacion_id; });',
+    '    if (!l) return Promise.resolve({ data: null, error: { message: "No encontramos esa importación en tu negocio." } });',
+    '    l.estado = "deshecha"; l.deshecha_en = "2026-10-31T12:00:00Z";',
+    '    var antes = window.__tabla.length; window.__tabla = window.__tabla.filter(function (c) { return c.importacion_id !== l.id; });',
+    '    return Promise.resolve({ data: { borrados: antes - window.__tabla.length, conservados_con_actividad: 0, conservados_ids: [], campos_devueltos: 0 }, error: null });',
+    '  }',
+    '  if (nombre !== "importar_clientes_lote") throw new Error("rpc inesperado: " + nombre);',
+    '  var id = "lote" + (window.__lotes.length + 1), creados = 0, completados = 0, saltados = 0, avisos = [], ins = [];',
+    '  args.p_filas.forEach(function (f) {',
+    '    if (f.accion === "crear") {',
+    '      var ya = window.__tabla.some(function (c) { return k9(c.whatsapp) === k9(f.datos.whatsapp); });',
+    '      if (ya) { saltados++; avisos.push("ya existe " + f.datos.whatsapp); return; }',
+    '      ins.push(JSON.parse(JSON.stringify(f.datos)));',
+    '      window.__tabla.unshift(Object.assign({ id: "n" + window.__tabla.length, created_at: "2026-10-31", importacion_id: id }, f.datos)); creados++;',
+    '    } else {',
+    '      var c = window.__tabla.find(function (x) { return x.id === f.cliente_id; }); var hizo = false;',
+    '      Object.keys(f.datos).forEach(function (k) { if (c && !c[k]) { c[k] = f.datos[k]; hizo = true; } });',
+    '      window.__reg.updates.push({ id: f.cliente_id, payload: JSON.parse(JSON.stringify(f.datos)) });',
+    '      if (hizo) completados++;',
+    '    }',
+    '  });',
+    '  window.__reg.inserts.push(ins);',
+    '  window.__lotes.unshift({ id: id, creado_en: "2026-10-31T12:00:00Z", archivo: args.p_archivo, creados: creados, completados: completados, estado: "aplicada", deshecha_en: null });',
+    '  return Promise.resolve({ data: { importacion_id: id, creados: creados, completados: completados, saltados: saltados, avisos: avisos }, error: null });',
+    '};',
     'sb.from = function (t) {',
+    '  if (t === "importaciones_clientes") {',
+    '    var qq = { select: function () { return qq; }, order: function () { return qq; }, limit: function () { return Promise.resolve({ data: window.__lotes, error: null }); } };',
+    '    return qq;',
+    '  }',
     '  if (t !== "clientes") throw new Error("tabla inesperada: " + t);',
     '  return {',
     '    select: function () { var q = { eq: function () { return q; }, order: function () { return q; },',
     '      range: function (a, b) { var n = window.__reg.paginas.length; window.__reg.paginas.push([a, b]);',
     '        if (window.__falla === n) return Promise.resolve({ data: null, error: { message: "falla simulada" } });',
     '        return Promise.resolve({ data: window.__tabla.slice(a, b + 1), error: null }); } }; return q; },',
-    '    insert: function (rows) { window.__reg.inserts.push(JSON.parse(JSON.stringify(rows)));',
-    '      rows.forEach(function (r, i) { window.__tabla.unshift(Object.assign({ id: "n" + window.__tabla.length + "-" + i, created_at: "2026-10-31" }, r)); });',
-    '      return Promise.resolve({ error: null }); },',
-    '    update: function (p) { return { eq: function (c, id) {',
-    '      window.__reg.updates.push({ id: id, payload: JSON.parse(JSON.stringify(p)) });',
-    '      var f = window.__tabla.find(function (x) { return x.id === id; }); if (f) Object.assign(f, p);',
-    '      return Promise.resolve({ error: null }); } }; }',
+    '    insert: function () { throw new Error("el importador ya no escribe directo en clientes"); },',
+    '    update: function () { throw new Error("el importador ya no escribe directo en clientes"); }',
     '  };',
     '};'
   ].join('\n'));
@@ -118,6 +148,7 @@ function cont(w) {
 async function importar(w, clientes, nombreArchivo, bytes, o) {
   o = o || {};
   prepararSim(w, clientes, o.fallaPagina);
+  if (o.rpcFalla) w.eval('window.__rpcFalla = ' + JSON.stringify(o.rpcFalla) + ';');
   await w.loadClientes();
   w.eval('window.__reg.paginas = [];');
   var file = new w.File([bytes], nombreArchivo, { type: o.tipo || '' });
@@ -310,7 +341,7 @@ async function grupoF(w) {                       // 1500 filas y paginación
   for (var i = 0; i < 1500; i++) csv += 'Cliente ' + i + ',9' + String(10000000 + i) + '\n';
   var r = await importar(w, [], 'mil500.csv', utf8(csv), { ejecutar: true });
   check('F 1500 filas: contador nuevos', r.cont.nuevos, '1500');
-  check('F 1500 filas: se insertan en bloques de 500', r.reg.inserts.map(function (x) { return x.length; }).join(','), '500,500,500');
+  check('F 1500 filas: viajan en UNA sola llamada al servidor', r.reg.rpcs.map(function (x) { return x.n; }).join(','), '1500');
   var despues = w.eval('S.clientes.length');
   check('F 1500 filas: tras importar, S.clientes los trae TODOS (paginado)', despues, '1500');
   check('F 1500 filas: la recarga posterior pidió 2 páginas', r.reg.paginas.length, '2');
@@ -549,6 +580,65 @@ function bajarBin(url) {
     x.send();
   });
 }
+async function grupoH(w) {                       // FASE 2: importar por el servidor y deshacer
+  var csv = 'Nombre,Teléfono,Correo\nAna,+56 9 1111 1111,a@x.cl\nBea,+56 9 2222 2222,\n';
+  var r = await importar(w, [], 'clientes-nov.csv', utf8(csv), { ejecutar: true });
+  check('H una sola llamada a importar_clientes_lote', r.reg.rpcs.map(function (x) { return x.nombre + ':' + x.n; }).join(','), 'importar_clientes_lote:2');
+  check('H se manda el nombre del archivo', r.reg.rpcs[0].archivo, 'clientes-nov.csv');
+  var enviadas = w.eval('JSON.stringify(window.__reg.inserts[0])');
+  verdad('H no viaja barberia_id (lo decide el servidor)', enviadas.indexOf('barberia_id') === -1, enviadas);
+  check('H el resultado cuenta 2 creados', w.document.querySelector('#imp-resultado .mc-val').textContent, '2');
+  check('H aparece el botón «Deshacer esta importación»', w.document.getElementById('imp-btn-deshacer').style.display, '');
+  check('H quedó el id del lote', w.eval('IMP.lotes.join(",")'), 'lote1');
+
+  // Deshacer desde el resultado
+  w.eval('window.confirm = function () { return true; };');
+  await w.impDeshacerEsta();
+  check('H deshacer: las 2 fichas desaparecen', w.eval('window.__tabla.length'), '0');
+  check('H deshacer: llamó a deshacer_importacion_clientes', r.reg.rpcs.length + 1, reg(w).rpcs.length);
+  check('H deshacer: el botón se oculta', w.document.getElementById('imp-btn-deshacer').style.display, 'none');
+  verdad('H deshacer: avisa cuántos se borraron', reg(w).notifs.some(function (n) { return /2 clientes borrados/.test(n); }), reg(w).notifs.join(' | '));
+
+  // Historial
+  await w.impCargarHistorial();
+  var h = w.document.getElementById('imp-historial').textContent;
+  verdad('H historial: lista la importación como deshecha', /clientes-nov\.csv/.test(h) && /Deshecha el/.test(h), h);
+
+  // Lista desactualizada: el servidor ve un duplicado que el navegador no vio
+  prepararSim(w, [], null);
+  await w.loadClientes();
+  var file = new w.File([utf8('Nombre,Teléfono\nCarla,+56 9 3333 3333\nDani,+56 9 4444 4444\n')], 'viejo.csv', { type: '' });
+  await w.impLeerArchivo({ files: [file] });
+  w.impIrPaso(3);
+  w.eval('window.__tabla.push({ id: "otra-pestana", nombre: "Carla", apellido: "", whatsapp: "933333333", email: "", cumpleanos: null, notas: "", canal: "Directo", barbero_preferido: null });');
+  await w.impEjecutarImportacion();
+  var cuentas = JSON.parse(w.eval('JSON.stringify(Array.prototype.map.call(document.querySelectorAll("#imp-resultado .mc-val"), function (e) { return e.textContent; }))'));
+  check('H lista desactualizada: crea 1 y salta 1 (creados, actualizados, sin cambios, saltados)', cuentas.slice(0, 4).join(','), '1,0,0,1');
+  verdad('H lista desactualizada: muestra el aviso del servidor', /ya existe/.test(w.document.getElementById('imp-resultado').textContent));
+
+  // Error del servidor: no queda nada y se explica
+  var e = await importar(w, [], 'malo.csv', utf8('Nombre,Teléfono\nEva,+56 9 5555 5555\n'), { ejecutar: true, rpcFalla: 'Fila 1: el teléfono "123" tiene menos de 9 dígitos.' });
+  check('H error del servidor: no se creó nada', w.eval('window.__tabla.length'), '0');
+  verdad('H error del servidor: se muestra el mensaje y que no se guardó nada',
+    /menos de 9 dígitos/.test(w.document.getElementById('imp-resultado').textContent) && /No se guardó nada/.test(w.document.getElementById('imp-resultado').textContent));
+  check('H error del servidor: sin botón de deshacer', w.document.getElementById('imp-btn-deshacer').style.display, 'none');
+
+  // Más de 5000 filas: dos llamadas (5000 + 1)
+  var grande = 'Nombre,Teléfono\n';
+  for (var i = 0; i < 5001; i++) grande += 'C ' + i + ',9' + String(10000000 + i) + '\n';
+  var g = await importar(w, [], 'grande.csv', utf8(grande), { ejecutar: true });
+  check('H 5001 filas: 5000 + 1 en dos llamadas', g.reg.rpcs.map(function (x) { return x.n; }).join(','), '5000,1');
+
+  // Fechas imposibles: no tumban el servidor
+  check('H fecha 31/02/2024 no existe → sin cumpleaños', w.eval('impParseFecha("31/02/2024")'), 'null');
+  check('H fecha 29/02/2024 (bisiesto) sí', w.eval('impParseFecha("29/02/2024")'), '2024-02-29');
+  check('H fecha 29/02/2023 no existe', w.eval('impParseFecha("29/02/2023")'), 'null');
+  check('H fecha 2024-13-01 no existe', w.eval('impParseFecha("2024-13-01")'), 'null');
+  check('H año 1850 fuera de rango → sin cumpleaños', w.eval('impParseFecha("01/01/1850")'), 'null');
+  check('H año 2150 fuera de rango → sin cumpleaños', w.eval('impParseFecha("01/01/2150")'), 'null');
+  check('H fecha 17/05/1990 sí', w.eval('impParseFecha("17/05/1990")'), '1990-05-17');
+}
+
 async function grupoZ(w) {
   var json = null;
   try { json = await bajar(RUTA_ARCHIVOS_MARIO + 'LEEME_resultados_esperados.json'); } catch (e) { json = null; }
@@ -620,6 +710,7 @@ async function grupoZ(w) {
     await grupoCs(w);
     await grupoCs2(w);
     await grupoG(w);
+    await grupoH(w);
     await grupoZ(w);
   } catch (e) {
     fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n').slice(0, 3).join('\n      '));
