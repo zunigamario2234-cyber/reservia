@@ -807,7 +807,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <tbody id="t-servicios"></tbody></table></div></div>
   </div>
   <div id="cfg-blq" style="display:none">
-    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Bloqueá horarios puntuales, días completos, o un día fijo cada semana en que un profesional no atiende. Se refleja automáticamente en el link público de reservas.</p>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Bloquea horarios puntuales, días completos, o un día fijo cada semana en que un profesional no atiende. Se refleja automáticamente en el link público de reservas.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-bloqueo')">+ Bloqueo</button></div>
     <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Tipo</th><th>Detalle</th><th>Motivo</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-bloqueos"></tbody></table></div></div>
@@ -828,7 +828,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Este link lleva un código propio de tu negocio: es para el cartel del local, no para publicarlo en redes.</div>
     </div>
-    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Configurá los niveles de tu Club VIP — cuántas visitas hacen falta para cada uno, cómo se llaman, y su beneficio. Necesitás al menos un nivel siempre.</p>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Configura los niveles de tu Club VIP — cuántas visitas hacen falta para cada uno, cómo se llaman, y su beneficio. Necesitas al menos un nivel siempre.</p>
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-nivel')">+ Nivel</button></div>
     <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Visitas mínimas</th><th>Beneficio</th><th></th></tr></thead>
     <tbody id="t-niveles-vip"></tbody></table></div></div>
@@ -1018,7 +1018,7 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="imp-step-content active" id="imp-sc-1">
       <label class="imp-drop" for="imp-file">
         <div style="font-size:28px;margin-bottom:8px">📄</div>
-        <div style="font-size:13px;color:var(--text)">Hacé clic para elegir un archivo</div>
+        <div style="font-size:13px;color:var(--text)">Haz clic para elegir un archivo</div>
         <div style="font-size:11px;color:var(--text3);margin-top:6px">.csv, .xlsx o .xls — exportado de Agenda Pro, Setmore, o cualquier planilla con tus clientes</div>
       </label>
       <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" style="display:none" onchange="impLeerArchivo(this)">
@@ -1028,9 +1028,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
 
     <!-- Paso 2: mapeo de columnas -->
     <div class="imp-step-content" id="imp-sc-2">
-      <p style="font-size:12px;color:var(--text3);margin-bottom:10px">Decinos qué columna de tu archivo corresponde a cada dato. Detectamos algunas automáticamente — revisalas y corregí las que hagan falta.</p>
+      <p style="font-size:12px;color:var(--text3);margin-bottom:10px">Dinos qué columna de tu archivo corresponde a cada dato. Detectamos algunas automáticamente — revísalas y corrige las que hagan falta.</p>
       <div id="imp-mapeo"></div>
-      <div class="alert al-warn" id="imp-mapeo-alerta" style="display:none;margin-top:10px">Nombre y WhatsApp son obligatorios — asigná una columna a cada uno para continuar.</div>
+      <div class="alert al-warn" id="imp-mapeo-alerta" style="display:none;margin-top:10px">Nombre y WhatsApp son obligatorios — asigna una columna a cada uno para continuar.</div>
       <div class="modal-footer" style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-primary" id="imp-btn-paso2" onclick="impIrPaso(3)">Continuar →</button>
         <button class="btn btn-ghost" onclick="impIrPaso(1)">← Volver</button>
@@ -3114,7 +3114,7 @@ function editarProfesional(id){
 // no tiene fila, queda destildado (el dueño lo activa a mano).
 function renderChecklistServiciosBarbero(barberoId){
   const cont=document.getElementById('ba-servicios-list');
-  if(!S.servicios.length){cont.innerHTML='<span style="font-size:12px;color:var(--text3)">Agregá servicios primero en Config → Servicios.</span>';return;}
+  if(!S.servicios.length){cont.innerHTML='<span style="font-size:12px;color:var(--text3)">Agrega servicios primero en Config → Servicios.</span>';return;}
   cont.innerHTML=S.servicios.map(s=>{
     const fila=barberoId?S.barberoServicios.find(bs=>bs.barbero_id===barberoId&&bs.servicio_id===s.id):null;
     const checked=barberoId?!!fila?.activo:true;
@@ -3495,7 +3495,7 @@ function copiarLinkAliado(){ copiarAlPortapapeles(document.getElementById('cnj-l
 async function validarCodigoNegocio(){
   const alianzaId=document.getElementById('cnj-alianza-id').value;
   const codigo=document.getElementById('cnj-codigo').value.trim();
-  if(!codigo){notify('Ingresá un código','warn');return;}
+  if(!codigo){notify('Ingresa un código','warn');return;}
   const btn=document.getElementById('btn-validar-cnj');
   btn.disabled=true;btn.textContent='Validando...';
   const {data:fecha,error}=await sb.rpc('validar_codigo_alianza_negocio',{p_alianza_id:alianzaId,p_codigo:codigo});
@@ -3519,11 +3519,11 @@ function onChangeTipoBloqueo(){
 async function guardarBloqueo(){
   const profId=document.getElementById('blq-profesional').value;
   const tipo=document.getElementById('blq-tipo').value;
-  if(!profId){notify('Elegí un profesional','warn');return;}
+  if(!profId){notify('Elige un profesional','warn');return;}
   const payload={barberia_id:S.barberia.id,profesional_id:profId,tipo,motivo:document.getElementById('blq-motivo').value.trim()||null};
   if(tipo==='puntual'||tipo==='dia_completo'){
     const fecha=document.getElementById('blq-fecha').value;
-    if(!fecha){notify('Elegí una fecha','warn');return;}
+    if(!fecha){notify('Elige una fecha','warn');return;}
     payload.fecha=fecha;
   }
   if(tipo==='recurrente'){
@@ -3531,7 +3531,7 @@ async function guardarBloqueo(){
   }
   if(tipo==='puntual'||tipo==='recurrente'){
     const hi=document.getElementById('blq-hora-inicio').value, hf=document.getElementById('blq-hora-fin').value;
-    if(!hi||!hf){notify('Completá el rango de horas','warn');return;}
+    if(!hi||!hf){notify('Completa el rango de horas','warn');return;}
     if(hi>=hf){notify('La hora de inicio debe ser antes que la de fin','warn');return;}
     payload.hora_inicio=hi;payload.hora_fin=hf;
   }
@@ -4403,7 +4403,7 @@ async function confirmarCobro(){
   renderReservas();renderDashboard();
   // Con UNA reserva el texto es el de siempre, sin paréntesis: decir
   // "(1 reserva)" es información vacía en el flujo que ya estaba en producción
-  // —si cobraste una, ya lo sabés— y este cambio no tenía por qué tocarlo.
+  // —si cobraste una, ya lo sabes— y este cambio no tenía por qué tocarlo.
   // El conteo aparece solo cuando de verdad hubo varias.
   const n=COBRO_CTX.lineas.length;
   const nP=(COBRO_CTX.productos||[]).reduce((s,p)=>s+p.cantidad,0);
@@ -5033,7 +5033,7 @@ async function eliminarClientes(ids){
     const n=await borrarClientes(borrables.map(x=>x.id));
     await loadClientes(); await loadVIP(); renderClientes(); renderDashboard();
     if(n!==borrables.length){
-      notify('Se eliminaron '+n+' de '+borrables.length+'. Revisá la lista.','warn');
+      notify('Se eliminaron '+n+' de '+borrables.length+'. Revisa la lista.','warn');
       return false;
     }
     notify(n===1?'Cliente eliminado ✓':n+' clientes eliminados ✓');
@@ -5115,10 +5115,10 @@ function renderVIP(){
   const niveles=nivelesOrdenados();
   document.getElementById('vip-stat-cards').innerHTML=niveles.length?niveles.map((nv,i)=>
     `<div class="mc"><div class="mc-label">${ICONO_NIVEL(i)} ${nv.nombre} (${nv.visitas_minimas}+)</div><div class="mc-val${i===1?' gold':''}">${cls.filter(c=>c.nv===nv.nombre).length}</div></div>`
-  ).join(''):'<div class="empty">Sin niveles configurados. Configuralos en Config → Club VIP.</div>';
+  ).join(''):'<div class="empty">Sin niveles configurados. Configúralos en Config → Club VIP.</div>';
   document.getElementById('vip-nivel-cards').innerHTML=niveles.length?niveles.map((nv,i)=>
     `<div class="card"><div style="font-size:28px;margin-bottom:8px">${ICONO_NIVEL(i)}</div><div style="font-weight:600;margin-bottom:4px">${nv.nombre}</div><div style="font-size:12px;color:var(--text3);margin-bottom:10px">${nv.visitas_minimas} citas</div><span class="badge ${PALETA_NIVELES[i%PALETA_NIVELES.length]}">${nv.beneficio||'—'}</span></div>`
-  ).join(''):'<div class="empty">Sin niveles configurados. Configuralos en Config → Club VIP.</div>';
+  ).join(''):'<div class="empty">Sin niveles configurados. Configúralos en Config → Club VIP.</div>';
   document.getElementById('t-vip-cl').innerHTML=`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Citas</th><th>Nivel</th><th>Progreso</th><th>WhatsApp</th></tr></thead><tbody>
     ${cls.map(c=>{
       const meta=proximaMetaNivel(c.vis);
@@ -5824,7 +5824,7 @@ function renderConfig(){
         ?'Todos'
         :(a.nivel_minimo_id
           ?(S.nivelesVip.find(nv=>nv.id===a.nivel_minimo_id)?.nombre||'Todos')
-          :'<span style="color:#e0a030">⚠️ Sin nivel asignado — no visible para clientes, revisala</span>');
+          :'<span style="color:#e0a030">⚠️ Sin nivel asignado — no visible para clientes, revísala</span>');
       const cnt=contarCanjesAlianza(a.id);
       return `<tr>
       <td class="td-avatar">${avatar}</td><td data-label="Nombre">${a.nombre}</td><td data-label="Beneficio">${a.beneficio}</td><td data-label="Nivel mínimo">${nivelCelda}</td>
