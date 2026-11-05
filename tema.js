@@ -303,6 +303,138 @@ function acentoContraSuperficie(acento, superficie) {
   return { contraste: k, cumple: k >= OBJ_UI };
 }
 
+// ── superficies de las páginas PÚBLICAS, con modo ──────────────────────
+// Función pura, sin DOM. La usan unirse.html, club.html y reservar.html: la
+// cuarta copia de esta aritmética es cómo se desincronizan los números.
+//
+// op = { modo: 'oscuro' | 'claro', colorMarca, colorFondoLogo }
+// Devuelve { '--variable': valor } con TODO lo que la página debe escribir, o
+// null si no hay nada que escribir (modo oscuro sin color de marca: la página
+// queda idéntica a como era antes del tema, ni una variable se toca).
+//
+// OSCURO es la derivación aprobada (opción A) tal cual: los valores de partida
+// son los hex que las páginas tenían escritos a mano, se tiñen con el color de
+// marca en proporciones bajas y los textos se SUBEN hasta 4,6:1 contra su
+// superficie y los bordes de controles hasta 3,1:1 (0,1 de holgura sobre los
+// 4,5 y 3 de WCAG).
+// CLARO es el espejo: superficies casi blancas teñidas, textos que se BAJAN
+// hasta 4,6:1 contra la superficie más oscura donde pueden caer (el fondo de
+// la página), borde de controles a 3,1:1, acento a 4,6:1 contra el fondo (eso
+// deja ≥5:1 al texto blanco que lleva encima). Sin color de marca, el modo
+// claro igual se deriva (acento de Reservia): el dueño pidió claro.
+function oscurecerContra(hex, obj, fondo) {
+  var lf = luminancia(fondo);
+  if (contraste(lf, luminancia(hex)) >= obj) return hex;
+  var p = aHsl(hex), h = p[0], s = p[1], l = p[2];
+  for (var i = 0; i < 260 && l > 0; i++) {
+    l -= 0.004;
+    var c = deHsl(h, s, Math.max(l, 0));
+    if (contraste(lf, luminancia(c)) >= obj) return c;
+  }
+  return '#000000';
+}
+function derivarSuperficies(op) {
+  op = op || {};
+  var claro = op.modo === 'claro';
+  var tieneColor = hexValido(op.colorMarca);
+  if (!claro && !tieneColor) return null;
+  var colorBase = tieneColor ? op.colorMarca : '#7C6AF7';
+  var satDe = function (h) { var p = rgbDe(h); return satHSV(p[0], p[1], p[2]); };
+  var neutro = function (h) { var p = aHsl(h); return deHsl(p[0], 0, p[2]); };
+  var out = {};
+
+  // El acento de partida. Oscuro: el de generarTema (aclarado). Claro: el
+  // color tal cual, y si es casi neutro (blanco, gris, negro) el monocromático
+  // oscuro de siempre: un botón blanco sobre fondo claro no existe.
+  var acentoBase = claro
+    ? (satDe(colorBase) < 0.10 ? MONO_CLARO : colorBase)
+    : generarTema({ color: colorBase, modo: 'oscuro' })['--acento'];
+
+  // De dónde sale el tono (idéntico en los dos modos): el acento si tiene
+  // color; si no, el fondo detectado del logo; si tampoco, neutro puro.
+  // En claro se mira el color de MARCA, no el acento: un blanco de marca pasa
+  // a acento casi negro azulado, y teñir la página con ese azul no es la marca.
+  var fuenteTinte = claro ? colorBase : acentoBase;
+  var tinte = null;
+  if (satDe(fuenteTinte) >= 0.10) tinte = fuenteTinte;
+  else if (hexValido(op.colorFondoLogo) && satDe(op.colorFondoLogo) >= 0.10) tinte = op.colorFondoLogo;
+  var mez = function (base, t) { return tinte ? mezclar(base, tinte, t) : neutro(base); };
+
+  var B, sup, txt, borde, inputBorde, acento, sobre, hover;
+  if (!claro) {
+    B = { fondo: '#08090D', portada: '#0D0E18', tarjeta: '#0F1018', borde: '#222222',
+          inputFondo: '#161616', inputBorde: '#252525', prefijo: '#12131F',
+          texto: '#E8E6E0', suave: '#888888', medio: '#777777', debil: '#555555' };
+    sup = { fondo: mez(B.fondo, 0.05), portada: mez(B.portada, 0.06), tarjeta: mez(B.tarjeta, 0.07),
+            inputFondo: mez(B.inputFondo, 0.06), prefijo: mez(B.prefijo, 0.08) };
+    txt = { texto: aclararHasta(B.texto, 4.6, sup.tarjeta), suave: aclararHasta(B.suave, 4.6, sup.tarjeta),
+            medio: aclararHasta(B.medio, 4.6, sup.prefijo), debil: aclararHasta(B.debil, 4.6, sup.tarjeta) };
+    borde = mez(B.borde, 0.06);
+    inputBorde = aclararHasta(mez(B.inputBorde, 0.20), 3.1, sup.tarjeta);
+    acento = aclararHasta(acentoBase, 4.5, sup.tarjeta);
+    sobre = textoSobre(acento).color;
+    hover = mezclar(acento, '#FFFFFF', 0.14);        // en oscuro el hover ACLARA
+  } else {
+    B = { fondo: '#F4F5F9', portada: '#E9EBF2', tarjeta: '#FFFFFF', borde: '#E1E3EA',
+          inputFondo: '#FFFFFF', inputBorde: '#8E919C', prefijo: '#EDEFF5',
+          texto: '#15181D', suave: '#4B505C', medio: '#555A66', debil: '#626775' };
+    sup = { fondo: mez(B.fondo, 0.035), portada: mez(B.portada, 0.05), tarjeta: mez(B.tarjeta, 0.015),
+            inputFondo: mez(B.inputFondo, 0.015), prefijo: mez(B.prefijo, 0.05) };
+    // Contra la superficie MÁS OSCURA donde puede caer el texto: el fondo de
+    // la página (o el prefijo, que es más oscuro que la tarjeta).
+    var piso = function (a, b) { return luminancia(a) <= luminancia(b) ? a : b; };
+    var pisoTxt = piso(sup.fondo, sup.prefijo);
+    txt = { texto: oscurecerContra(B.texto, 4.6, pisoTxt), suave: oscurecerContra(B.suave, 4.6, pisoTxt),
+            medio: oscurecerContra(B.medio, 4.6, pisoTxt), debil: oscurecerContra(B.debil, 4.6, pisoTxt) };
+    borde = mez(B.borde, 0.06);
+    inputBorde = oscurecerContra(mez(B.inputBorde, 0.20), 3.1, sup.tarjeta);
+    acento = oscurecerContra(acentoBase, 4.6, sup.fondo);
+    sobre = textoSobre(acento).color;
+    hover = mezclar(acento, '#000000', 0.14);        // en claro el hover OSCURECE
+    out['--texto-fuerte'] = oscurecerContra('#0A0C10', 4.6, pisoTxt);
+    // Avisos de error y botón de WhatsApp: en oscuro son cajas oscuras con
+    // texto de color; en claro cajas claras con texto oscuro del mismo color.
+    var rojoT = oscurecerContra('#B42318', 4.6, '#FDECEC');
+    out['--alerta-fondo'] = '#FDECEC';
+    out['--alerta-borde'] = oscurecerContra('#D92D20', 3.1, '#FDECEC');
+    out['--alerta-texto'] = rojoT;
+    var verdeT = oscurecerContra('#0B6B34', 4.6, '#E6F7EC');
+    out['--wa-fondo'] = '#E6F7EC';
+    out['--wa-borde'] = oscurecerContra('#1AA251', 3.1, '#E6F7EC');
+    out['--wa-texto'] = verdeT;
+    out['--wa-hover'] = '#D3F0DE';
+  }
+
+  out['--fondo'] = sup.fondo;
+  out['--portada-fondo'] = sup.portada;
+  out['--tarjeta'] = sup.tarjeta;
+  out['--borde'] = borde;
+  out['--input-fondo'] = sup.inputFondo;
+  out['--input-borde'] = inputBorde;
+  out['--prefijo-fondo'] = sup.prefijo;
+  out['--texto'] = txt.texto;
+  out['--texto-suave'] = txt.suave;
+  out['--texto-medio'] = txt.medio;
+  out['--texto-debil'] = txt.debil;
+  out['--acento'] = acento;
+  out['--acento-2'] = acento;                        // iguales = degradado plano
+  out['--texto-sobre-acento'] = sobre;
+  out['--acento-hover'] = hover;
+  out['--acento-2-hover'] = hover;
+  // Anillo del spinner: se parte de 25% del texto del botón mezclado con el
+  // acento y se baja hasta que el anillo quede a 3,1:1 o más del arco
+  // (currentColor = sobre); con 0 el anillo es el acento.
+  var anillo = acento;
+  for (var k = 0.25; k > 0; k = Math.round((k - 0.05) * 100) / 100) {
+    var c = mezclar(acento, sobre, k);
+    if (contrasteHex(sobre, c) >= 3.1) { anillo = c; break; }
+  }
+  out['--spinner-anillo'] = anillo;
+  // Franja del logo: visible si el panel detectó un fondo opaco; si no, fundida.
+  out['--fondo-logo'] = hexValido(op.colorFondoLogo) ? op.colorFondoLogo : sup.fondo;
+  return out;
+}
+
 // ── escritura: setProperty y nada más ─────────────────────────────────
 // Nunca se arma texto CSS ni se inyecta <style>: un valor que no pase
 // hexValido no debe poder convertirse en una regla. setProperty no

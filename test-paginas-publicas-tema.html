@@ -356,6 +356,90 @@ async function grupoS(txtOriginal) {
   for (var r = 0; r < 5 && r < res.length; r++)
     informe.push(col(res[r][0], 16) + col(res[r][1], 10) + col(res[r][2], 10) + col(res[r][3], 10) + col(f2(res[r][4]), 14) + f2(res[r][5]));
 }
+// ─── grupo L: MODO CLARO (derivarSuperficies con modo 'claro') ─────────
+// Mismo método que Q y S: se corre la PÁGINA REAL con la fila del negocio y se
+// mide con contrasteHex() sobre las variables que escribió. Barrido de 60
+// colores (20 tonos x 3 combinaciones de saturación y luminosidad) más los
+// casos que importan: un blanco de marca con fondo de logo (Essentials), un
+// negro, un amarillo puro y la ausencia de color.
+var COLORES_L = [['Essentials blanco+logo #2F2F2F', '#FFFFFF', '#2F2F2F'], ['negro', '#000000', null],
+  ['amarillo puro', '#FFFF00', null], ['cian puro', '#00FFFF', null], ['violeta ZZ', '#3104F2', null],
+  ['dorado', '#D4A853', null], ['gris medio', '#808080', null]];
+async function grupoL(txtOriginal) {
+  var casos = COLORES_L.slice();
+  for (var i = 0; i < 20; i++) {
+    var h = i * 18;
+    casos.push(['barrido h' + h + ' vivo', hsl2hex(h, 1, 0.5), null]);
+    casos.push(['barrido h' + h + ' claro', hsl2hex(h, 0.9, 0.78), null]);
+    casos.push(['barrido h' + h + ' oscuro', hsl2hex(h, 0.8, 0.22), null]);
+  }
+  var fallos = [], minTxt = 99, minBorde = 99, minAc = 99, minSobre = 99, minAnillo = 99, minFuerte = 99, minAlerta = 99, minWa = 99, minHov = 99;
+  var w = await montar(prepararPagina(txtOriginal));
+  for (var j = 0; j < casos.length; j++) {
+    var c = casos[j], nom = c[0];
+    var v = w.derivarSuperficies({ modo: 'claro', colorMarca: c[1], colorFondoLogo: c[2] });
+    var K = w.contrasteHex;
+    var fon = v['--fondo'], tar = v['--tarjeta'], pre = v['--prefijo-fondo'];
+    var txt = Math.min(K(v['--texto'], fon), K(v['--texto-suave'], fon), K(v['--texto-medio'], pre), K(v['--texto-debil'], fon), K(v['--texto'], tar), K(v['--texto-suave'], tar), K(v['--texto-debil'], tar));
+    var borde = K(v['--input-borde'], v['--input-fondo']);
+    var ac = Math.min(K(v['--acento'], fon), K(v['--acento'], tar));
+    var sobre = K(v['--texto-sobre-acento'], v['--acento']);
+    var hov = K(v['--texto-sobre-acento'], v['--acento-hover']);
+    var anillo = K(v['--spinner-anillo'], v['--texto-sobre-acento']);
+    var fuerte = Math.min(K(v['--texto-fuerte'], fon), K(v['--texto-fuerte'], tar));
+    var alerta = K(v['--alerta-texto'], v['--alerta-fondo']), wa = K(v['--wa-texto'], v['--wa-fondo']);
+    minTxt = Math.min(minTxt, txt); minBorde = Math.min(minBorde, borde); minAc = Math.min(minAc, ac);
+    minSobre = Math.min(minSobre, sobre); minAnillo = Math.min(minAnillo, anillo); minFuerte = Math.min(minFuerte, fuerte);
+    minAlerta = Math.min(minAlerta, alerta); minWa = Math.min(minWa, wa); minHov = Math.min(minHov, hov);
+    var claroDeVerdad = w.luminancia(fon) > 0.8 && w.luminancia(tar) > 0.8;
+    if (txt < 4.6 || borde < 3.1 || ac < 4.5 || sobre < 4.5 || hov < 4.5 || anillo < 3.1 || fuerte < 7 || alerta < 4.5 || wa < 4.5 || !claroDeVerdad)
+      fallos.push(nom + ' ' + c[1] + ': txt ' + f2(txt) + ' borde ' + f2(borde) + ' acento ' + f2(ac) + ' sobre ' + f2(sobre) + ' hover ' + f2(hov) + ' anillo ' + f2(anillo) + ' fuerte ' + f2(fuerte) + ' alerta ' + f2(alerta) + ' wa ' + f2(wa) + (claroDeVerdad ? '' : ' NO ES CLARO'));
+  }
+  verdad('L ' + casos.length + ' colores en modo claro: todos cumplen todos los umbrales', fallos.length === 0, fallos.slice(0, 3).join(' | '));
+  verdad('L texto >= 4.6:1 contra la superficie más oscura donde cae (mínimo ' + f2(minTxt) + ')', minTxt >= 4.6);
+  verdad('L borde de controles >= 3.1:1 (mínimo ' + f2(minBorde) + ')', minBorde >= 3.1);
+  verdad('L acento >= 4.5:1 contra fondo y tarjeta (mínimo ' + f2(minAc) + ')', minAc >= 4.5);
+  verdad('L texto sobre el acento >= 4.5:1, también en hover (mínimos ' + f2(minSobre) + ' / ' + f2(minHov) + ')', minSobre >= 4.5 && minHov >= 4.5);
+  verdad('L anillo del spinner >= 3.1:1 del arco (mínimo ' + f2(minAnillo) + ')', minAnillo >= 3.1);
+  verdad('L títulos fuertes >= 7:1 (mínimo ' + f2(minFuerte) + ')', minFuerte >= 7);
+  verdad('L aviso de error y botón de WhatsApp >= 4.5:1 (mínimos ' + f2(minAlerta) + ' / ' + f2(minWa) + ')', minAlerta >= 4.5 && minWa >= 4.5);
+  informe.push('', '── L. MODO CLARO — peores casos de ' + casos.length + ' colores ──',
+    'texto ' + f2(minTxt) + ' · borde ' + f2(minBorde) + ' · acento ' + f2(minAc) + ' · sobre acento ' + f2(minSobre) + ' · hover ' + f2(minHov) +
+    ' · anillo ' + f2(minAnillo) + ' · fuerte ' + f2(minFuerte) + ' · alerta ' + f2(minAlerta) + ' · whatsapp ' + f2(minWa));
+
+  // La PÁGINA real: fondo claro de verdad y el título legible sobre él.
+  var fila = function (extra) { return Object.assign({ nombre: 'L', whatsapp: null, foto_portada: null, logo_url: null, color_marca: null, color_fondo_logo: null }, extra); };
+  var wE = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wE, fila({ color_marca: '#FFFFFF', color_fondo_logo: '#2F2F2F', modo_tema: 'claro' }));
+  var bg = rgbAHex(wE.getComputedStyle(wE.document.body).backgroundColor);
+  verdad('L Essentials (blanco, logo #2F2F2F) en claro: el fondo de la página es claro', wE.luminancia(bg) > 0.8, 'fondo = ' + bg);
+  var h1c = rgbAHex(wE.getComputedStyle(wE.document.querySelector('.header h1')).color);
+  verdad('L Essentials en claro: el título se lee sobre el fondo (>= 4.5:1)', wE.contrasteHex(h1c, bg) >= 4.5, h1c + ' sobre ' + bg);
+  verdad('L Essentials en claro: el acento es el casi negro de siempre, no un gris (>= 10:1 contra blanco)', wE.contrasteHex(leer(wE, '--acento'), '#FFFFFF') >= 10, leer(wE, '--acento'));
+  verdad('L Essentials en claro: la franja del logo es la del logo (#2F2F2F)', leer(wE, '--fondo-logo').toUpperCase() === '#2F2F2F', leer(wE, '--fondo-logo'));
+
+  var wS = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wS, fila({ modo_tema: 'claro' }));
+  verdad('L claro SIN color de marca: igual se deriva (el dueño pidió claro)', estiloRaiz(wS) !== '' && wS.luminancia(rgbAHex(wS.getComputedStyle(wS.document.body).backgroundColor)) > 0.8);
+
+  // 'auto' y 'oscuro' NO cambian nada: la página oscura de siempre.
+  var wA = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wA, fila({ modo_tema: 'auto' }));
+  check('L modo auto sin color: ni una variable se escribe', estiloRaiz(wA), '');
+  var wO = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wO, fila({ modo_tema: 'oscuro' }));
+  check('L modo oscuro sin color: ni una variable se escribe', estiloRaiz(wO), '');
+  var wA2 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wA2, fila({ color_marca: '#3104F2', modo_tema: 'auto' }));
+  var wO2 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wO2, fila({ color_marca: '#3104F2', modo_tema: 'oscuro' }));
+  var wN2 = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wN2, fila({ color_marca: '#3104F2' }));
+  check('L auto con color = oscuro con color = sin modo (la página oscura de hoy)', estiloRaiz(wA2) === estiloRaiz(wO2) && estiloRaiz(wO2) === estiloRaiz(wN2) ? 'iguales' : 'distintos', 'iguales');
+  verdad('L oscuro con color sigue oscuro (el fondo no es claro)', wO2.luminancia(rgbAHex(wO2.getComputedStyle(wO2.document.body).backgroundColor)) < 0.1);
+  verdad('L oscuro no escribe variables solo del modo claro', estiloRaiz(wO2).indexOf('--alerta-') === -1 && estiloRaiz(wO2).indexOf('--wa-') === -1 && estiloRaiz(wO2).indexOf('--texto-fuerte') === -1);
+}
+
 async function grupoP(txtOriginal) {
   var FONDO = '#08090d';
 
@@ -712,6 +796,7 @@ async function grupoE(txtApp) {
     await grupoQ(txtPagina);
     await grupoR(txtPagina);
     await grupoS(txtPagina);
+    await grupoL(txtPagina);
     await grupoE(txtApp);
   } catch (e) {
     fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n')[1]);

@@ -53,6 +53,10 @@
   --texto-suave:#888;          /* hero-sub, header h1 */
   --texto-medio:#777;          /* prefijo del WhatsApp */
   --texto-debil:#555;          /* label y ayuda — hoy en 2,54:1, ver nota */
+  /* Solo el modo claro las cambia (derivarSuperficies, en tema.js): en oscuro
+     valen lo que estas piezas tenían escrito a mano. */
+  --alerta-fondo:#1f0000; --alerta-borde:#e05050; --alerta-texto:#e05050;
+  --wa-fondo:#002210; --wa-borde:#25d366; --wa-texto:#25d366; --wa-hover:#003318;
 }
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--texto);min-height:100vh}
 .portada-wrap{width:100%;max-height:200px;overflow:hidden;background:var(--portada-fondo)}
@@ -86,14 +90,14 @@ input:focus{outline:none;border-color:var(--acento)}
 .btn-primary{background:linear-gradient(135deg,var(--acento),var(--acento-2));color:var(--texto-sobre-acento)}
 .btn-primary:hover:not(:disabled){background:linear-gradient(135deg,var(--acento-hover),var(--acento-2-hover))}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
-.btn-wa{display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;margin-top:12px}
-.btn-wa:hover{background:#003318}
+.btn-wa{display:block;text-decoration:none;text-align:center;background:var(--wa-fondo);color:var(--wa-texto);border:0.5px solid var(--wa-borde);margin-top:12px}
+.btn-wa:hover{background:var(--wa-hover)}
 .alert{padding:11px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;line-height:1.5}
-.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
-.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+.alert-err{background:var(--alerta-fondo);border:0.5px solid var(--alerta-borde);color:var(--alerta-texto)}
+.msg-full{text-align:center;padding:80px 20px;color:var(--texto-debil);font-size:13px;line-height:1.6}
 .aviso-screen{text-align:center;padding:32px 20px}
 .aviso-icon{font-size:52px;margin-bottom:14px}
-.aviso-titulo{font-size:19px;font-weight:600;color:#fff;margin-bottom:10px}
+.aviso-titulo{font-size:19px;font-weight:600;color:var(--texto-fuerte);margin-bottom:10px}
 .aviso-sub{font-size:13px;color:var(--texto-suave);line-height:1.7}
 /* El arco es currentColor: hereda el texto del botón (--texto-sobre-acento), así se ve sobre cualquier acento.
    El anillo es --spinner-anillo: #333 sin tema; con tema lo deriva aplicarTemaPublico(). */
@@ -144,145 +148,25 @@ input:focus{outline:none;border-color:var(--acento)}
 function aplicarTemaPublico(barb){
   // Guardas typeof: si tema.js no cargó, estos nombres no existen y
   // referenciarlos lanzaría ReferenceError. Con typeof no lanza.
-  if(typeof hexValido!=='function' || typeof generarTema!=='function' || typeof mezclar!=='function'){
+  if(typeof hexValido!=='function' || typeof derivarSuperficies!=='function'){
     console.warn('tema.js no está disponible; la página queda con su aspecto por defecto');
     return false;
   }
-  // Sin color de marca no se escribe NI UNA variable: el atributo style de
-  // <html> queda vacío y la página es la de antes. Es la regla acordada y
-  // es exactamente lo que verifica la prueba.
-  if(!barb || !hexValido(barb.color_marca)) return false;
-  const tokens = generarTema({ color: barb.color_marca, modo: 'oscuro' });
-  const raiz = document.documentElement;
-
-  // ── OPCIÓN A: la página entera, no solo el acento ────────────────────
-  //
-  // Los valores de partida son los hex que la página tenía escritos a
-  // mano. Se tiñen con mezclar() en proporciones bajas: la idea es que se
-  // vea de la misma familia que el acento, no pintada de ese color.
-  const BASE = {
-    fondo:'#08090D', portada:'#0D0E18', tarjeta:'#0F1018', borde:'#222222',
-    inputFondo:'#161616', inputBorde:'#252525', prefijo:'#12131F',
-    texto:'#E8E6E0', suave:'#888888', medio:'#777777', debil:'#555555'
-  };
-  const satDe = h => { const p = rgbDe(h); return satHSV(p[0], p[1], p[2]); };
-
-  // DE DÓNDE SALE EL TONO. Si el acento es casi neutro —blanco, gris,
-  // negro— teñir con él no aporta ningún color, así que se intenta con el
-  // fondo detectado del logo. Y si ese también es neutro, la base se vuelve
-  // NEUTRA PURA: se le quita la saturación conservando la luminosidad.
-  //
-  // Eso último importa. El #08090D de hoy es azulado (max-min = 5), así que
-  // dejarlo tal cual junto a un acento blanco mantiene las dos familias
-  // conviviendo, que es justo el problema que se quería resolver en
-  // Essentials. Gris puro con blanco sí es una familia.
-  let tinte = null;
-  if (satDe(tokens['--acento']) >= 0.10) tinte = tokens['--acento'];
-  else if (hexValido(barb.color_fondo_logo) && satDe(barb.color_fondo_logo) >= 0.10) tinte = barb.color_fondo_logo;
-
-  const neutro = h => { const p = aHsl(h); return deHsl(p[0], 0, p[2]); };
-  const mez = (base, t) => tinte ? mezclar(base, tinte, t) : neutro(base);
-
-  const sup = {
-    fondo:      mez(BASE.fondo,      0.05),
-    portada:    mez(BASE.portada,    0.06),
-    tarjeta:    mez(BASE.tarjeta,    0.07),
-    inputFondo: mez(BASE.inputFondo, 0.06),
-    prefijo:    mez(BASE.prefijo,    0.08)
-  };
-
-  // Los textos y los bordes de los CONTROLES (inputs y prefijo de WhatsApp) SE
-  // SUBEN hasta cumplir contra su propio fondo ya teñido: 4,6:1 el texto y
-  // 3,1:1 el borde, o sea 0,1 de holgura sobre los umbrales de 4,5 y 3.
-  // aclararHasta(hex, obj, fondo) aclara hex hasta que contrasta obj contra fondo.
-  //
-  // ⚠ El --texto-debil (#555) hoy está en 2,54:1 y NO cumple ni 3:1. Acá se
-  // sube, así que un negocio CON tema queda más legible que uno sin tema.
-  // Arreglarlo para todos cambiaría los píxeles de las páginas sin color y
-  // rompería la regla de "idéntico a hoy", así que queda anotado como
-  // cambio aparte y no se toca desde acá.
-  const txt = {
-    texto: aclararHasta(BASE.texto, 4.6, sup.tarjeta),
-    suave: aclararHasta(BASE.suave, 4.6, sup.tarjeta),
-    medio: aclararHasta(BASE.medio, 4.6, sup.prefijo),
-    debil: aclararHasta(BASE.debil, 4.6, sup.tarjeta)
-  };
-  // El borde de las TARJETAS no se sube: es decoración, no un control, y hoy es
-  // un tinte apenas distinto del fondo (#222 sobre #08090d = 1,25:1). Solo se
-  // tiñe, con una mezcla baja (0,06) para que siga apenas distinto: con 0,20 el
-  // borde llegaba a 2,13:1 en amarillo. Medido: 1,24 a 1,36:1 en 8 colores.
-  const borde      = mez(BASE.borde,      0.06);
-  const inputBorde = aclararHasta(mez(BASE.inputBorde, 0.20), 3.1, sup.tarjeta);
-
-  raiz.style.setProperty('--fondo',         sup.fondo);
-  raiz.style.setProperty('--portada-fondo', sup.portada);
-  raiz.style.setProperty('--tarjeta',       sup.tarjeta);
-  raiz.style.setProperty('--borde',         borde);
-  raiz.style.setProperty('--input-fondo',   sup.inputFondo);
-  raiz.style.setProperty('--input-borde',   inputBorde);
-  raiz.style.setProperty('--prefijo-fondo', sup.prefijo);
-  raiz.style.setProperty('--texto',         txt.texto);
-  raiz.style.setProperty('--texto-suave',   txt.suave);
-  raiz.style.setProperty('--texto-medio',   txt.medio);
-  raiz.style.setProperty('--texto-debil',   txt.debil);
-  // --texto-fuerte se queda en #fff: ya da 16:1 o más contra cualquiera de
-  // las tarjetas derivadas y es el único texto que no necesita ajuste.
-  // De los 11 tokens de generarTema se usan acá solo los del acento: las
-  // superficies y los textos ya se derivaron arriba con mezclar() y
-  // aclararHasta(). En modo oscuro --acento-tinte y --acento-borde son blanco
-  // translúcido y no llevan el color de la marca; además esta página no los
-  // usa, así que no se tocan.
-  //
+  if(!barb) return false;
+  // El modo lo elige el dueño en el panel. Solo «claro» cambia la página: 'auto'
+  // y 'oscuro' son la página oscura de siempre (12 de los 13 negocios están en
+  // 'auto'; si 'auto' también cambiara, casi todas las páginas se moverían).
+  const modo = barb.modo_tema === 'claro' ? 'claro' : 'oscuro';
+  // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
+  // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
+  // variable se toca y la página es la de antes, píxel por píxel.
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  if(!vars) return false;
   // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
   // valor que no pase hexValido no debe poder convertirse en una regla. Con
   // setProperty el peor caso es una variable ignorada.
-  // El acento se SUBE contra la tarjeta ya teñida, no se usa el de
-  // generarTema tal cual. Medido: con un color de marca negro el acento
-  // sale #808080 y contra la tarjeta derivada da 4,48:1 — apenas bajo el
-  // umbral. aclararHasta lo lleva a 4,66:1.
-  const acento = aclararHasta(tokens['--acento'], 4.5, sup.tarjeta);
-  const sobreAcento = textoSobre(acento).color;
-  raiz.style.setProperty('--acento', acento);
-  raiz.style.setProperty('--acento-2', acento);   // iguales = degradado plano
-  raiz.style.setProperty('--texto-sobre-acento', sobreAcento);
-  // Anillo del spinner: sale del propio botón, mezclando el acento con el texto
-  // que lleva encima. El arco es currentColor (= sobreAcento), así que el anillo
-  // tiene que quedar a 3,1:1 o más de él (0,1 de holgura sobre el 3 de WCAG para
-  // objetos gráficos). Se parte de 25% de texto y se baja hasta cumplirlo; con 0 el
-  // anillo es el acento, que contra el texto ya da 4,5:1 o más.
-  let anillo = acento;
-  for (let k = 0.25; k > 0; k = Math.round((k - 0.05) * 100) / 100) {
-    const c = mezclar(acento, sobreAcento, k);
-    if (contrasteHex(sobreAcento, c) >= 3.1) { anillo = c; break; }
-  }
-  raiz.style.setProperty('--spinner-anillo', anillo);
-  // El hover ACLARA, no oscurece. En modo oscuro el acento queda justo en
-  // el piso de contraste (4.51-4.55:1 contra el texto que lleva encima), así
-  // que oscurecerlo lo rompe: medido, mezclar con negro al 14% baja a
-  // 3.51:1 y falla. Aclarando al 14% sube a 5.61:1. El hover de hoy
-  // oscurece y el temado aclara: es a propósito.
-  const hover = mezclar(acento, '#FFFFFF', 0.14);
-  raiz.style.setProperty('--acento-hover', hover);
-  raiz.style.setProperty('--acento-2-hover', hover);
-  // LA FRANJA DEL LOGO, dos variantes:
-  //
-  //   · VISIBLE — hay color_fondo_logo y es un hex válido, o sea el panel
-  //     detectó un fondo opaco y uniforme en el logo. Se usa ese color, así
-  //     que un logo con fondo propio se muestra sobre el suyo y no sobre un
-  //     recorte de otro color.
-  //   · FUNDIDA — no hay color detectado (logo transparente, o el análisis
-  //     falló). Entonces la franja toma el fondo de la PÁGINA derivado, así
-  //     que desaparece: el logo flota sobre el fondo en vez de quedar dentro
-  //     de un cuadrado gris que no pertenece a ninguna familia. Eso es lo
-  //     que pasaba antes con el #12131f fijo.
-  //
-  // El fondo del logo se honra SOLO si además hay color de marca: un
-  // negocio sin color no debe cambiar de aspecto por haber subido un logo.
-  if(hexValido(barb.color_fondo_logo)){
-    raiz.style.setProperty('--fondo-logo', barb.color_fondo_logo);
-  } else {
-    raiz.style.setProperty('--fondo-logo', sup.fondo);
-  }
+  const raiz = document.documentElement;
+  Object.keys(vars).forEach(k => raiz.style.setProperty(k, vars[k]));
   return true;
 }
 
@@ -476,11 +360,9 @@ async function init(){
   // Select acotado, mismo criterio que club.html: se piden las columnas que se
   // usan y ninguna más. Este select es lo que hay que imitar, no select('*').
   //
-  // modo_tema NO se pide: esta página es oscura y punto. 12 de los 13
-  // negocios tienen modo_tema='auto' (el default), así que leerlo solo
-  // abriría la pregunta de qué hacer con 'auto' sin que nadie se beneficie
-  // todavía. Queda para la entrega del modo claro.
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo').eq('id',BARBERIA_ID).single();
+  // modo_tema SÍ se pide, para respetar el modo que el dueño eligió. Solo
+  // 'claro' cambia la página; 'auto' y 'oscuro' son la de siempre.
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo,modo_tema').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
 
