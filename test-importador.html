@@ -520,6 +520,8 @@ async function grupoG(w) {                       // BRECHA CONOCIDA: encabezados
   // Solo se afirma lo que el código promete HOY; la brecha se informa, no se esconde ni se arregla acá.
   check('G «First Name» sí se reconoce como nombre', m.nombre, 'First Name');
   check('G «Last Name» sí se reconoce como apellido', m.apellido, 'Last Name');
+  check('G «Mobile Phone» se reconoce como WhatsApp', m.whatsapp, 'Mobile Phone');
+  check('G «Email» se reconoce como correo', m.email, 'Email');
 }
 
 // ── archivos de prueba de Mario (viven FUERA del repo, en el Escritorio) ──
