@@ -69,10 +69,10 @@ function bajar(url) {
 }
 
 // Monta un documento en un iframe srcdoc y espera a que termine de cargar.
-function montar(html) {
+function montar(html, ancho, alto) {
   return new Promise(function (res) {
     var f = document.createElement('iframe');
-    f.style.cssText = 'width:420px;height:300px;position:absolute;left:-9999px';
+    f.style.cssText = 'width:' + (ancho || 420) + 'px;height:' + (alto || 300) + 'px;position:absolute;left:-9999px';
     f.srcdoc = html;
     f.addEventListener('load', function () { res(f.contentWindow); });
     document.body.appendChild(f);
@@ -128,6 +128,234 @@ function leer(w, nombre) {
   return w.document.documentElement.style.getPropertyValue(nombre).trim();
 }
 
+// ─── grupo Q: contrastes REALES con 8 colores de marca ─────────────────
+// No hay un informe aparte: cada número de las tablas sale de correr la
+// página con ese color y medir con contrasteHex() sobre los tokens que la
+// página escribió. Las tablas se imprimen debajo del veredicto.
+//
+// Amarillo y cian puros están a propósito: son los dos colores de marca que
+// MÁS aclaran la tarjeta derivada (mezcla de 0,07), o sea el peor caso para
+// el texto gris. La tabla "sin aclarar" muestra el contraste que tendrían
+// #888 y #E8E6E0 si aclararHasta() no existiera, y el check de cada color
+// exige que el valor APLICADO cumpla 4,5:1.
+var informe = [];
+var COLORES_Q = [
+  ['violeta',        '#3104F2'], ['blanco',     '#FFFFFF'],
+  ['dorado',         '#D4A853'], ['amarillo puro', '#FFFF00'],
+  ['cian puro',      '#00FFFF'], ['rojo',       '#E11D48'],
+  ['verde',          '#16A34A'], ['casi negro', '#1A1A1A']
+];
+function f2(n) { return n.toFixed(2); }
+function col(s, n) { s = String(s); while (s.length < n) s += ' '; return s; }
+function rgbAHex(s) { var m = String(s).match(/\d+/g) || [0,0,0];
+  return '#' + m.slice(0, 3).map(function (x) { return ('0' + (+x).toString(16)).slice(-2); }).join('').toUpperCase(); }
+
+// Sin color_marca la pagina tiene que verse EXACTAMENTE como hoy. "Hoy" son los
+// valores de HEAD: .aviso-sub #888888, spinner con arco #FFFFFF (el texto
+// blanco del boton) y anillo #333333.
+async function sinTema(txtOriginal) {
+  var w = await montar(prepararPagina(txtOriginal));
+  await correrPagina(w, { nombre: 'Sin tema', whatsapp: null, foto_portada: null,
+                          logo_url: null, color_marca: null, color_fondo_logo: null });
+  var doc = w.document, btnU = doc.getElementById('btn-unirme');
+  verdad('Q0 sin color_marca: existe #btn-unirme', !!btnU);
+  var sp = doc.createElement('span'); sp.className = 'spinner';
+  if (btnU) btnU.appendChild(sp);
+  var av = doc.createElement('div'); av.className = 'aviso-sub'; doc.body.appendChild(av);
+  var cs = w.getComputedStyle(sp);
+  check('Q0 sin color_marca: aviso-sub sigue en #888888', rgbAHex(w.getComputedStyle(av).color), '#888888');
+  check('Q0 sin color_marca: arco del spinner sigue en #FFFFFF', rgbAHex(cs.borderTopColor), '#FFFFFF');
+  check('Q0 sin color_marca: anillo del spinner sigue en #333333', rgbAHex(cs.borderLeftColor), '#333333');
+  check('Q0 sin color_marca: el style de la raiz sigue vacio', estiloRaiz(w), '');
+  informe.push('', '-- Q0. SIN color_marca (debe ser igual a hoy) --',
+    'aviso-sub ' + rgbAHex(w.getComputedStyle(av).color) + '   arco ' + rgbAHex(cs.borderTopColor) + '   anillo ' + rgbAHex(cs.borderLeftColor));
+}
+async function grupoQ(txtOriginal) {
+  var A = [], B = [], C3 = [], D = [], E = [], F = [];
+  for (var i = 0; i < COLORES_Q.length; i++) {
+    var nom = COLORES_Q[i][0], hex = COLORES_Q[i][1];
+    var w = await montar(prepararPagina(txtOriginal));
+    await correrPagina(w, { nombre: 'Q', whatsapp: null, foto_portada: null,
+                            logo_url: null, color_marca: hex, color_fondo_logo: null });
+    var t = function (v) { return leer(w, v); };
+    var K = function (a, b) { return w.contrasteHex(a, b); };
+    var tar = t('--tarjeta'), fon = t('--fondo'), pre = t('--prefijo-fondo');
+
+    // texto normal (4,5:1) — los cinco pares que usa la página
+    var cuerpo = K(t('--texto'), tar),       hero = K(t('--texto-suave'), tar);
+    var h1     = K(t('--texto-suave'), fon), pref = K(t('--texto-medio'), pre);
+    var lab    = K(t('--texto-debil'), tar);
+    var peor   = Math.min(cuerpo, hero, h1, pref, lab);
+    A.push(col(nom + ' ' + hex, 22) + [cuerpo, hero, h1, pref, lab].map(function (n) { return col(f2(n), 8); }).join('') + f2(peor));
+    verdad('Q ' + nom + ': texto normal cumple 4.5:1 en los 5 pares', peor >= 4.5,
+           'peor par = ' + f2(peor) + ':1 (cuerpo ' + f2(cuerpo) + ', hero ' + f2(hero) +
+           ', h1 ' + f2(h1) + ', prefijo ' + f2(pref) + ', label ' + f2(lab) + ')');
+    // holgura: aclararHasta apunta a 4,6:1 (no a 4,5), asi que el piso del texto
+    // tiene 0,1 de margen. Si el objetivo vuelve a 4,5 la medicion cae a 4,50-4,54.
+    verdad('Q ' + nom + ': texto con holgura, peor par >= 4.6:1', peor >= 4.6, 'peor par = ' + f2(peor) + ':1');
+    // texto grande (3:1) — misma medición, umbral más bajo
+    verdad('Q ' + nom + ': texto grande cumple 3:1', peor >= 3.0, 'peor par = ' + f2(peor) + ':1');
+    B.push(col(nom, 16) + col(f2(peor), 8) + (peor >= 3.0 ? 'cumple 3:1' : 'FALLA 3:1') +
+           '   ' + (peor >= 4.5 ? 'y 4,5:1' : 'no llega a 4,5:1'));
+
+    // bordes (3:1)
+    var bor = K(t('--borde'), fon), borI = K(t('--input-borde'), tar);
+    C3.push(col(nom, 16) + col(f2(bor), 14) + f2(borI));
+    // el borde de la TARJETA tiene que seguir sutil, como hoy (#222 sobre #08090D = 1,25:1).
+    var hoyB = K('#222222', '#08090D');
+    verdad('Q ' + nom + ': borde de tarjeta sutil, como hoy (' + f2(hoyB) + ':1 entre -0,05 y +0,15)',
+           bor >= hoyB - 0.05 && bor <= hoyB + 0.15, 'tarjeta/fondo ' + f2(bor) + ':1');
+    // ...y se tine: con un color de marca con tono el borde no puede ser gris puro
+    // (blanco y casi negro son neutros, ahi gris puro es lo correcto).
+    if (nom !== 'blanco' && nom !== 'casi negro') {
+      var rb = w.rgbDe(t('--borde'));
+      verdad('Q ' + nom + ': borde de tarjeta tenido (no gris puro)', Math.max.apply(null, rb) - Math.min.apply(null, rb) > 0, '--borde = ' + t('--borde'));
+    }
+    verdad('Q ' + nom + ': borde de input cumple 3:1', borI >= 3.0, f2(borI) + ':1');
+
+    verdad('Q ' + nom + ': borde de input con holgura >= 3.1:1', borI >= 3.1, 'input/tarjeta ' + f2(borI));
+
+    // acento (texto 4,5:1 / borde 3:1) y botón
+    var ac = t('--acento'), acT = K(ac, tar), acF = K(ac, fon);
+    var btn = K(t('--texto-sobre-acento'), ac), btnH = K(t('--texto-sobre-acento'), t('--acento-hover'));
+    D.push(col(nom, 16) + col(ac, 10) + col(f2(acT), 16) + col(f2(acF), 14) + col(f2(btn), 12) + f2(btnH));
+    verdad('Q ' + nom + ': acento sobre tarjeta cumple 4.5:1', acT >= 4.5, ac + ' sobre ' + tar + ' = ' + f2(acT) + ':1');
+    verdad('Q ' + nom + ': acento sobre fondo cumple 3:1 (borde de foco)', acF >= 3.0, f2(acF) + ':1');
+    verdad('Q ' + nom + ': boton (texto sobre acento) cumple 4.5:1', btn >= 4.5, t('--texto-sobre-acento') + ' sobre ' + ac + ' = ' + f2(btn) + ':1');
+    verdad('Q ' + nom + ': boton en hover cumple 4.5:1', btnH >= 4.5, f2(btnH) + ':1');
+
+    // Q6: spinner y aviso-sub medidos en el DOM real (getComputedStyle), no
+    // sobre literales. El spinner se mete en #btn-unirme, que es donde
+    // unirme() lo pone: <button class="btn btn-primary" id="btn-unirme">.
+    var doc = w.document, btnU = doc.getElementById('btn-unirme');
+    verdad('Q ' + nom + ': existe #btn-unirme para medir el spinner', !!btnU);
+    var sp = doc.createElement('span'); sp.className = 'spinner';
+    if (btnU) btnU.appendChild(sp);
+    var av = doc.createElement('div'); av.className = 'aviso-sub'; doc.body.appendChild(av);
+    var arco = rgbAHex(w.getComputedStyle(sp).borderTopColor);
+    var anillo = rgbAHex(w.getComputedStyle(sp).borderLeftColor);
+    var avc = rgbAHex(w.getComputedStyle(av).color);
+    var sobreAc = t('--texto-sobre-acento').toUpperCase();
+    var cArco = K(arco, ac), cArcoAnillo = K(arco, anillo);
+    verdad('Q ' + nom + ': spinner, el arco es el texto del boton (' + sobreAc + ')', arco === sobreAc, 'arco = ' + arco);
+    verdad('Q ' + nom + ': spinner, arco contra el acento >= 3:1 (objeto grafico)', cArco >= 3.0,
+           arco + ' sobre ' + ac + ' = ' + f2(cArco) + ':1');
+    verdad('Q ' + nom + ': spinner, el anillo viene de --spinner-anillo (' + t('--spinner-anillo') + ')', anillo === t('--spinner-anillo').toUpperCase(), 'anillo = ' + anillo);
+    verdad('Q ' + nom + ': spinner, arco contra anillo >= 3:1', cArcoAnillo >= 3.0,
+           arco + ' sobre ' + anillo + ' = ' + f2(cArcoAnillo) + ':1');
+    var cAviso = K(avc, tar);
+    verdad('Q ' + nom + ': aviso-sub usa --texto-suave', avc === t('--texto-suave').toUpperCase(), 'aviso-sub = ' + avc + ', --texto-suave = ' + t('--texto-suave'));
+    verdad('Q ' + nom + ': aviso-sub >= 4.6:1 sobre la tarjeta', cAviso >= 4.6, avc + ' sobre ' + tar + ' = ' + f2(cAviso) + ':1');
+    F.push(col(nom, 16) + col(ac, 10) + col(arco, 10) + col(anillo, 10) + col(f2(cArco), 14) + col(f2(cArcoAnillo), 14) + col(avc, 10) + f2(cAviso));
+    // sin aclarar: lo que daría la base si aclararHasta() no hiciera nada
+    var sinS = K('#888888', tar), sinT = K('#E8E6E0', tar);
+    E.push(col(nom, 16) + col(tar, 10) + col(f2(sinS), 18) + col(f2(K(t('--texto-suave'), tar)), 20) +
+           col(f2(sinT), 21) + f2(K(t('--texto'), tar)));
+    verdad('Q ' + nom + ': texto suave APLICADO cumple 4.5:1 sobre la tarjeta', hero >= 4.5, f2(hero) + ':1');
+    verdad('Q ' + nom + ': texto normal APLICADO cumple 4.5:1 sobre la tarjeta', cuerpo >= 4.5, f2(cuerpo) + ':1');
+  }
+  informe.push('', '── Q1. TEXTO NORMAL (umbral 4,5:1) — contraste real, 5 pares de la página ──',
+    col('color de marca', 22) + col('cuerpo', 8) + col('hero', 8) + col('h1', 8) + col('prefijo', 8) + col('label', 8) + 'peor');
+  informe = informe.concat(A);
+  informe.push('', '── Q2. TEXTO GRANDE (umbral 3:1) — el peor de los 5 pares ──');
+  informe = informe.concat(B);
+  informe.push('', '── Q3. BORDES: tarjeta SUTIL (como hoy) / input y prefijo >= 3,1:1 ──',
+    'hoy: #222222 sobre #08090D = ' + f2(K('#222222', '#08090D')) + ':1 (borde de tarjeta sin tema)',
+    col('color de marca', 16) + col('tarjeta/fondo', 14) + 'input/tarjeta');
+  informe = informe.concat(C3);
+  informe.push('', '── Q4. ACENTO y BOTÓN (texto 4,5:1 · borde 3:1 · botón 4,5:1) ──',
+    col('color de marca', 16) + col('acento', 10) + col('acento/tarjeta', 16) + col('acento/fondo', 14) + col('boton', 12) + 'boton hover');
+  informe = informe.concat(D);
+  informe.push('', '── Q5. ¿HACE ALGO aclararHasta() EN EL TEXTO GRIS? (sin aclarar vs aplicado, sobre la tarjeta) ──',
+    col('color de marca', 16) + col('tarjeta', 10) + col('#888 sin aclarar', 18) + col('texto-suave aplic.', 20) +
+    col('#E8E6E0 sin aclarar', 21) + 'texto aplicado');
+  informe = informe.concat(E);
+  informe.push('', '-- Q6. SPINNER y AVISO-SUB en el DOM real (arco = texto del boton; anillo derivado, arco/anillo >= 3:1) --',
+    col('color de marca', 16) + col('acento', 10) + col('arco', 10) + col('anillo', 10) + col('arco/acento', 14) + col('arco/anillo', 14) + col('aviso-sub', 10) + 'aviso/tarjeta');
+  informe = informe.concat(F);
+  await sinTema(txtOriginal);
+}
+
+// ─── grupo R: la pagina no se desborda a 400, 360 y 320 px ─────────────────
+// Se mide en un iframe de ESE ancho y alto de sobra (1400 px) para que no haya
+// barra vertical que reste ancho. scrollWidth > innerWidth = scroll horizontal.
+// 400 y 360 son comprobaciones; 320 se informa pero no falla.
+async function grupoR(txtOriginal) {
+  var NOMBRE_LARGO = 'Peluqueria y Barberia Essentials Studio Providencia Premium Club';
+  var casos = [['sin tema', null, 'Sin tema'], ['violeta', '#3104F2', 'ZZ prueba'],
+               ['blanco', '#FFFFFF', 'Essentials'], ['amarillo puro', '#FFFF00', 'Amarillo'],
+               ['nombre largo + logo', '#3104F2', NOMBRE_LARGO]];
+  var filas = [];
+  for (var a = 0; a < 3; a++) {
+    var ancho = [400, 360, 320][a];
+    for (var i = 0; i < casos.length; i++) {
+      var w = await montar(prepararPagina(txtOriginal), ancho, 1400);
+      await correrPagina(w, { nombre: casos[i][2], whatsapp: null, foto_portada: null,
+        logo_url: casos[i][0] === 'nombre largo + logo' ? 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#888"/></svg>') : null,
+        color_marca: casos[i][1], color_fondo_logo: null });
+      var d = w.document.documentElement;
+      var sw = d.scrollWidth, iw = w.innerWidth, cw = d.clientWidth, bw = w.document.body.scrollWidth;
+      filas.push(col(ancho + ' px', 8) + col(casos[i][0], 22) + col(iw, 10) + col(cw, 10) + col(sw, 13) + col(bw, 14) + (sw <= iw && sw <= cw ? 'sin desborde' : 'DESBORDA'));
+      if (ancho >= 360) {
+        verdad('R ' + ancho + ' px, ' + casos[i][0] + ': scrollWidth <= innerWidth', sw <= iw, 'scrollWidth ' + sw + ' > innerWidth ' + iw);
+        verdad('R ' + ancho + ' px, ' + casos[i][0] + ': scrollWidth <= clientWidth', sw <= cw, 'scrollWidth ' + sw + ' > clientWidth ' + cw);
+      }
+    }
+  }
+  informe.push('', '-- R. DESBORDE HORIZONTAL (scrollWidth contra innerWidth; 320 px solo informativo) --',
+    col('ancho', 8) + col('caso', 22) + col('innerW', 10) + col('clientW', 10) + col('scrollW doc', 13) + col('scrollW body', 14) + 'veredicto');
+  informe = informe.concat(filas);
+}
+// ─── grupo S: barrido de 60 colores de marca para el anillo del spinner ────
+// 12 tonos x 4 combinaciones de saturacion y luminosidad (48) + 12 extremos.
+// Cada color monta una pagina, mete un spinner en #btn-unirme y mide en el DOM
+// real. Se exige arco/anillo >= 3:1 (WCAG, objeto grafico) y >= 3,1:1 (con la
+// misma holgura de 0,1 que el resto del archivo): con 3,1 el bucle de ajuste de
+// aplicarTemaPublico() deja de ser invisible para el arnes.
+function hsl2hex(h, s, l) {
+  s /= 100; l /= 100;
+  var a = s * Math.min(l, 1 - l);
+  function f(n) { var k = (n + h / 30) % 12;
+    var c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    return ('0' + Math.round(255 * c).toString(16)).slice(-2); }
+  return ('#' + f(0) + f(8) + f(4)).toUpperCase();
+}
+async function grupoS(txtOriginal) {
+  var cols = [], h, j, combos = [[100, 50], [100, 20], [100, 80], [55, 40]];
+  for (h = 0; h < 360; h += 30) for (j = 0; j < combos.length; j++) cols.push(hsl2hex(h, combos[j][0], combos[j][1]));
+  cols = cols.concat(['#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
+                      '#00FFFF', '#FF00FF', '#010101', '#FEFEFE', '#808080', '#7F7F7F']);
+  var res = [], peorAA = 99, peorAC = 99, cuentaBajo31 = 0, sinAnillo = 0, malArco = 0;
+  for (var i = 0; i < cols.length; i++) {
+    var w = await montar(prepararPagina(txtOriginal));
+    await correrPagina(w, { nombre: 'S', whatsapp: null, foto_portada: null, logo_url: null,
+                            color_marca: cols[i], color_fondo_logo: null });
+    var doc = w.document, btnU = doc.getElementById('btn-unirme');
+    var sp = doc.createElement('span'); sp.className = 'spinner';
+    if (btnU) btnU.appendChild(sp);
+    var cs = w.getComputedStyle(sp);
+    var arco = rgbAHex(cs.borderTopColor), anillo = rgbAHex(cs.borderLeftColor);
+    var ac = leer(w, '--acento'), sob = leer(w, '--texto-sobre-acento').toUpperCase();
+    var kAA = w.contrasteHex(arco, anillo), kAC = w.contrasteHex(arco, ac);
+    res.push([cols[i], ac, arco, anillo, kAA, kAC]);
+    if (kAA < peorAA) peorAA = kAA;
+    if (kAC < peorAC) peorAC = kAC;
+    if (kAA < 3.1) cuentaBajo31++;
+    if (!leer(w, '--spinner-anillo')) sinAnillo++;
+    if (arco !== sob) malArco++;
+    verdad('S ' + cols[i] + ': arco contra anillo >= 3:1', kAA >= 3.0, arco + ' sobre ' + anillo + ' = ' + f2(kAA) + ':1 (acento ' + ac + ')');
+    verdad('S ' + cols[i] + ': arco contra anillo con holgura >= 3.1:1', kAA >= 3.1, arco + ' sobre ' + anillo + ' = ' + f2(kAA) + ':1');
+    verdad('S ' + cols[i] + ': arco contra acento >= 3:1', kAC >= 3.0, arco + ' sobre ' + ac + ' = ' + f2(kAC) + ':1');
+    w.frameElement.parentNode.removeChild(w.frameElement);
+  }
+  res.sort(function (a, b) { return a[4] - b[4]; });
+  informe.push('', '-- S. BARRIDO de ' + cols.length + ' colores de marca: spinner (arco/anillo >= 3:1) --',
+    'colores: ' + cols.length + '   peor arco/anillo: ' + f2(peorAA) + ':1   peor arco/acento: ' + f2(peorAC) + ':1   con arco/anillo < 3,1: ' + cuentaBajo31 +
+    '   sin --spinner-anillo: ' + sinAnillo + '   arco distinto del texto del boton: ' + malArco,
+    col('los 5 peores', 16) + col('acento', 10) + col('arco', 10) + col('anillo', 10) + 'arco/anillo   arco/acento');
+  for (var r = 0; r < 5 && r < res.length; r++)
+    informe.push(col(res[r][0], 16) + col(res[r][1], 10) + col(res[r][2], 10) + col(res[r][3], 10) + col(f2(res[r][4]), 14) + f2(res[r][5]));
+}
 async function grupoP(txtOriginal) {
   var FONDO = '#08090d';
 
@@ -149,7 +377,64 @@ async function grupoP(txtOriginal) {
   check('P2 --texto-sobre-acento',  leer(w2, '--texto-sobre-acento'), '#15181D');
   check('P2 --acento-hover (aclarado 14%)',   leer(w2, '--acento-hover'), '#957DFC');
   check('P2 --acento-2-hover',      leer(w2, '--acento-2-hover'), '#957DFC');
-  check('P2 --fondo-logo NO se toca si color_fondo_logo es NULL', leer(w2, '--fondo-logo'), '');
+  // Antes se exigía que --fondo-logo quedara SIN tocar. Con la opción A eso
+  // cambió a propósito: sin color detectado la franja se FUNDE con el fondo
+  // de la página, para que el logo no quede dentro de un cuadrado de un
+  // gris que no pertenece a ninguna familia.
+  check('P2 --fondo-logo se funde con el fondo si no hay color detectado',
+        leer(w2, '--fondo-logo'), leer(w2, '--fondo'));
+
+  // ── P2b. OPCIÓN A: las superficies y los textos también se derivan ──
+  var SUPERFICIES = ['--fondo','--portada-fondo','--tarjeta','--borde',
+                     '--input-fondo','--input-borde','--prefijo-fondo',
+                     '--texto','--texto-suave','--texto-medio','--texto-debil'];
+  SUPERFICIES.forEach(function (v) {
+    verdad('P2b con color de marca, ' + v + ' quedo escrita',
+           /^#[0-9A-Fa-f]{6}$/.test(leer(w2, v)), v + ' = "' + leer(w2, v) + '"');
+  });
+  // Y tienen que ser DISTINTAS de los valores de hoy: si alguna quedara
+  // igual, la superficie no se derivó.
+  check('P2b el fondo ya no es el #08090d de hoy',
+        leer(w2, '--fondo').toLowerCase() === '#08090d', 'false');
+  check('P2b la tarjeta ya no es el #0f1018 de hoy',
+        leer(w2, '--tarjeta').toLowerCase() === '#0f1018', 'false');
+  check('P2b el texto debil ya no es el #555 de hoy',
+        leer(w2, '--texto-debil').toLowerCase() === '#555555', 'false');
+
+  // La derivacion TIENE que teñir: con marca violeta la base no puede quedar
+  // en gris puro. Sin esto, un acento que nunca tiñe (todo cae a neutro()) pasaba
+  // en verde, porque el gris puro tambien es distinto del #08090d de hoy.
+  var fV = w2.rgbDe(leer(w2, '--fondo')), tV = w2.rgbDe(leer(w2, '--tarjeta'));
+  verdad('P2b con marca violeta el fondo NO es gris puro',
+         Math.max.apply(null, fV) - Math.min.apply(null, fV) > 0, 'fondo = ' + leer(w2, '--fondo'));
+  verdad('P2b con marca violeta la tarjeta NO es gris pura',
+         Math.max.apply(null, tV) - Math.min.apply(null, tV) > 0, 'tarjeta = ' + leer(w2, '--tarjeta'));
+
+  // P2c — los contrastes de la opción A, recalculados acá.
+  var tarj = leer(w2, '--tarjeta'), fon = leer(w2, '--fondo'), pre = leer(w2, '--prefijo-fondo');
+  [['cuerpo',        leer(w2,'--texto'),       tarj, 4.5],
+   ['hero-sub',      leer(w2,'--texto-suave'), tarj, 4.5],
+   ['header h1',     leer(w2,'--texto-suave'), fon,  4.5],
+   ['wsp-prefijo',   leer(w2,'--texto-medio'), pre,  4.5],
+   ['label / ayuda', leer(w2,'--texto-debil'), tarj, 4.5],
+   ['borde de input', leer(w2,'--input-borde'), tarj, 3.0],
+   ['acento',        leer(w2,'--acento'),      tarj, 4.5]
+  ].forEach(function (c) {
+    var k = w2.contrasteHex(c[1], c[2]);
+    verdad('P2c ' + c[0] + ' cumple ' + c[3] + ':1',
+           k >= c[3], c[1] + ' sobre ' + c[2] + ' = ' + k.toFixed(2) + ':1');
+  });
+
+  // P2d — un color de marca NEUTRO no debe teñir la base de otro tono.
+  var wN = await montar(prepararPagina(txtOriginal));
+  await correrPagina(wN, { nombre: 'Neutro', whatsapp: null, foto_portada: null,
+                           logo_url: null, color_marca: '#FFFFFF', color_fondo_logo: null });
+  var fN = wN.rgbDe(leer(wN, '--fondo'));
+  var tN = wN.rgbDe(leer(wN, '--tarjeta'));
+  check('P2d con marca blanca el fondo queda gris puro',
+        Math.max.apply(null, fN) - Math.min.apply(null, fN), 0);
+  check('P2d y la tarjeta tambien',
+        Math.max.apply(null, tN) - Math.min.apply(null, tN), 0);
 
   // P3 — los contrastes se RECALCULAN acá, no se copian de un informe.
   // El acento se usa como texto (.ayuda b) y como borde (input:focus), así
@@ -424,17 +709,21 @@ async function grupoE(txtApp) {
     verdad('bajo unirse.html', txtPagina.length > 1000, 'largo = ' + txtPagina.length);
     verdad('bajo app.html', txtApp.length > 100000, 'largo = ' + txtApp.length);
     await grupoP(txtPagina);
+    await grupoQ(txtPagina);
+    await grupoR(txtPagina);
+    await grupoS(txtPagina);
     await grupoE(txtApp);
   } catch (e) {
     fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n')[1]);
   }
   var cab = 'test-paginas-publicas-tema · ' + total + ' comprobaciones\n';
+  var tablas = informe.length ? '\n' + informe.join('\n') + '\n' : '';
   if (fallas.length === 0) {
     el.className = 'ok';
-    el.textContent = cab + '\nTODO VERDE: ' + total + '/' + total;
+    el.textContent = cab + '\nTODO VERDE: ' + total + '/' + total + tablas;
   } else {
     el.className = 'fail';
-    el.textContent = cab + '\nFALLAN ' + fallas.length + ' de ' + total + '\n\n  - ' + fallas.join('\n  - ');
+    el.textContent = cab + '\nFALLAN ' + fallas.length + ' de ' + total + '\n\n  - ' + fallas.join('\n  - ') + tablas;
   }
 })();
 </script>
