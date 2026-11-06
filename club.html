@@ -718,7 +718,7 @@ async function rConfirmarReserva(){
       RMOD=null;
       return;
     }
-    const {data:reservaId,error}=await sb.rpc('crear_reserva_publica_club',{
+    const {data:resAb,error}=await sb.rpc('crear_reserva_club_abono',{
       p_barberia_id:BARBERIA_ID,
       p_cliente_id:CLIENTE_ID,
       p_fecha:RSEL.fecha,
@@ -728,6 +728,11 @@ async function rConfirmarReserva(){
       p_notas:notas||null
     });
     if(error)throw error;
+    const reservaId=resAb&&resAb.id;
+    if(resAb&&resAb.requiere_abono){
+      location.href='abono.html?r='+encodeURIComponent(reservaId)+'&t='+encodeURIComponent(resAb.token);
+      return;
+    }
     // Email de confirmación automático (Vercel + Resend), igual que
     // reservar.html — no bloquea la UI ni muestra error si falla.
     fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId})}).catch(()=>{});

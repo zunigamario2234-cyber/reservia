@@ -6,17 +6,31 @@ import webpush from "npm:web-push@3.6.7";
 // avisada (una sola vez), así que repetir la llamada no manda nada de nuevo.
 Deno.serve(async (req) => {
   try {
-    const { reserva_id } = await req.json();
+    const { reserva_id, evento } = await req.json();
     if (!reserva_id || typeof reserva_id !== "string") return new Response("bad", { status: 400 });
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Reclama el aviso de forma atómica: solo una llamada lo consigue.
-    const { data: r } = await sb.from("reservas")
-      .update({ push_enviado_at: new Date().toISOString() })
-      .eq("id", reserva_id).is("push_enviado_at", null)
-      .select("id,barberia_id,nombre_cliente,servicio,fecha,hora,fuente,barbero_nombre")
-      .maybeSingle();
+    const cols = "id,barberia_id,nombre_cliente,servicio,fecha,hora,fuente,barbero_nombre,estado,abono_estado,abono_monto,abono_comprobante";
+    let r: any = null;
+    if (evento === "abono") {
+      // Aviso de "abono por confirmar": solo si de verdad quedó por confirmar.
+      const { data } = await sb.from("reservas").select(cols).eq("id", reserva_id).maybeSingle();
+      if (!data || data.abono_estado !== "Por confirmar") return new Response("nada que avisar", { status: 200 });
+      r = data;
+    } else {
+      // Reserva con abono aún sin transferir: no se avisa (la hora solo está retenida).
+      const { data: previa } = await sb.from("reservas").select("estado,abono_estado").eq("id", reserva_id).maybeSingle();
+      if (previa?.estado === "Pendiente de abono" && previa?.abono_estado === "Pendiente") {
+        return new Response("espera abono", { status: 200 });
+      }
+      // Reclama el aviso de forma atómica: solo una llamada lo consigue.
+      const { data } = await sb.from("reservas")
+        .update({ push_enviado_at: new Date().toISOString() })
+        .eq("id", reserva_id).is("push_enviado_at", null)
+        .select(cols).maybeSingle();
+      r = data;
+    }
     if (!r) return new Response("ya avisada o inexistente", { status: 200 });
 
     const { data: cfg } = await sb.from("push_config").select("clave,valor");
@@ -31,10 +45,12 @@ Deno.serve(async (req) => {
 
     const hora = String(r.hora ?? "").slice(0, 5);
     const payload = JSON.stringify({
-      title: "Nueva reserva",
-      body: `${r.nombre_cliente || "Un cliente"}${r.servicio ? " · " + r.servicio : ""}\n${r.fecha ?? ""} ${hora}${r.fuente ? " · " + r.fuente : ""}`,
+      title: evento === "abono" ? "Abono por confirmar" : "Nueva reserva",
+      body: evento === "abono"
+        ? `${r.nombre_cliente || "Un cliente"} transfirió $${Number(r.abono_monto || 0).toLocaleString("es-CL")}${r.abono_comprobante ? " (con comprobante)" : ""}\n${r.fecha ?? ""} ${hora}${r.servicio ? " · " + r.servicio : ""}`
+        : `${r.nombre_cliente || "Un cliente"}${r.servicio ? " · " + r.servicio : ""}\n${r.fecha ?? ""} ${hora}${r.fuente ? " · " + r.fuente : ""}`,
       url: "/app.html",
-      tag: "reserva-" + r.id,
+      tag: (evento === "abono" ? "abono-" : "reserva-") + r.id,
     });
 
     let enviados = 0;

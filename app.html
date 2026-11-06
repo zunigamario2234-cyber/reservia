@@ -633,6 +633,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
          flujo de cobro. La otra está en Inventario, por producto. -->
     <button class="btn btn-ghost" onclick="abrirVentaProducto()">📦 Venta sin reserva</button>
   </div>
+  <div class="card" id="abonos-pendientes" style="display:none;margin-bottom:14px;border-color:#2bb3c0"></div>
   <div class="card">
     <div class="tbl-wrap">
       <table><thead><tr><th>Fecha/Hora</th><th>Cliente</th><th>WhatsApp</th><th>Servicio</th><th>Profesional</th><th>Estado</th><th>Procesado</th><th></th></tr></thead>
@@ -867,6 +868,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="tab active" onclick="switchTab(this,'cfg-neg')">Negocio</div>
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
     <div class="tab" onclick="switchTab(this,'cfg-blq')">Bloqueos</div>
+    <div class="tab" onclick="switchTab(this,'cfg-abono')">Abono</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-alz')">Alianzas</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-vip')">Club VIP</div>
     <div class="tab" onclick="switchTab(this,'cfg-int')" style="display:none">Integraciones</div>
@@ -1031,6 +1033,32 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-bloqueo')">+ Bloqueo</button></div>
     <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Tipo</th><th>Detalle</th><th>Motivo</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-bloqueos"></tbody></table></div></div>
+  </div>
+  <div id="cfg-abono" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Abono para confirmar la hora</span></div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:14px">Tu cliente reserva y la hora queda retenida hasta que transfiera el abono. Tú confirmas mirando tu cuenta del banco: te llega un aviso con el comprobante y confirmas con un toque. Si no abona a tiempo, la hora se libera sola. En Caja, el abono se descuenta del cobro final.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="ab-activo" onchange="abonoToggle()" style="width:auto"> Pedir abono al reservar
+      </label>
+      <div id="ab-detalle" style="display:none">
+        <div class="fr">
+          <div class="fg"><label>Abono general</label><select id="ab-tipo" onchange="abonoEjemplo()"><option value="porcentaje">Porcentaje del precio</option><option value="monto">Monto fijo ($)</option></select></div>
+          <div class="fg"><label id="ab-valor-lbl">Valor</label><input id="ab-valor" type="number" min="0" oninput="abonoEjemplo()"></div>
+        </div>
+        <div id="ab-ejemplo" style="font-size:12px;color:var(--p1);margin:-4px 0 14px"></div>
+        <div class="fg" style="max-width:320px"><label>Tiempo que se retiene la hora</label><select id="ab-ret"></select>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">Pasado este tiempo sin abono, la hora vuelve a quedar disponible. Si el cliente sube el comprobante, se mantiene al menos 30 minutos más mientras lo revisas.</div></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin:10px 0"><input type="checkbox" id="ab-exige" style="width:auto"> Exigir foto del comprobante (si no, basta con que avisen que transfirieron)</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin:10px 0 16px"><input type="checkbox" id="ab-club" style="width:auto"> Los clientes del Club VIP reservan sin abono</label>
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">Datos para transferir</div>
+        <div class="fr"><div class="fg"><label>Banco</label><input id="ab-banco" type="text" placeholder="Banco Estado"></div><div class="fg"><label>Tipo de cuenta</label><select id="ab-tcuenta"><option value="">—</option><option>Cuenta Vista / RUT</option><option>Cuenta Corriente</option><option>Cuenta de Ahorro</option></select></div></div>
+        <div class="fr"><div class="fg"><label>Número de cuenta</label><input id="ab-ncuenta" type="text" inputmode="numeric"></div><div class="fg"><label>Titular</label><input id="ab-titular" type="text"></div></div>
+        <div class="fg" style="max-width:320px"><label>RUT del titular</label><input id="ab-rut" type="text" placeholder="12.345.678-9"></div>
+        <div class="fg"><label>Instrucciones para el cliente (opcional)</label><textarea id="ab-instr" rows="2" placeholder="Ej: en el comentario pon tu nombre y la hora de tu reserva"></textarea></div>
+      </div>
+      <button class="btn btn-primary" onclick="guardarAbonoConfig()">Guardar abono</button>
+    </div>
   </div>
   <div id="cfg-alz" style="display:none">
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Convenios con negocios externos que tus clientes VIP pueden canjear. Se muestran en la página pública "Mi Club VIP" según el nivel del cliente.</p>
@@ -1375,7 +1403,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     </div>
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="r-fecha" type="date"></div><div class="fg"><label>Hora *</label><input id="r-hora" type="time"></div></div>
     <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Seleccionar...</option></select></div></div>
-    <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
+    <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Pendiente de abono</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
     <input type="hidden" id="r-procesado" value="0">
     <div class="rm-footer" id="rm-footer-normal" style="display:flex;gap:8px;margin-top:6px">
@@ -1467,6 +1495,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 
     <div style="background:var(--bg2);border-radius:10px;padding:12px;margin:14px 0">
       <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700"><span>Total a cobrar</span><span id="cob-total" class="gold">$0</span></div>
+      <div id="cob-abono" style="display:none;margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);font-size:12px;color:var(--p1);line-height:1.6"></div>
       <div id="cob-desglose" style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:6px"></div>
     </div>
 
@@ -1717,6 +1746,8 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     </div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="sv-nombre" type="text" placeholder="Corte Clásico"></div><div class="fg"><label>Precio ($)</label><input id="sv-precio" type="number" value="0"></div></div>
     <div class="fr"><div class="fg"><label>Duración (min)</label><input id="sv-dur" type="number" value="30"></div><div class="fg"><label>Comisión %</label><input id="sv-com" type="number" value="50"></div></div>
+    <div class="fr"><div class="fg"><label>Abono para reservar</label><select id="sv-abono-tipo" onchange="svAbonoCambio()"><option value="">Usar el abono general</option><option value="ninguno">Sin abono</option><option value="porcentaje">Porcentaje del precio</option><option value="monto">Monto fijo ($)</option></select></div><div class="fg" id="sv-abono-valor-fg" style="display:none"><label id="sv-abono-valor-lbl">Valor</label><input id="sv-abono-valor" type="number" min="0"></div></div>
+    <div style="font-size:10px;color:var(--text3);margin:-6px 0 10px">Solo se aplica si activas el abono en Configuración → Abono.</div>
     <div class="fg"><label>Descripción</label><textarea id="sv-desc" rows="2" placeholder="Detalle del servicio para que el cliente sepa en qué consiste (opcional)"></textarea></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarServicio()">Guardar</button>
@@ -1893,6 +1924,7 @@ async function init(){
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
   nav(esRecepcion()?'agenda':'dashboard');
   escucharReservasNuevas();
+  iniciarVigilanteAbonos();
   pintarPush(); refrescarPushSilencioso();
   // El prototipo del tema guardaba un tema violeta en localStorage y lo
   // aplicaba al arrancar. Ya no existe; se limpia la clave para que nadie
@@ -1952,7 +1984,7 @@ function avisarReservaNueva(r){
   const quien=(r.nombre_cliente||'Un cliente'), cuando=(r.fecha||'')+(r.hora?' '+String(r.hora).slice(0,5):'');
   const el=document.getElementById('aviso-reserva');
   if(el){
-    el.innerHTML='<strong>Nueva reserva</strong><br>'+escapeHtml(quien)+(r.servicio?' · '+escapeHtml(r.servicio):'')+'<br><span style="opacity:.8">'+escapeHtml(cuando)+(r.fuente?' · '+escapeHtml(r.fuente):'')+'</span>';
+    el.innerHTML='<strong>'+(r.estado==='Pendiente de abono'?'Reserva a la espera del abono':'Nueva reserva')+'</strong><br>'+escapeHtml(quien)+(r.servicio?' · '+escapeHtml(r.servicio):'')+'<br><span style="opacity:.8">'+escapeHtml(cuando)+(r.fuente?' · '+escapeHtml(r.fuente):'')+'</span>';
     el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),12000);
   }
   // Pestaña en segundo plano: el título parpadea hasta que vuelvan a ella.
@@ -1962,21 +1994,46 @@ function avisarReservaNueva(r){
   }
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&_tituloOriginal){ document.title=_tituloOriginal; _tituloOriginal=''; } });
+function avisarAbonoPorConfirmar(n){
+  tocarCampanilla();
+  const el=document.getElementById('aviso-reserva');
+  if(el){
+    el.innerHTML='<strong>Abono por confirmar</strong><br>'+escapeHtml(n.nombre_cliente||'Un cliente')+(n.abono_monto?' · '+escapeHtml(fmt(n.abono_monto)):'')+'<br><span style="opacity:.8">Revisa tu cuenta y confírmalo en Reservas</span>';
+    el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),15000);
+  }
+  if(document.hidden){ if(!_tituloOriginal) _tituloOriginal=document.title; document.title='🔔 Abono por confirmar — '+_tituloOriginal; }
+}
 async function refrescarPorReservaNueva(r){
   try{
     await loadReservas();
     if(document.getElementById('p-agenda')?.classList.contains('active')) renderAgenda();
     if(document.getElementById('p-reservas')?.classList.contains('active')) renderReservas();
     if(document.getElementById('p-dashboard')?.classList.contains('active')) renderDashboard();
+    renderAbonosPendientes();
   }catch(e){}
 }
+const _abonoAvisados=new Set();
 function escucharReservasNuevas(){
   if(!S.barberia?.id||_canalReservas) return;
   if(S.perfil?.rol==='profesional') return; // el profesional usa Mi Agenda, no este panel
   _canalReservas=sb.channel('reservas-'+S.barberia.id)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'reservas',filter:'barberia_id=eq.'+S.barberia.id},payload=>{
       const r=payload.new||{};
-      avisarReservaNueva(r); refrescarPorReservaNueva(r);
+      // Una reserva con abono nace 'Confirmada' y un instante después pasa a
+      // 'Pendiente de abono'. Se espera ese instante para avisar lo correcto.
+      setTimeout(async()=>{
+        await refrescarPorReservaNueva(r);
+        avisarReservaNueva(S.reservas.find(x=>x.id===r.id)||r);
+      },1500);
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'reservas',filter:'barberia_id=eq.'+S.barberia.id},payload=>{
+      const n=payload.new||{};
+      if(!n.abono_estado) return;
+      if(n.abono_estado==='Por confirmar'){
+        const k=n.id+'|'+(n.abono_comprobante||'');
+        if(!_abonoAvisados.has(k)){ _abonoAvisados.add(k); avisarAbonoPorConfirmar(n); }
+      }
+      refrescarPorReservaNueva(n);
     })
     .subscribe();
   pintarBotonSonido();
@@ -2711,7 +2768,7 @@ function initModal(id){
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
-  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;}
+  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-abono-tipo').value='';document.getElementById('sv-abono-valor').value='';svAbonoCambio();document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;}
   if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';FOTO_ALZ_CROPPED_BLOB=null;}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
@@ -3359,6 +3416,9 @@ function editarServicio(id){
   document.getElementById('sv-dur').value=s.duracion_min||30;
   document.getElementById('sv-com').value=s.comision_pct||50;
   document.getElementById('sv-desc').value=s.descripcion||'';
+  document.getElementById('sv-abono-tipo').value=s.abono_tipo||'';
+  document.getElementById('sv-abono-valor').value=s.abono_valor!=null?s.abono_valor:'';
+  svAbonoCambio();
   const prev=document.getElementById('sv-foto-preview');
   if(s.foto_url){
     prev.innerHTML=`<img src="${s.foto_url}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
@@ -3602,6 +3662,9 @@ function compartirInvitacionWA(){
 async function guardarServicio(){
   const n=document.getElementById('sv-nombre').value.trim();
   if(!n){notify('El nombre es obligatorio','warn');return;}
+  const abSvTipo=document.getElementById('sv-abono-tipo').value, abSvValor=parseFloat(document.getElementById('sv-abono-valor').value);
+  if((abSvTipo==='monto'||abSvTipo==='porcentaje')&&!(abSvValor>0)){notify('Pon el valor del abono de este servicio','warn');return;}
+  if(abSvTipo==='porcentaje'&&abSvValor>100){notify('El porcentaje no puede pasar de 100','warn');return;}
   const btn=document.querySelector('#m-servicio .btn-primary');
   btn.disabled=true;btn.textContent='Guardando...';
   let foto_url=null,fotoFallo=null;
@@ -3626,6 +3689,8 @@ async function guardarServicio(){
     duracion_min:parseInt(document.getElementById('sv-dur').value)||30,
     comision_pct:parseFloat(document.getElementById('sv-com').value)||50,
     descripcion:document.getElementById('sv-desc').value.trim()||null,
+    abono_tipo:abSvTipo||null,
+    abono_valor:(abSvTipo==='monto'||abSvTipo==='porcentaje')?abSvValor:null,
     ...(foto_url&&{foto_url})
   };
   let error,nuevoServicioId=null;
@@ -4482,7 +4547,8 @@ function abrirCobro(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
   if(r.procesado){notify('Esta reserva ya fue cobrada','warn');return;}
   COBRO_CTX={lineas:[cobroLineaDesde(r)],productos:[],descPct:null,propinaPct:null};
-  cobroMontarModal(`Cobro del <strong>${r.fecha}</strong>`);
+  const abPend=(r.abono_estado==='Pendiente'||r.abono_estado==='Por confirmar')?`<br><span style="color:#e0a030">⚠️ El abono de ${fmt(r.abono_monto||0)} aún no está confirmado.</span>`:'';
+  cobroMontarModal(`Cobro del <strong>${r.fecha}</strong>${abPend}`);
 }
 
 // Venta de productos SIN ninguna reserva: alguien entra, compra un shampoo y
@@ -4543,14 +4609,17 @@ function cobroMontarModal(resumenHtml){
 const CAJA_METODOS=['Efectivo','Transferencia','Débito','Crédito','Gift card'];
 function calcularCaja(visitas,productos,hoy,nombreCliente){
   const por={}; CAJA_METODOS.forEach(m=>{por[m]={n:0,valor:0,propina:0};});
-  const mov=[]; let vendido=0, propinas=0;
+  const mov=[]; let vendido=0, propinas=0, abonos=0;
   const metodoDe=m=>CAJA_METODOS.includes(m)?m:'Sin método';
   const sumar=(m,valor,propina)=>{ const k=metodoDe(m); if(!por[k])por[k]={n:0,valor:0,propina:0}; por[k].n++; por[k].valor+=valor; por[k].propina+=propina; };
   (visitas||[]).filter(v=>v.fecha===hoy&&v.estado!=='Cancelada'&&v.estado!=='No asistió'&&(+v.valor||0)>0).forEach(v=>{
     const valor=Math.round(+v.valor||0), propina=Math.round(+v.propina||0);
-    sumar(v.metodo_pago,valor,propina); vendido+=valor; propinas+=propina;
+    // El abono pagado antes por transferencia no entra a la caja de hoy: se
+    // vendió hoy, pero el dinero llegó antes. Se muestra aparte.
+    const ab=Math.min(Math.round(+v.abono_previo||0),valor);
+    sumar(v.metodo_pago,valor-ab,propina); vendido+=valor; propinas+=propina; abonos+=ab;
     mov.push({hora:(v.hora||'').slice(0,5),detalle:(nombreCliente?nombreCliente(v.cliente_id):'')||'Cliente',concepto:v.servicio||'Servicio',
-              profesional:v.barbero_nombre||'',metodo:metodoDe(v.metodo_pago),valor,propina,orden:v.hora||'99'});
+              profesional:v.barbero_nombre||'',metodo:metodoDe(v.metodo_pago),valor,propina,abono:ab,orden:v.hora||'99'});
   });
   (productos||[]).filter(p=>p.fecha===hoy&&(+p.valor||0)>0).forEach(p=>{
     const valor=Math.round(+p.valor||0);
@@ -4561,7 +4630,7 @@ function calcularCaja(visitas,productos,hoy,nombreCliente){
   mov.sort((a,b)=>String(a.orden).localeCompare(String(b.orden)));
   const efectivoVentas=por['Efectivo'].valor, efectivoPropinas=por['Efectivo'].propina;
   const recibido=Object.keys(por).filter(k=>k!=='Gift card').reduce((s,k)=>s+por[k].valor+por[k].propina,0);
-  return {por,mov,vendido,propinas,recibido,efectivoEsperadoSinFondo:efectivoVentas+efectivoPropinas,n:mov.length};
+  return {por,mov,vendido,propinas,abonos,recibido,efectivoEsperadoSinFondo:efectivoVentas+efectivoPropinas,n:mov.length};
 }
 function cajaClave(){ return 'caja_'+(S.barberia?.id||'')+'_'+ahoraEnChile().fecha; }
 function cajaLeerLocal(){ try{ return JSON.parse(localStorage.getItem(cajaClave())||'{}'); }catch(e){ return {}; } }
@@ -4578,6 +4647,7 @@ function renderCaja(){
     `<div class="mc"><div class="mc-label">Vendido hoy</div><div class="mc-val">${fmt(c.vendido)}</div></div>
      <div class="mc"><div class="mc-label">Propinas</div><div class="mc-val">${fmt(c.propinas)}</div></div>
      <div class="mc"><div class="mc-label">Dinero recibido</div><div class="mc-val gold">${fmt(c.recibido)}</div><div class="mc-sub">sin gift cards</div></div>
+     ${c.abonos>0?`<div class="mc"><div class="mc-label">Abonos previos</div><div class="mc-val">${fmt(c.abonos)}</div><div class="mc-sub">ya pagados antes</div></div>`:''}
      <div class="mc"><div class="mc-label">Movimientos</div><div class="mc-val">${c.n}</div></div>`;
   document.getElementById('caja-metodos').innerHTML=Object.keys(c.por).filter(k=>CAJA_METODOS.includes(k)||c.por[k].n).map(k=>{
     const m=c.por[k];
@@ -4586,7 +4656,7 @@ function renderCaja(){
   document.getElementById('e-caja').style.display=c.n?'none':'';
   document.getElementById('t-caja').innerHTML=c.mov.map(m=>`<tr>
     <td data-label="Hora">${esc(m.hora)}</td>
-    <td data-label="Detalle">${esc(m.detalle)}<br><span style="font-size:10px;color:var(--text3)">${esc(m.concepto)}</span></td>
+    <td data-label="Detalle">${esc(m.detalle)}<br><span style="font-size:10px;color:var(--text3)">${esc(m.concepto)}${m.abono?' · abono previo −'+fmt(m.abono):''}</span></td>
     <td data-label="Profesional">${esc(m.profesional)||'—'}</td>
     <td data-label="Pago"><span class="badge b-gold">${esc(m.metodo)}</span></td>
     <td data-label="Valor">${fmt(m.valor)}</td>
@@ -4613,7 +4683,7 @@ function cajaCopiarResumen(){
   if(!CAJA_ULTIMA)return;
   const c=CAJA_ULTIMA, hoy=ahoraEnChile().fecha;
   const lineas=['Caja del día '+hoy+' — '+(S.barberia?.nombre||''),
-    'Vendido: '+fmt(c.vendido)+' · Propinas: '+fmt(c.propinas)+' · Dinero recibido: '+fmt(c.recibido)];
+    'Vendido: '+fmt(c.vendido)+' · Propinas: '+fmt(c.propinas)+' · Dinero recibido: '+fmt(c.recibido)+(c.abonos>0?' · Abonos previos: '+fmt(c.abonos):'')];
   Object.keys(c.por).forEach(k=>{ const m=c.por[k]; if(m.n) lineas.push(k+': '+fmt(m.valor+m.propina)+' ('+m.n+')'); });
   copiarAlPortapapeles(lineas.join('\n'));
 }
@@ -4850,6 +4920,7 @@ function cobroRecalcular(){
   // en pantalla mientras la RPC recibía $9.000. Si estos dos números pueden
   // discrepar, alguno miente.
   document.getElementById('cob-total').textContent=fmt(rep.totalCobro);
+  cobroPintarAbono(rep);
 
   let html=`Servicios ${fmt(valor)} · IVA incluido ${fmt(ivaDe(valor))} · neto ${fmt(netoDe(valor))}`;
   // En una venta suelta los servicios son $0 y esa línea no aporta nada.
@@ -5703,6 +5774,7 @@ function renderVisitas(){
 const METODOS_PAGO=['Efectivo','Transferencia','Débito','Crédito'];
 
 function renderReservas(){
+  renderAbonosPendientes();
   const tb=document.getElementById('t-reservas');
   document.getElementById('e-reservas').style.display=S.reservas.length?'none':'';
   tb.innerHTML=S.reservas.map(r=>`<tr>
@@ -5710,7 +5782,7 @@ function renderReservas(){
     <td>${r.nombre_cliente}</td>
     <td><a class="btn-wa" onclick="abrirWA('${r.whatsapp_cliente}','Hola ${r.nombre_cliente}')">${r.whatsapp_cliente}</a></td>
     <td>${r.servicio||'—'}</td><td>${r.barbero_nombre||'—'}</td>
-    <td><span class="badge b-green">${r.estado}</span></td>
+    <td><span class="badge ${r.estado==='Pendiente de abono'?'b-orange':'b-green'}">${r.estado}</span>${abonoBadge(r)}</td>
     <td>${r.procesado?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
     <td style="white-space:nowrap">
       ${!r.procesado?`<button class="btn btn-ghost btn-sm" onclick="abrirCobro('${r.id}')">Cobrar</button>`:''}
@@ -6470,6 +6542,7 @@ function renderConfig(){
     // tanto, y el link del QR no es lo primero que se viene a mirar acá.
     cargarLinkClubQR();
   }
+  cargarAbonoConfig();
   renderHorarioNegocio();
   renderBloqueos();
   renderNivelesVipConfig();
@@ -6561,9 +6634,9 @@ function resolveServicioInfo(servicioRaw){
   return {nombre,dur};
 }
 
-const ESTADOS=['Pendiente','Confirmada','En curso','Atendida','No asistió','Cancelada'];
+const ESTADOS=['Pendiente','Pendiente de abono','Confirmada','En curso','Atendida','No asistió','Cancelada'];
 const ESTADO_HEX={
-  'Pendiente':'#d4a853','Confirmada':'#5b8def','En curso':'#7c6af7',
+  'Pendiente':'#d4a853','Pendiente de abono':'#2bb3c0','Confirmada':'#5b8def','En curso':'#7c6af7',
   'Atendida':'#00e096','No asistió':'#ff9944','Cancelada':'#ff5555'
 };
 function resolveEstado(it){
@@ -6575,7 +6648,7 @@ function hexToRgba(hex,a){
 }
 // En modo claro el borde y el fondo siguen siendo el color del estado, pero el
 // TEXTO va en una versión oscura: #00e096 sobre blanco no se lee.
-const ESTADO_TEXTO_CLARO={'Pendiente':'#7A5A0B','Confirmada':'#1D4FA8','En curso':'#4B2FC8','Atendida':'#0F6B3A','No asistió':'#9A3412','Cancelada':'#B42318'};
+const ESTADO_TEXTO_CLARO={'Pendiente':'#7A5A0B','Pendiente de abono':'#0E6E78','Confirmada':'#1D4FA8','En curso':'#4B2FC8','Atendida':'#0F6B3A','No asistió':'#9A3412','Cancelada':'#B42318'};
 function estadoColor(estado){
   const hex=ESTADO_HEX[estado]||ESTADO_HEX['Pendiente'];
   return {bg:hexToRgba(hex,0.16),border:hex,text:PANEL_CLARO?(ESTADO_TEXTO_CLARO[estado]||ESTADO_TEXTO_CLARO['Pendiente']):hex};
@@ -7248,6 +7321,175 @@ function renderReporteProductos(){
     <td data-label="Utilidad" class="gold" style="font-weight:600;${d.utilidad<0?'color:#e05050':''}">${fmt(d.utilidad)}</td>
     <td data-label="Margen">${String(Math.round(d.margen*10)/10).replace('.',',')}%</td></tr>`).join('')
     ||'<tr><td colspan="8" class="empty">Sin ventas de productos en este mes</td></tr>';
+}
+
+// ─── ABONO PARA CONFIRMAR LA HORA ──────────────────────────────────────────
+// La barbería elige monto/%, cuánto retiene la hora y si exige comprobante
+// (abono_config, tabla privada). El cliente transfiere; acá se confirma.
+let ABONO_CFG=null;
+const ABONO_RETENCIONES=[5,10,15,20,30,45,60,90,120];
+function abonoTextoRetencion(m){ return m<60?m+' minutos':(m===60?'1 hora':(m===90?'1 hora y media':'2 horas')); }
+function abonoCalcular(tipo,valor,precio){
+  let v=tipo==='porcentaje'?Math.round((precio||0)*valor/100):Math.round(valor||0);
+  if(precio>0) v=Math.min(v,precio);
+  return Math.max(v,0);
+}
+async function cargarAbonoConfig(){
+  if(S.perfil?.rol!=='dueno') return;
+  const {data}=await sb.from('abono_config').select('*').eq('barberia_id',S.barberia.id).maybeSingle();
+  ABONO_CFG=data||null; pintarAbonoConfig();
+}
+function pintarAbonoConfig(){
+  const g=id=>document.getElementById(id); if(!g('ab-activo')) return;
+  const c={activo:false,tipo:'porcentaje',valor:30,retencion_min:30,exige_comprobante:false,club_exento:true,...(ABONO_CFG||{})};
+  g('ab-activo').checked=!!c.activo; g('ab-tipo').value=c.tipo; g('ab-valor').value=c.valor;
+  const opts=[...new Set([...ABONO_RETENCIONES,c.retencion_min])].sort((a,b)=>a-b);
+  g('ab-ret').innerHTML=opts.map(m=>`<option value="${m}">${abonoTextoRetencion(m)}</option>`).join('');
+  g('ab-ret').value=String(c.retencion_min);
+  g('ab-exige').checked=!!c.exige_comprobante; g('ab-club').checked=!!c.club_exento;
+  g('ab-banco').value=c.banco||''; g('ab-tcuenta').value=c.tipo_cuenta||''; g('ab-ncuenta').value=c.numero_cuenta||'';
+  g('ab-titular').value=c.titular||''; g('ab-rut').value=c.rut||''; g('ab-instr').value=c.instrucciones||'';
+  abonoToggle();
+}
+function abonoToggle(){
+  const on=document.getElementById('ab-activo').checked;
+  document.getElementById('ab-detalle').style.display=on?'':'none';
+  if(on) abonoEjemplo();
+}
+function abonoEjemplo(){
+  const tipo=document.getElementById('ab-tipo').value, valor=parseFloat(document.getElementById('ab-valor').value)||0;
+  document.getElementById('ab-valor-lbl').textContent=tipo==='porcentaje'?'Porcentaje (%)':'Monto ($)';
+  const sv=(S.servicios||[]).find(x=>x.precio>0&&x.activo!==false)||{nombre:'Corte',precio:15000};
+  const el=document.getElementById('ab-ejemplo');
+  el.textContent=valor>0?`Ejemplo: ${sv.nombre} ${fmt(sv.precio)} → el cliente abona ${fmt(abonoCalcular(tipo,valor,sv.precio))} y paga ${fmt(sv.precio-abonoCalcular(tipo,valor,sv.precio))} en el local.`:'';
+}
+async function guardarAbonoConfig(){
+  const g=id=>document.getElementById(id), t=id=>g(id).value.trim()||null;
+  const activo=g('ab-activo').checked, tipo=g('ab-tipo').value, valor=parseFloat(g('ab-valor').value)||0;
+  const o={barberia_id:S.barberia.id,activo,tipo,valor,retencion_min:parseInt(g('ab-ret').value)||30,
+    exige_comprobante:g('ab-exige').checked,club_exento:g('ab-club').checked,
+    banco:t('ab-banco'),tipo_cuenta:g('ab-tcuenta').value||null,numero_cuenta:t('ab-ncuenta'),
+    titular:t('ab-titular'),rut:t('ab-rut'),instrucciones:t('ab-instr'),updated_at:new Date().toISOString()};
+  if(activo){
+    if(valor<=0){ notify('El abono tiene que ser mayor que cero','warn'); return; }
+    if(tipo==='porcentaje'&&valor>100){ notify('El porcentaje no puede pasar de 100','warn'); return; }
+    if(!o.banco||!o.numero_cuenta||!o.titular){ notify('Completa banco, número de cuenta y titular: es lo que verá tu cliente para transferir','warn'); return; }
+  }
+  const {error}=await sb.from('abono_config').upsert(o,{onConflict:'barberia_id'});
+  if(error){ notify(error.message,'err'); return; }
+  ABONO_CFG=o; notify(activo?'Abono activado ✓':'Abono guardado (desactivado) ✓');
+}
+function svAbonoCambio(){
+  const tipo=document.getElementById('sv-abono-tipo').value;
+  const fg=document.getElementById('sv-abono-valor-fg'), lbl=document.getElementById('sv-abono-valor-lbl');
+  const conValor=tipo==='porcentaje'||tipo==='monto';
+  fg.style.display=conValor?'':'none';
+  lbl.textContent=tipo==='porcentaje'?'Porcentaje (%)':'Monto ($)';
+}
+
+// Estado del abono de una reserva, para la tabla de Reservas.
+function abonoBadge(r){
+  if(!r||!r.abono_estado) return '';
+  const m=r.abono_monto?' '+fmt(r.abono_monto):'';
+  const mapa={'Pendiente':['b-orange','Abono pendiente'+m],'Por confirmar':['b-gold','Abono por confirmar'+m],
+    'Confirmado':['b-green','Abono pagado'+m],'Vencido':['b-red','Abono vencido'],'Rechazado':['b-red','Abono rechazado']};
+  const x=mapa[r.abono_estado]; return x?` <span class="badge ${x[0]}" style="margin-left:4px">${escHtml(x[1])}</span>`:'';
+}
+function abonoItems(){
+  const hace3d=Date.now()-3*864e5;
+  return (S.reservas||[]).filter(r=>r.abono_estado==='Por confirmar'||r.abono_estado==='Pendiente'||
+      (r.abono_estado==='Vencido'&&r.abono_comprobante&&r.abono_vence_at&&new Date(r.abono_vence_at).getTime()>hace3d))
+    .sort((a,b)=>String(a.abono_vence_at||'').localeCompare(String(b.abono_vence_at||'')));
+}
+function abonoRestante(r){
+  if(!r.abono_vence_at) return '';
+  const ms=new Date(r.abono_vence_at).getTime()-Date.now();
+  if(ms<=0) return 'venció';
+  const m=Math.ceil(ms/60000);
+  return 'vence en '+(m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min');
+}
+function actualizarBadgeAbonos(items){
+  const nav=document.querySelector('.nav-item[data-page="reservas"]'); if(!nav) return;
+  let b=document.getElementById('nav-abono-badge');
+  if(!b){ b=document.createElement('span'); b.id='nav-abono-badge';
+    b.style.cssText='margin-left:auto;background:#2bb3c0;color:#06292c;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700'; nav.appendChild(b); }
+  const n=items.filter(r=>r.abono_estado==='Por confirmar'||r.abono_estado==='Vencido').length;
+  b.textContent=n; b.style.display=n?'':'none';
+}
+function renderAbonosPendientes(){
+  const box=document.getElementById('abonos-pendientes'); if(!box) return;
+  const items=abonoItems(); actualizarBadgeAbonos(items);
+  if(!items.length){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='';
+  box.innerHTML=`<div class="card-hdr"><span class="card-title">Abonos por confirmar (${items.length})</span></div>`+items.map(r=>{
+    const est=r.abono_estado==='Por confirmar'?(r.abono_comprobante?'Subió el comprobante':'Dice que ya transfirió')
+      :(r.abono_estado==='Vencido'?'Venció, pero subió comprobante':'Esperando la transferencia');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 0;border-top:0.5px solid var(--border)">
+      <div style="min-width:200px">
+        <strong>${escHtml(r.nombre_cliente||'')}</strong> · ${escHtml(r.servicio||'')} · ${escHtml(r.barbero_nombre||'')}<br>
+        <span style="font-size:11px;color:var(--text3)">${escHtml(r.fecha)} ${escHtml(fmtHora(r.hora))} · abono <strong style="color:var(--text)">${fmt(r.abono_monto||0)}</strong> · ${escHtml(est)}${r.abono_estado!=='Vencido'&&abonoRestante(r)?' · '+escHtml(abonoRestante(r)):''}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${r.abono_comprobante?`<button class="btn btn-ghost btn-sm" onclick="abonoVerComprobante('${r.id}')">🧾 Ver comprobante</button>`:''}
+        <button class="btn btn-primary btn-sm" onclick="abonoConfirmar('${r.id}')">✓ Confirmar abono</button>
+        <button class="btn btn-danger btn-sm" onclick="abonoRechazar('${r.id}')">Rechazar</button>
+      </div></div>`;
+  }).join('');
+}
+async function abonoVerComprobante(id){
+  const r=S.reservas.find(x=>x.id===id); if(!r||!r.abono_comprobante) return;
+  const w=window.open('','_blank');
+  const {data,error}=await sb.storage.from('comprobantes-abono').createSignedUrl(r.abono_comprobante,300);
+  if(error||!data){ if(w) w.close(); notify('No se pudo abrir el comprobante','err'); return; }
+  if(w) w.location=data.signedUrl; else location.href=data.signedUrl;
+}
+async function abonoConfirmar(id){
+  const {data,error}=await sb.rpc('abono_confirmar',{p_reserva_id:id});
+  if(error){ notify(error.message,'err'); return; }
+  notify(data&&data.reactivada?'Abono confirmado y hora reactivada ✓':'Abono confirmado ✓ El cliente recibe su confirmación');
+  // El correo de confirmación recién sale ahora: mientras esperaba el abono no se mandó.
+  fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:id})}).catch(()=>{});
+  await refrescarPorReservaNueva({id});
+}
+async function abonoRechazar(id){
+  const motivo=prompt('Motivo (opcional, queda anotado en la reserva):');
+  if(motivo===null) return;
+  const {error}=await sb.rpc('abono_rechazar',{p_reserva_id:id,p_motivo:motivo||null});
+  if(error){ notify(error.message,'err'); return; }
+  notify('Abono rechazado, la hora quedó libre');
+  await refrescarPorReservaNueva({id});
+}
+// Cuenta regresiva y liberación de horas vencidas, sin depender de nadie.
+let _vigAbonos=null;
+function iniciarVigilanteAbonos(){
+  if(_vigAbonos||S.perfil?.rol==='profesional') return;
+  const tick=async()=>{
+    let liberadas=0;
+    try{ const {data}=await sb.rpc('liberar_abonos_vencidos'); liberadas=data||0; if(liberadas>0) await loadReservas(); }catch(e){}
+    renderAbonosPendientes();
+    if(liberadas>0){
+      if(document.getElementById('p-agenda')?.classList.contains('active')) renderAgenda();
+      if(document.getElementById('p-reservas')?.classList.contains('active')) renderReservas();
+    }
+  };
+  _vigAbonos=setInterval(tick,30000); tick();
+}
+// En el cobro: lo que el cliente ya pagó por transferencia se descuenta.
+function cobroAbonoTotal(rep){
+  let total=0;
+  (COBRO_CTX?.lineas||[]).forEach((l,i)=>{
+    const r=(S.reservas||[]).find(x=>x.id===l.reservaId);
+    if(r&&r.abono_estado==='Confirmado') total+=Math.min(+r.abono_monto||0,(rep.valores&&rep.valores[i])||0);
+  });
+  return Math.round(total);
+}
+function cobroPintarAbono(rep){
+  const el=document.getElementById('cob-abono'); if(!el) return;
+  const ab=cobroAbonoTotal(rep);
+  if(ab>0){
+    el.style.display='';
+    el.innerHTML=`Abono ya pagado por transferencia: <strong>−${fmt(ab)}</strong><br>Por cobrar ahora: <strong style="font-size:15px">${fmt(Math.max(rep.totalCobro-ab,0))}</strong>`;
+  } else { el.style.display='none'; el.innerHTML=''; }
 }
 
 // ─── IMPUESTOS: F29 mensual y proyección de la renta anual ────────────────

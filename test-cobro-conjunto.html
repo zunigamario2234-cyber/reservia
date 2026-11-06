@@ -387,7 +387,9 @@ async function correr(src){
   var fuenteUI = extraerFuncion(js,'repartirProporcional') + '\n' +
                  extraerFuncion(js,'cobroProrratear') + '\n' +
                  extraerFuncion(js,'cobroRenderLineas') + '\n' +
-                 extraerFuncion(js,'cobroRecalcular');
+                 extraerFuncion(js,'cobroRecalcular') + '\n' +
+                 extraerFuncion(js,'cobroAbonoTotal') + '\n' +
+                 extraerFuncion(js,'cobroPintarAbono');
   var docUI = domFalso({ 'cob-final':'31500', 'cob-propina':'3150' });
   var ctxUI = { lineas:[
       {reservaId:'r1',lista:20000,nombre:'Juan Pérez',servicio:'Corte',profesional:'Mario',hora:'10:00',sinPrecio:false,matchNormalizado:false},

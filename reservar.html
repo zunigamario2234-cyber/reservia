@@ -932,7 +932,23 @@ function renderResumen(){
     <div class="resumen-row"><span class="resumen-label">Fecha</span><span class="resumen-val">${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}</span></div>
     <div class="resumen-row"><span class="resumen-label">Hora</span><span class="resumen-val">${SEL.hora} hrs</span></div>
     <div class="resumen-row"><span class="resumen-label">Valor</span><span class="resumen-val" style="color:var(--acento)">$${SEL.servicio?.precio.toLocaleString('es-CL')}</span></div>
-    <div class="resumen-row"><span class="resumen-label">Cliente</span><span class="resumen-val">${nombre.trim()}</span></div>`;
+    <div class="resumen-row"><span class="resumen-label">Cliente</span><span class="resumen-val">${nombre.trim()}</span></div>
+    <div class="resumen-row" id="resumen-abono" style="display:none"></div>`;
+  mostrarNotaAbono();
+}
+async function mostrarNotaAbono(){
+  try{
+    const srv=SEL.servicio?.nombre;
+    const {data:monto}=await sb.rpc('abono_monto_para',{p_barberia_id:BARBERIA_ID,p_servicio:srv});
+    const el=document.getElementById('resumen-abono');
+    if(!el||SEL.servicio?.nombre!==srv||!(monto>0))return;
+    const {data:info}=await sb.rpc('abono_info_publico',{p_barberia_id:BARBERIA_ID});
+    const min=info&&info.retencion_min;
+    const t=min?(min>=60?(min/60).toString().replace('.',',')+(min===60?' hora':' horas'):min+' min'):'';
+    el.innerHTML='<span class="resumen-label">Abono</span><span class="resumen-val" style="color:var(--acento)">$'+Number(monto).toLocaleString('es-CL')+'</span>'
+      +'<div style="flex-basis:100%;font-size:12px;color:var(--texto-suave);margin-top:6px;line-height:1.5">Al confirmar verás los datos para transferir'+(t?' y tendrás '+t+' para hacerlo':'')+'. Se descuenta del valor del servicio.</div>';
+    el.style.display='';el.style.flexWrap='wrap';
+  }catch(e){}
 }
 
 async function confirmarReserva(){
@@ -950,7 +966,7 @@ async function confirmarReserva(){
     // de un insert, y un cliente anónimo nunca la cumple. El RPC hace el
     // insert del lado del servidor y devuelve solo el id — mismo patrón
     // que get_club_vip_publico.
-    const {data:reservaId,error}=await sb.rpc('crear_reserva_publica',{
+    const {data:resAb,error}=await sb.rpc('crear_reserva_publica_abono',{
       p_barberia_id:BARBERIA_ID,
       p_nombre_cliente:nombre+' '+apellido,
       p_whatsapp_cliente:wsp,
@@ -963,8 +979,16 @@ async function confirmarReserva(){
       p_notas:notas
     });
     if(error)throw error;
+    const reservaId=resAb&&resAb.id;
     const data={id:reservaId};
     ULTIMO_NOMBRE=(nombre+' '+apellido).trim();
+    // Con abono, la hora queda retenida hasta que el cliente transfiera: se
+    // lo lleva a su pantalla de pago y el correo de confirmación sale recién
+    // cuando el negocio confirma el abono (lo hace el panel).
+    if(resAb&&resAb.requiere_abono){
+      location.href='abono.html?r='+encodeURIComponent(reservaId)+'&t='+encodeURIComponent(resAb.token);
+      return;
+    }
     // Email de confirmación automático (Vercel + Resend). No bloquea la UI ni
     // muestra error al cliente si falla — el servidor decide con qué datos reales.
     fetch('/api/enviar-confirmacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:data.id})}).catch(()=>{});

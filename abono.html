@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirma tu hora</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="tema.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --acento:#7c6af7;--acento-2:#5b8def;--texto-sobre-acento:#fff;
+  --fondo:#08090d;--tarjeta:#0f1018;--borde:#222;--input-fondo:#161616;--input-borde:#252525;
+  --texto:#e8e6e0;--texto-fuerte:#fff;--texto-suave:#888;--texto-debil:#555;
+  --chip-fondo:#13142a;--exito:#4caf87;--alerta-fondo:#1f0000;--alerta-borde:#e05050;--alerta-texto:#e05050;
+  --aviso-fondo:#1f1600;--aviso-borde:#d4a853;
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--texto);min-height:100vh;display:flex;justify-content:center;padding:20px 16px 40px}
+.wrap{width:100%;max-width:440px}
+.card{background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;padding:22px 20px;margin-bottom:14px}
+h1{font-size:19px;font-weight:600;line-height:1.35;margin-bottom:6px;color:var(--texto-fuerte)}
+.sub{font-size:13px;color:var(--texto-suave);line-height:1.6}
+.monto{font-size:34px;font-weight:700;color:var(--acento);margin:14px 0 4px;letter-spacing:-0.5px}
+.reloj{display:flex;align-items:center;gap:10px;background:var(--aviso-fondo);border:0.5px solid var(--aviso-borde);border-radius:10px;padding:11px 14px;margin-top:14px;font-size:13px}
+.reloj b{font-size:20px;font-variant-numeric:tabular-nums;color:var(--texto-fuerte)}
+.reloj.urgente{border-color:var(--alerta-borde);background:var(--alerta-fondo)}
+.dato{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:0.5px solid var(--borde);font-size:14px}
+.dato:last-of-type{border-bottom:none}
+.dato span:first-child{color:var(--texto-suave);font-size:12px;flex-shrink:0}
+.dato span:last-child{text-align:right;word-break:break-word;color:var(--texto-fuerte)}
+.copiar{background:none;border:0.5px solid var(--borde);color:var(--texto);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;margin-left:8px;flex-shrink:0}
+.nota{font-size:12.5px;color:var(--texto-suave);line-height:1.6;margin-top:12px;white-space:pre-line}
+label.sube{display:block;border:1px dashed var(--input-borde);border-radius:10px;padding:18px;text-align:center;cursor:pointer;font-size:13.5px;color:var(--texto);background:var(--input-fondo)}
+label.sube small{display:block;color:var(--texto-suave);margin-top:4px;font-size:12px}
+label.sube.listo{border-style:solid;border-color:var(--exito);color:var(--exito)}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+input[type=file]:focus-visible + label.sube{outline:2px solid var(--acento);outline-offset:2px}
+.btn{width:100%;padding:14px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;border:none;font-family:inherit;background:linear-gradient(135deg,var(--acento),var(--acento-2));color:var(--texto-sobre-acento);margin-top:14px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.aviso{font-size:12.5px;border-radius:10px;padding:11px 13px;margin-top:12px;line-height:1.55;display:none}
+.aviso.ver{display:block}
+.aviso.err{background:var(--alerta-fondo);border:0.5px solid var(--alerta-borde);color:var(--alerta-texto)}
+.centro{text-align:center}
+.icono{font-size:42px;line-height:1;margin-bottom:12px}
+.ok{color:var(--exito)}
+.resumen{font-size:13px;color:var(--texto-suave);margin-top:6px;line-height:1.6}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="cargando" class="centro sub" style="padding:60px 0">Cargando…</div>
+  <div id="vacio" class="card centro" style="display:none">
+    <div class="icono">🔍</div>
+    <h1>No encontramos esta reserva</h1>
+    <div class="sub">El enlace está incompleto o ya no es válido. Escríbele al negocio para revisar tu hora.</div>
+  </div>
+
+  <!-- Pendiente: transferir -->
+  <div id="pendiente" style="display:none">
+    <div class="card">
+      <h1 id="p-titulo">Transfiere el abono para confirmar tu hora</h1>
+      <div class="sub" id="p-detalle"></div>
+      <div class="monto" id="p-monto"></div>
+      <div class="sub">Se descuenta del valor del servicio cuando te atiendan.</div>
+      <div class="reloj" id="reloj"><span>⏱ Tu hora está reservada por</span><b id="reloj-t">--:--</b></div>
+    </div>
+    <div class="card">
+      <h1 style="font-size:15px">Datos para transferir</h1>
+      <div id="p-datos" style="margin-top:6px"></div>
+      <div class="nota" id="p-instr"></div>
+    </div>
+    <div class="card">
+      <h1 style="font-size:15px">Cuando hayas transferido</h1>
+      <div class="sub" id="p-sube-sub" style="margin-bottom:12px"></div>
+      <input type="file" id="archivo" accept="image/jpeg,image/png,image/webp,application/pdf">
+      <label class="sube" id="sube" for="archivo"><span id="sube-t">Adjuntar comprobante</span><small>Foto, captura o PDF · máx. 5 MB</small></label>
+      <div class="aviso err" id="error"></div>
+      <button class="btn" id="btn-enviar" onclick="enviar()">Ya transferí</button>
+    </div>
+  </div>
+
+  <!-- Por confirmar -->
+  <div id="porconfirmar" class="card centro" style="display:none">
+    <div class="icono">🕒</div>
+    <h1>Recibimos tu aviso</h1>
+    <div class="sub" id="pc-texto"></div>
+    <div class="resumen" id="pc-resumen"></div>
+  </div>
+
+  <!-- Confirmado -->
+  <div id="confirmado" class="card centro" style="display:none">
+    <div class="icono ok">✓</div>
+    <h1>Tu hora está confirmada</h1>
+    <div class="sub" id="c-texto"></div>
+    <div class="resumen" id="c-resumen"></div>
+  </div>
+
+  <!-- Vencida / rechazada -->
+  <div id="vencido" class="card centro" style="display:none">
+    <div class="icono">⌛</div>
+    <h1 id="v-titulo">Se acabó el tiempo de tu reserva</h1>
+    <div class="sub" id="v-texto"></div>
+    <div id="v-acciones"></div>
+  </div>
+</div>
+
+<script>
+if (typeof SUPABASE_URL === 'undefined') {
+  document.getElementById('cargando').textContent = 'No se pudo cargar la página. Intenta de nuevo en unos minutos.';
+  throw new Error('supabase-config.js no cargó');
+}
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const qs = new URLSearchParams(location.search);
+const RID = qs.get('r'), TOK = qs.get('t');
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let D = null, OFFSET = 0, TIMER = null, POLL = null;
+
+const $ = id => document.getElementById(id);
+const money = n => '$' + Number(n || 0).toLocaleString('es-CL');
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function ver(id){ ['cargando','vacio','pendiente','porconfirmar','confirmado','vencido'].forEach(x => $(x).style.display = x === id ? '' : 'none'); }
+
+function aplicarTema(barb){
+  if (!barb || typeof derivarSuperficies !== 'function') return;
+  const vars = derivarSuperficies({ modo: barb.modo_tema === 'claro' ? 'claro' : 'oscuro', colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  if (vars) Object.keys(vars).forEach(k => document.documentElement.style.setProperty(k, vars[k]));
+}
+
+async function cargar(){
+  if (!UUID.test(RID || '') || !UUID.test(TOK || '')) { ver('vacio'); return; }
+  const { data, error } = await sb.rpc('get_abono_publico', { p_reserva_id: RID, p_token: TOK });
+  if (error || !data) { ver('vacio'); return; }
+  const primera = !D;
+  D = data;
+  OFFSET = new Date(data.ahora).getTime() - Date.now();
+  if (primera) {
+    try {
+      const { data: b } = await sb.from('barberias').select('*').eq('id', data.barberia_id).single();
+      aplicarTema(b);
+    } catch (e) {}
+  }
+  pintar();
+}
+
+function pintar(){
+  clearInterval(TIMER); clearInterval(POLL);
+  const e = D.abono_estado;
+  if (e === 'Confirmado') {
+    $('c-texto').textContent = 'Recibimos tu abono en ' + D.negocio + '. Te esperamos.';
+    $('c-resumen').textContent = money(D.monto) + ' abonados · se descuentan al pagar el servicio';
+    ver('confirmado'); return;
+  }
+  if (e === 'Por confirmar') {
+    $('pc-texto').textContent = D.negocio + ' revisará tu transferencia y te confirmará la hora. Puedes cerrar esta página: tu hora queda guardada mientras tanto.';
+    $('pc-resumen').textContent = money(D.monto) + (D.subio_comprobante ? ' · comprobante enviado' : '');
+    ver('porconfirmar');
+    POLL = setInterval(cargar, 20000);
+    return;
+  }
+  if (e === 'Vencido' || e === 'Rechazado' || !e) {
+    const rech = e === 'Rechazado';
+    $('v-titulo').textContent = rech ? 'Esta reserva no se confirmó' : 'Se acabó el tiempo de tu reserva';
+    $('v-texto').textContent = rech
+      ? 'El negocio no pudo confirmar tu abono. Escríbele para revisar tu hora.'
+      : 'La hora se liberó porque no llegó la transferencia a tiempo. Si ya transferiste, avísanos igual: si la hora sigue libre, la recuperamos.';
+    $('v-acciones').innerHTML = !rech
+      ? '<button class="btn" onclick="yaTransferi()">Ya transferí, avisar</button><div class="aviso err" id="error-v"></div>'
+      : '';
+    ver('vencido'); return;
+  }
+  // Pendiente
+  $('p-detalle').textContent = D.negocio;
+  $('p-monto').textContent = money(D.monto);
+  const filas = [['Banco', D.banco], ['Tipo de cuenta', D.tipo_cuenta], ['N° de cuenta', D.numero_cuenta], ['Titular', D.titular], ['RUT', D.rut]].filter(f => f[1]);
+  $('p-datos').innerHTML = filas.length
+    ? filas.map(f => '<div class="dato"><span>' + f[0] + '</span><span>' + esc(f[1]) + (f[0] === 'N° de cuenta' ? '<button class="copiar" onclick="copiar(this)" data-v="' + esc(f[1]) + '">Copiar</button>' : '') + '</span></div>').join('')
+    : '<div class="sub">El negocio aún no cargó sus datos de transferencia. Escríbele para coordinar.</div>';
+  $('p-instr').textContent = D.instrucciones || '';
+  $('p-sube-sub').textContent = D.exige_comprobante
+    ? 'Sube el comprobante de tu transferencia para avisar al negocio.'
+    : 'Puedes adjuntar el comprobante (recomendado) y avisar al negocio.';
+  $('btn-enviar').textContent = D.exige_comprobante ? 'Enviar comprobante' : 'Ya transferí';
+  ver('pendiente');
+  tick(); TIMER = setInterval(tick, 1000);
+}
+
+function tick(){
+  const ms = new Date(D.vence_at).getTime() - (Date.now() + OFFSET);
+  if (ms <= 0) { clearInterval(TIMER); cargar(); return; }
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
+  $('reloj-t').textContent = (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(ss).padStart(2, '0');
+  $('reloj').classList.toggle('urgente', ms < 120000);
+}
+
+async function copiar(btn){
+  const v = btn.dataset.v;
+  try { await navigator.clipboard.writeText(v); btn.textContent = 'Copiado'; }
+  catch (e) { btn.textContent = v; }
+  setTimeout(() => { btn.textContent = 'Copiar'; }, 1800);
+}
+
+$('archivo').addEventListener('change', () => {
+  const f = $('archivo').files[0];
+  const l = $('sube');
+  if (!f) { l.classList.remove('listo'); $('sube-t').textContent = 'Adjuntar comprobante'; return; }
+  if (f.size > 5 * 1024 * 1024) { err('El archivo pesa más de 5 MB. Sube una captura más liviana.'); $('archivo').value = ''; return; }
+  err('');
+  l.classList.add('listo'); $('sube-t').textContent = '✓ ' + f.name;
+});
+
+function err(msg, id){ const el = $(id || 'error'); if (!el) return; el.textContent = msg || ''; el.classList.toggle('ver', !!msg); }
+
+async function subirComprobante(f){
+  const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' })[f.type];
+  if (!ext) throw new Error('Formato no permitido. Usa foto (JPG, PNG, WEBP) o PDF.');
+  const path = D.barberia_id + '/' + RID + '/' + TOK + '-' + Date.now() + '.' + ext;
+  const { error } = await sb.storage.from('comprobantes-abono').upload(path, f, { contentType: f.type, upsert: false });
+  if (error) throw new Error('No se pudo subir el comprobante. Intenta de nuevo.');
+  return path;
+}
+
+async function enviar(){
+  const f = $('archivo').files[0];
+  if (D.exige_comprobante && !f && !D.subio_comprobante) { err('Adjunta el comprobante de la transferencia.'); return; }
+  const btn = $('btn-enviar'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Enviando…';
+  try {
+    const path = f ? await subirComprobante(f) : null;
+    const { error } = await sb.rpc('abono_marcar_transferido', { p_reserva_id: RID, p_token: TOK, p_path: path });
+    if (error) throw new Error(error.message);
+    await cargar();
+  } catch (e) {
+    err(e.message);
+    btn.disabled = false; btn.textContent = D.exige_comprobante ? 'Enviar comprobante' : 'Ya transferí';
+  }
+}
+
+async function yaTransferi(){
+  const { error } = await sb.rpc('abono_marcar_transferido', { p_reserva_id: RID, p_token: TOK, p_path: null });
+  if (error) { err(error.message, 'error-v'); return; }
+  await cargar();
+}
+
+cargar();
+</script>
+</body>
+</html>

@@ -280,7 +280,7 @@ function correr(src){
     //    abrir la puerta: ni opción "Cualquiera", ni fallback a 'Por asignar'.
     check('no ofrece "Cualquier profesional"', /Cualquier/i.test(js), false);
     check('no manda "Por asignar" a la RPC', /Por asignar/i.test(js), false);
-    var reserva = rpcs.filter(function(r){ return /^crear_reserva_publica/.test(r.nombre); });
+    var reserva = rpcs.filter(function(r){ return /^crear_reserva_(publica|club)/.test(r.nombre); });
     check('llama a la RPC de crear reserva', reserva.length, 1);
     check('manda el profesional elegido, sin fallback',
           reserva.length === 1 &&
