@@ -403,6 +403,32 @@ function derivarSuperficies(op) {
     out['--wa-borde'] = oscurecerContra('#1AA251', 3.1, '#E6F7EC');
     out['--wa-texto'] = verdeT;
     out['--wa-hover'] = '#D3F0DE';
+    // Extras que usa club.html (pasos, calendario, insignias de nivel). En
+    // oscuro NO se escriben: club.html trae por defecto los colores de siempre.
+    var blanco = '#FFFFFF';
+    out['--texto-apagado'] = oscurecerContra('#666666', 4.6, pisoTxt);
+    out['--texto-tenue'] = oscurecerContra('#777777', 4.6, pisoTxt);
+    out['--texto-inerte'] = '#9096A3';                      // días pasados: deshabilitado a propósito
+    out['--borde-suave'] = '#E9EBF1';
+    out['--borde-2'] = '#D5D8E0';
+    out['--borde-fuerte'] = '#9AA0AE';
+    out['--superficie-2'] = '#E6E8EF';
+    out['--info-fondo'] = '#F0F1F6';
+    out['--seleccion-fondo'] = mezclar(acento, blanco, 0.90);
+    var chipF = mezclar(acento, blanco, 0.88);
+    out['--chip-fondo'] = chipF;
+    out['--chip-texto'] = oscurecerContra(acento, 4.6, chipF);
+    out['--exito'] = oscurecerContra('#2E9D6E', 4.7, pisoTxt);   // texto sobre fondo claro Y base de un ✓ blanco
+    var ins = function (f, t) { return [f, oscurecerContra(t, 4.6, f)]; };
+    var bs = ins('#E6E8EF', '#4B505C'), bg = ins('#FBF1D6', '#8A6410'), bb = ins('#E3F0FA', '#1B6A99'), bv = ins('#E3F6EA', '#12703A');
+    out['--b-silver-fondo'] = bs[0]; out['--b-silver-texto'] = bs[1];
+    out['--b-gold-fondo'] = bg[0];   out['--b-gold-texto'] = bg[1];
+    out['--b-blue-fondo'] = bb[0];   out['--b-blue-texto'] = bb[1];
+    out['--b-green-fondo'] = bv[0];  out['--b-green-texto'] = bv[1];
+    out['--nivel-0'] = oscurecerContra('#6B7280', 4.6, pisoTxt);
+    out['--nivel-1'] = oscurecerContra('#B8860B', 4.6, pisoTxt);
+    out['--nivel-2'] = oscurecerContra('#2B7BB0', 4.6, pisoTxt);
+    out['--nivel-3'] = oscurecerContra('#2E9D6E', 4.6, pisoTxt);
   }
 
   out['--fondo'] = sup.fondo;

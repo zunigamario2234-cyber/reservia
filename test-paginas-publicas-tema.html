@@ -784,6 +784,35 @@ async function grupoE(txtApp) {
   check('E9 y la escribe en NULL', upsH[0] && upsH[0].color_fondo_logo, 'null');
 }
 
+// ─── grupo M: lo extra que usa club.html en modo claro ────────────────
+// Mismos 60+ colores del grupo L. Insignias, chip, éxito y niveles son TEXTO:
+// deben leerse. Además, club.html no puede tener un color a mano que no sea una
+// variable (salvo la lista cerrada de abajo): un hex suelto no cambia con el modo.
+async function grupoM(txtOriginal, txtClub) {
+  var casos = COLORES_L.slice();
+  for (var i = 0; i < 20; i++) { var h = i * 18; casos.push(['h' + h + ' vivo', hsl2hex(h, 1, 0.5), null]); casos.push(['h' + h + ' claro', hsl2hex(h, 0.9, 0.78), null]); casos.push(['h' + h + ' oscuro', hsl2hex(h, 0.8, 0.22), null]); }
+  var w = await montar(prepararPagina(txtOriginal)), K = w.contrasteHex, fallos = [], minB = 99, minN = 99, minC = 99;
+  for (var j = 0; j < casos.length; j++) {
+    var c = casos[j], v = w.derivarSuperficies({ modo: 'claro', colorMarca: c[1], colorFondoLogo: c[2] });
+    var fon = v['--fondo'], tar = v['--tarjeta'];
+    var ins = Math.min(K(v['--b-silver-texto'], v['--b-silver-fondo']), K(v['--b-gold-texto'], v['--b-gold-fondo']), K(v['--b-blue-texto'], v['--b-blue-fondo']), K(v['--b-green-texto'], v['--b-green-fondo']));
+    var niv = Math.min(K(v['--nivel-0'], fon), K(v['--nivel-1'], fon), K(v['--nivel-2'], fon), K(v['--nivel-3'], fon), K(v['--nivel-0'], tar), K(v['--nivel-3'], tar));
+    var chip = Math.min(K(v['--chip-texto'], v['--chip-fondo']), K(v['--texto-sobre-acento'], v['--acento']));
+    var exito = Math.min(K(v['--exito'], fon), K('#FFFFFF', v['--exito']));
+    var apag = Math.min(K(v['--texto-apagado'], fon), K(v['--texto-tenue'], fon));
+    minB = Math.min(minB, ins); minN = Math.min(minN, niv); minC = Math.min(minC, chip);
+    if (ins < 4.5 || niv < 4.5 || chip < 4.5 || exito < 4.5 || apag < 4.5) fallos.push(c[0] + ' ' + c[1] + ': insignias ' + f2(ins) + ' niveles ' + f2(niv) + ' chip ' + f2(chip) + ' éxito ' + f2(exito) + ' apagado ' + f2(apag));
+  }
+  verdad('M ' + casos.length + ' colores en claro: insignias, niveles, chip, éxito y textos apagados >= 4.5:1 (mín. insignia ' + f2(minB) + ', nivel ' + f2(minN) + ', chip ' + f2(minC) + ')', fallos.length === 0, fallos.slice(0, 3).join(' | '));
+  var dark = w.derivarSuperficies({ modo: 'oscuro', colorMarca: '#3104F2', colorFondoLogo: null });
+  verdad('M en oscuro NO se escribe ninguna de las variables extra de club (quedan los colores de siempre)', !('--b-gold-fondo' in dark) && !('--nivel-1' in dark) && !('--chip-fondo' in dark));
+  var css = txtClub.slice(txtClub.indexOf('<style>'), txtClub.indexOf('</style>'));
+  var sinRoot = css.replace(/:root\{[\s\S]*?\n\}/, '');
+  var sueltos = (sinRoot.match(/#[0-9a-fA-F]{3,6}\b/g) || []).filter(function (x) { return ['#fff', '#0a0a0a', '#d4a853'].indexOf(x.toLowerCase()) < 0; });
+  verdad('M club.html: el CSS no tiene colores sueltos fuera de :root (salvo #fff del check, #0a0a0a y #d4a853 del horario elegido)', sueltos.length === 0, sueltos.slice(0, 5).join(' '));
+  verdad('M club.html pide color_marca, color_fondo_logo y modo_tema y llama a aplicarTemaPublico', /color_marca,color_fondo_logo,modo_tema/.test(txtClub) && /aplicarTemaPublico\(barb\)/.test(txtClub));
+}
+
 // ─── veredicto ─────────────────────────────────────────────────────────
 (async function () {
   var el = document.getElementById('resultado');
@@ -797,6 +826,7 @@ async function grupoE(txtApp) {
     await grupoR(txtPagina);
     await grupoS(txtPagina);
     await grupoL(txtPagina);
+    await grupoM(txtPagina, await bajar('club.html'));
     await grupoE(txtApp);
   } catch (e) {
     fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n')[1]);

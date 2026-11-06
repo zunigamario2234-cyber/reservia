@@ -2,6 +2,7 @@ const {chromium}=require('playwright');const fs=require('fs');
 const src=fs.readFileSync(__dirname+'/app.html','utf8');
 function grab(startMarker,endMarker){const i=src.indexOf(startMarker);const j=src.indexOf(endMarker,i);if(i<0||j<0)throw new Error('no '+startMarker);return src.slice(i,j);}
 const code=[
+ "const MESES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];",
  grab('function fmtDateLocal','function setDashPeriodo'),
  grab('// ─── PERIODOS DE VENTAS','function setDashPeriodo'),
  grab('function deltaHtml','// Los charts de ingresos'),
@@ -11,6 +12,11 @@ const code=[
  grab('function renderReporteResumen(){','  // Por servicio')+'}',
  'function renderVentasPeriodos(){'+grab('function renderVentasPeriodos(){','function renderDashboard(){').slice('function renderVentasPeriodos(){'.length),
 ].join('\n');
+// Sintaxis de TODOS los <script> inline de app.html: una declaración repetida
+// (pasó el 2026-11-06) deja el panel entero muerto y las funciones sueltas no lo notan.
+{ const cp=require('child_process'); let malos=0; let i=0;
+  for(const m of src.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)){ const f='/tmp/_chk_'+(i++)+'.js'; fs.writeFileSync(f,m[1]); const r=cp.spawnSync('node',['--check',f],{encoding:'utf8'}); if(r.status){malos++;console.log('FALLA sintaxis script',i,r.stderr.slice(0,200));} }
+  if(malos){process.exit(1);} console.log('sintaxis de '+i+' scripts: ok'); }
 (async()=>{
  const b=await chromium.launch();const pg=await b.newPage();
  const errs=[];pg.on('pageerror',e=>errs.push(e.message));

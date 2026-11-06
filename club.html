@@ -15,121 +15,137 @@
 <script src="supabase-config.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
-.portada-wrap{width:100%;max-height:200px;overflow:hidden;background:#0d0e18}
+/* TEMA PÚBLICO. Los valores por defecto son EXACTAMENTE los colores que esta
+   página tenía escritos a mano: sin tema, cada píxel es el de antes. Solo
+   aplicarTemaPublico() escribe estas variables (derivarSuperficies, tema.js),
+   y solo cambia la página si el negocio eligió modo claro o tiene color de marca. */
+:root{
+  --acento:#7c6af7;--acento-2:#5b8def;--acento-hover:#6b59e6;--acento-2-hover:#4a7cde;--texto-sobre-acento:#fff;--spinner-anillo:#333;
+  --fondo:#08090d;--portada-fondo:#0d0e18;--tarjeta:#0f1018;--borde:#222;--input-fondo:#161616;--input-borde:#252525;--fondo-logo:#12131f;
+  --texto:#e8e6e0;--texto-fuerte:#fff;--texto-suave:#888;--texto-medio:#777;--texto-debil:#555;--texto-apagado:#666;--texto-tenue:#444;--texto-inerte:#333;
+  --borde-suave:#1a1a1a;--borde-2:#2a2a2a;--borde-fuerte:#555;--superficie-2:#1a1a1a;--seleccion-fondo:#1a1a18;--info-fondo:#151520;
+  --chip-fondo:#13142a;--chip-texto:#c9c3ff;--exito:#4caf87;
+  --alerta-fondo:#1f0000;--alerta-borde:#e05050;--alerta-texto:#e05050;
+  --wa-fondo:#002210;--wa-borde:#25d366;--wa-texto:#25d366;--wa-hover:#003318;
+  --b-silver-fondo:#2a2a2a;--b-silver-texto:#ccc;--b-gold-fondo:#3a2f10;--b-gold-texto:#d4a853;
+  --b-blue-fondo:#13142a;--b-blue-texto:#6ab0e0;--b-green-fondo:#0f2a1a;--b-green-texto:#5cd685;
+  --nivel-0:#aaa;--nivel-1:#d4a853;--nivel-2:#6ab0e0;--nivel-3:#5cd685;
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--texto);min-height:100vh}
+.portada-wrap{width:100%;max-height:200px;overflow:hidden;background:var(--portada-fondo)}
 .portada-wrap img{width:100%;height:200px;object-fit:cover;display:block}
 @media(max-width:480px){.portada-wrap img{height:120px}}
 .header{padding:24px;text-align:center}
 .header-title-row{display:flex;align-items:center;justify-content:center;gap:10px}
-.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#12131f;flex-shrink:0}
-.header-descripcion{font-size:12px;color:#888;line-height:1.5;margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto}
+.header-logo-img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:var(--fondo-logo);flex-shrink:0}
+.header-descripcion{font-size:12px;color:var(--texto-suave);line-height:1.5;margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto}
 /* Contenedor del acceso "Ubicación y horario". El resto del CSS del modal lo
    inyecta ubicacion-modal.js. */
 .header-meta{margin-top:8px}
-.header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
+.header h1{font-size:15px;font-weight:600;color:var(--texto-suave);letter-spacing:0.3px}
 .container{max-width:480px;margin:0 auto;padding:0 16px 40px}
-.card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;margin-bottom:16px}
+.card{background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;padding:22px;margin-bottom:16px}
 .hero{text-align:center;padding:32px 22px}
 .hero-badge{font-size:52px;margin-bottom:10px}
-.hero-nombre{font-size:18px;font-weight:700;color:#fff;margin-bottom:2px}
+.hero-nombre{font-size:18px;font-weight:700;color:var(--texto-fuerte);margin-bottom:2px}
 .hero-nivel{font-size:22px;font-weight:700;margin-bottom:14px}
-.hero-beneficio{display:inline-block;background:#13142a;border:0.5px solid #7c6af7;border-radius:20px;padding:8px 18px;font-size:13px;color:#c9c3ff}
+.hero-beneficio{display:inline-block;background:var(--chip-fondo);border:0.5px solid var(--acento);border-radius:20px;padding:8px 18px;font-size:13px;color:var(--chip-texto)}
 .progreso-wrap{margin-top:20px}
-.progreso-label{font-size:11px;color:#555;margin-bottom:6px;text-align:center}
-.progreso-bar{height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden}
-.progreso-fill{height:100%;background:linear-gradient(90deg,#7c6af7,#5b8def);border-radius:4px;transition:width 0.4s}
-.card-title{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:14px}
-.alianza-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:0.5px solid #1a1a1a}
+.progreso-label{font-size:11px;color:var(--texto-debil);margin-bottom:6px;text-align:center}
+.progreso-bar{height:8px;background:var(--superficie-2);border-radius:4px;overflow:hidden}
+.progreso-fill{height:100%;background:linear-gradient(90deg,var(--acento),var(--acento-2));border-radius:4px;transition:width 0.4s}
+.card-title{font-size:13px;font-weight:600;color:var(--texto);margin-bottom:14px}
+.alianza-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--borde-suave)}
 .alianza-item:last-child{border-bottom:none}
-.alianza-logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#7c6af7,#5b8def);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;overflow:hidden}
+.alianza-logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--acento),var(--acento-2));display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;overflow:hidden}
 .alianza-logo img{width:100%;height:100%;object-fit:cover}
-.alianza-nombre{font-size:13px;font-weight:600;color:#e8e6e0}
-.alianza-beneficio{font-size:12px;color:#7c6af7;margin-top:2px}
-.alianza-desc{font-size:11px;color:#555;margin-top:2px}
-.alianza-link{font-size:11px;color:#5b8def;text-decoration:none}
-.alianza-codigo{margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:#13142a;border:0.5px dashed #7c6af7;border-radius:8px;padding:6px 10px;font-size:11px;color:#c9c3ff;cursor:pointer;user-select:none}
-.alianza-codigo b{letter-spacing:1px;color:#fff}
-.hist-item{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 8px;padding:10px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
+.alianza-nombre{font-size:13px;font-weight:600;color:var(--texto)}
+.alianza-beneficio{font-size:12px;color:var(--acento);margin-top:2px}
+.alianza-desc{font-size:11px;color:var(--texto-debil);margin-top:2px}
+.alianza-link{font-size:11px;color:var(--acento-2);text-decoration:none}
+.alianza-codigo{margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:var(--chip-fondo);border:0.5px dashed var(--acento);border-radius:8px;padding:6px 10px;font-size:11px;color:var(--chip-texto);cursor:pointer;user-select:none}
+.alianza-codigo b{letter-spacing:1px;color:var(--texto-fuerte)}
+.hist-item{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 8px;padding:10px 0;border-bottom:0.5px solid var(--borde-suave);font-size:12px}
 .hist-item:last-child{border-bottom:none}
 .hist-nivel{font-weight:600}
-.hist-fecha{color:#555;white-space:nowrap}
+.hist-fecha{color:var(--texto-debil);white-space:nowrap}
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
-.b-silver{background:#2a2a2a;color:#ccc}
-.b-gold{background:#3a2f10;color:#d4a853}
-.b-blue{background:#13142a;color:#6ab0e0}
-.b-green{background:#0f2a1a;color:#5cd685}
-.empty{text-align:center;color:#444;font-size:12px;padding:16px 0}
-.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+.b-silver{background:var(--b-silver-fondo);color:var(--b-silver-texto)}
+.b-gold{background:var(--b-gold-fondo);color:var(--b-gold-texto)}
+.b-blue{background:var(--b-blue-fondo);color:var(--b-blue-texto)}
+.b-green{background:var(--b-green-fondo);color:var(--b-green-texto)}
+.empty{text-align:center;color:var(--texto-tenue);font-size:12px;padding:16px 0}
+.msg-full{text-align:center;padding:80px 20px;color:var(--texto-debil);font-size:13px;line-height:1.6}
 .tabs-top{display:flex;gap:8px;margin-bottom:18px}
-.tab-btn{flex:1;padding:10px;border-radius:10px;border:0.5px solid #222;background:#0f1018;color:#666;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit}
-.tab-btn.active{border-color:#7c6af7;color:#e8e6e0;background:#13142a}
-.steps{display:flex;gap:0;margin-bottom:22px;border-bottom:0.5px solid #222}
-.step-tab{flex:1;padding:10px 4px;text-align:center;font-size:11px;color:#444;border-bottom:2px solid transparent;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;overflow:hidden}
-.step-tab::before{content:attr(data-num);display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#1a1a1a;color:#666;font-size:10px;font-weight:600;flex-shrink:0}
+.tab-btn{flex:1;padding:10px;border-radius:10px;border:0.5px solid var(--borde);background:var(--tarjeta);color:var(--texto-apagado);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit}
+.tab-btn.active{border-color:var(--acento);color:var(--texto);background:var(--chip-fondo)}
+.steps{display:flex;gap:0;margin-bottom:22px;border-bottom:0.5px solid var(--borde)}
+.step-tab{flex:1;padding:10px 4px;text-align:center;font-size:11px;color:var(--texto-tenue);border-bottom:2px solid transparent;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;overflow:hidden}
+.step-tab::before{content:attr(data-num);display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--superficie-2);color:var(--texto-apagado);font-size:10px;font-weight:600;flex-shrink:0}
 .step-tab .step-label{overflow:hidden;text-overflow:ellipsis}
-.step-tab.active{color:#7c6af7;border-bottom-color:#7c6af7}
-.step-tab.active::before{background:#7c6af7;color:#fff}
-.step-tab.done{color:#4caf87}
-.step-tab.done::before{background:#4caf87;color:#fff;content:'✓'}
+.step-tab.active{color:var(--acento);border-bottom-color:var(--acento)}
+.step-tab.active::before{background:var(--acento);color:var(--texto-sobre-acento)}
+.step-tab.done{color:var(--exito)}
+.step-tab.done::before{background:var(--exito);color:#fff;content:'✓'}
 .step-content{display:none}.step-content.active{display:block}
 .servicio-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.servicio-elegido{font-size:12px;color:#888;margin:-4px 0 14px;padding:9px 11px;border-radius:8px;background:#151520;border:0.5px solid #2a2a2a}
-.servicio-elegido b{color:#e8e6e0;font-weight:600}
-.servicio-card{border:0.5px solid #2a2a2a;border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s}
-.servicio-card:hover{border-color:#555;background:#1a1a1a}
-.servicio-card.selected{border-color:#7c6af7;background:#1a1a18}
-.servicio-nombre{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:4px}
-.servicio-precio{font-size:18px;font-weight:700;color:#7c6af7}
-.servicio-dur{font-size:11px;color:#555;margin-top:4px}
-.servicio-desc{font-size:11px;color:#777;margin-top:6px;line-height:1.4}
+.servicio-elegido{font-size:12px;color:var(--texto-suave);margin:-4px 0 14px;padding:9px 11px;border-radius:8px;background:var(--info-fondo);border:0.5px solid var(--borde-2)}
+.servicio-elegido b{color:var(--texto);font-weight:600}
+.servicio-card{border:0.5px solid var(--borde-2);border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s}
+.servicio-card:hover{border-color:var(--borde-fuerte);background:var(--superficie-2)}
+.servicio-card.selected{border-color:var(--acento);background:var(--seleccion-fondo)}
+.servicio-nombre{font-size:13px;font-weight:600;color:var(--texto);margin-bottom:4px}
+.servicio-precio{font-size:18px;font-weight:700;color:var(--acento)}
+.servicio-dur{font-size:11px;color:var(--texto-debil);margin-top:4px}
+.servicio-desc{font-size:11px;color:var(--texto-medio);margin-top:6px;line-height:1.4}
 .profesional-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.profesional-card{border:0.5px solid #2a2a2a;border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s;text-align:center}
-.profesional-card:hover{border-color:#555;background:#1a1a1a}
-.profesional-card.selected{border-color:#7c6af7;background:#1a1a18}
-.profesional-avatar{width:44px;height:44px;border-radius:50%;background:#1a1a18;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:18px;margin:0 auto 8px}
-.profesional-nombre{font-size:12px;font-weight:600;color:#e8e6e0}
+.profesional-card{border:0.5px solid var(--borde-2);border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s;text-align:center}
+.profesional-card:hover{border-color:var(--borde-fuerte);background:var(--superficie-2)}
+.profesional-card.selected{border-color:var(--acento);background:var(--seleccion-fondo)}
+.profesional-avatar{width:44px;height:44px;border-radius:50%;background:var(--seleccion-fondo);border:1px solid var(--borde-2);display:flex;align-items:center;justify-content:center;font-size:18px;margin:0 auto 8px}
+.profesional-nombre{font-size:12px;font-weight:600;color:var(--texto)}
 .calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:16px}
-.cal-header{text-align:center;font-size:10px;color:#444;padding:4px 0;font-weight:500;text-transform:uppercase}
+.cal-header{text-align:center;font-size:10px;color:var(--texto-tenue);padding:4px 0;font-weight:500;text-transform:uppercase}
 .cal-day{text-align:center;padding:8px 4px;min-height:38px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:13px;transition:all 0.15s;border:0.5px solid transparent}
 .cal-day.empty{cursor:default}
-.cal-day.past{color:#333;cursor:not-allowed}
-.cal-day.available:hover{border-color:#555;background:#1a1a1a}
-.cal-day.selected{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff;font-weight:600}
-.cal-day.today{border-color:#555}
+.cal-day.past{color:var(--texto-inerte);cursor:not-allowed}
+.cal-day.available:hover{border-color:var(--borde-fuerte);background:var(--superficie-2)}
+.cal-day.selected{background:linear-gradient(135deg,var(--acento),var(--acento-2));color:var(--texto-sobre-acento);font-weight:600}
+.cal-day.today{border-color:var(--borde-fuerte)}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.cal-nav-btn{background:none;border:0.5px solid #2a2a2a;border-radius:6px;color:#888;padding:5px 10px;cursor:pointer;font-size:14px}
-.cal-nav-btn:hover{color:#e8e6e0;border-color:#555}
-.cal-mes{font-size:13px;font-weight:600;color:#e8e6e0}
+.cal-nav-btn{background:none;border:0.5px solid var(--borde-2);border-radius:6px;color:var(--texto-suave);padding:5px 10px;cursor:pointer;font-size:14px}
+.cal-nav-btn:hover{color:var(--texto);border-color:var(--borde-fuerte)}
+.cal-mes{font-size:13px;font-weight:600;color:var(--texto)}
 .horarios{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.horario-btn{padding:9px;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:0.5px solid #2a2a2a;background:transparent;color:#888;font-size:12px;cursor:pointer;transition:all 0.15s;font-family:inherit}
-.horario-btn:hover:not(:disabled){border-color:#555;color:#e8e6e0;background:#1a1a1a}
-.horario-btn.selected{background:#d4a853;color:#0a0a0a;border-color:#7c6af7;font-weight:600}
+.horario-btn{padding:9px;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:0.5px solid var(--borde-2);background:transparent;color:var(--texto-suave);font-size:12px;cursor:pointer;transition:all 0.15s;font-family:inherit}
+.horario-btn:hover:not(:disabled){border-color:var(--borde-fuerte);color:var(--texto);background:var(--superficie-2)}
+.horario-btn.selected{background:#d4a853;color:#0a0a0a;border-color:var(--acento);font-weight:600}
 .horario-btn:disabled{opacity:0.3;cursor:not-allowed}
-textarea{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
-textarea:focus{outline:none;border-color:#7c6af7}
-label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+textarea{background:var(--input-fondo);border:0.5px solid var(--input-borde);border-radius:8px;color:var(--texto);padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
+textarea:focus{outline:none;border-color:var(--acento)}
+label{font-size:11px;color:var(--texto-debil);display:block;margin-bottom:4px}
 .form-group{margin-bottom:12px}
 .btn{width:100%;padding:12px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
-.btn-primary{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
-.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,#6b59e6,#4a7cde)}
+.btn-primary{background:linear-gradient(135deg,var(--acento),var(--acento-2));color:var(--texto-sobre-acento)}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,var(--acento-hover),var(--acento-2-hover))}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
-.btn-ghost{background:transparent;color:#777;border:0.5px solid #2a2a2a;margin-top:8px}
-.btn-ghost:hover{color:#e8e6e0}
-.btn-wa{display:block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;margin-top:12px}
-.btn-wa:hover{background:#003318}
-.resumen{background:#13142a;border:0.5px solid #7c6af7;border-radius:10px;padding:16px;margin-bottom:16px}
-.resumen-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:0.5px solid #2a2a2a;font-size:13px}
+.btn-ghost{background:transparent;color:var(--texto-medio);border:0.5px solid var(--borde-2);margin-top:8px}
+.btn-ghost:hover{color:var(--texto)}
+.btn-wa{display:block;text-decoration:none;text-align:center;background:var(--wa-fondo);color:var(--wa-texto);border:0.5px solid var(--wa-borde);margin-top:12px}
+.btn-wa:hover{background:var(--wa-hover)}
+.resumen{background:var(--chip-fondo);border:0.5px solid var(--acento);border-radius:10px;padding:16px;margin-bottom:16px}
+.resumen-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--borde-2);font-size:13px}
 .resumen-row:last-child{border-bottom:none}
-.resumen-label{color:#666}
-.resumen-val{color:#e8e6e0;font-weight:500}
+.resumen-label{color:var(--texto-apagado)}
+.resumen-val{color:var(--texto);font-weight:500}
 .success-screen{text-align:center;padding:40px 20px}
 .success-icon{font-size:56px;margin-bottom:16px}
-.success-title{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}
-.success-sub{font-size:13px;color:#555;line-height:1.6}
+.success-title{font-size:20px;font-weight:600;color:var(--texto-fuerte);margin-bottom:8px}
+.success-sub{font-size:13px;color:var(--texto-debil);line-height:1.6}
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px}
-.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
-.no-horarios{text-align:center;padding:20px;color:#444;font-size:13px}
-.spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;border-top-color:#7c6af7;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
+.alert-err{background:var(--alerta-fondo);border:0.5px solid var(--alerta-borde);color:var(--alerta-texto)}
+.no-horarios{text-align:center;padding:20px;color:var(--texto-tenue);font-size:13px}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--spinner-anillo);border-top-color:var(--acento);border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:480px){.servicio-grid{grid-template-columns:1fr}.profesional-grid{grid-template-columns:1fr 1fr}.horarios{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:400px){
@@ -258,7 +274,34 @@ label{font-size:11px;color:#555;display:block;margin-bottom:4px}
 <!-- Compartido con reservar.html: construye el modal de ubicación y horario y
      agrega su markup al body. -->
 <script src="ubicacion-modal.js"></script>
+<script src="tema.js"></script>
 <script>
+// Tema público (ver unirse.html): opcional por diseño, si tema.js no carga la página queda como siempre.
+function aplicarTemaPublico(barb){
+  // Guardas typeof: si tema.js no cargó, estos nombres no existen y
+  // referenciarlos lanzaría ReferenceError. Con typeof no lanza.
+  if(typeof hexValido!=='function' || typeof derivarSuperficies!=='function'){
+    console.warn('tema.js no está disponible; la página queda con su aspecto por defecto');
+    return false;
+  }
+  if(!barb) return false;
+  // El modo lo elige el dueño en el panel. Solo «claro» cambia la página: 'auto'
+  // y 'oscuro' son la página oscura de siempre (12 de los 13 negocios están en
+  // 'auto'; si 'auto' también cambiara, casi todas las páginas se moverían).
+  const modo = barb.modo_tema === 'claro' ? 'claro' : 'oscuro';
+  // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
+  // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
+  // variable se toca y la página es la de antes, píxel por píxel.
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  if(!vars) return false;
+  // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
+  // valor que no pase hexValido no debe poder convertirse en una regla. Con
+  // setProperty el peor caso es una variable ignorada.
+  const raiz = document.documentElement;
+  Object.keys(vars).forEach(k => raiz.style.setProperty(k, vars[k]));
+  return true;
+}
+
 // Las credenciales las define supabase-config.js, cargado en el <head>. Si no
 // llegó, este bloque moriría en la línea de abajo y la página quedaría viva
 // pero inservible: entera en pantalla, congelada en "Cargando...", con los
@@ -414,8 +457,8 @@ async function cargarMisReservas(){
   if(!lista.length){
     cont.innerHTML = `<div class="card" style="text-align:center">
       <div style="font-size:32px;margin-bottom:8px">📭</div>
-      <div style="font-size:13px;color:#e8e6e0;margin-bottom:6px">No tienes reservas agendadas</div>
-      <div style="font-size:12px;color:#666;line-height:1.5">Cuando reserves, va a aparecer acá.</div>
+      <div style="font-size:13px;color:var(--texto);margin-bottom:6px">No tienes reservas agendadas</div>
+      <div style="font-size:12px;color:var(--texto-apagado);line-height:1.5">Cuando reserves, va a aparecer acá.</div>
       <button class="btn btn-primary" style="margin-top:14px" onclick="cambiarTabTop('reservar')">Reservar ahora</button>
     </div>`;
     return;
@@ -424,10 +467,10 @@ async function cargarMisReservas(){
     const f = new Date(r.fecha+'T12:00:00');
     const dia = f.toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'});
     return `<div class="card" style="margin-bottom:12px">
-      <div style="font-size:11px;color:#7c6af7;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${escapeHtml(dia)}</div>
-      <div style="font-size:22px;font-weight:700;color:#e8e6e0;margin:4px 0 8px">${escapeHtml((r.hora||'').slice(0,5))}</div>
-      <div style="font-size:13px;color:#e8e6e0">${escapeHtml(r.servicio||'Servicio')}</div>
-      ${r.profesional?`<div style="font-size:12px;color:#666;margin-top:2px">con ${escapeHtml(r.profesional)}</div>`:''}
+      <div style="font-size:11px;color:var(--acento);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${escapeHtml(dia)}</div>
+      <div style="font-size:22px;font-weight:700;color:var(--texto);margin:4px 0 8px">${escapeHtml((r.hora||'').slice(0,5))}</div>
+      <div style="font-size:13px;color:var(--texto)">${escapeHtml(r.servicio||'Servicio')}</div>
+      ${r.profesional?`<div style="font-size:12px;color:var(--texto-apagado);margin-top:2px">con ${escapeHtml(r.profesional)}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -462,7 +505,7 @@ function rRenderServicios(){
       <div class="servicio-precio">$${s.precio.toLocaleString('es-CL')}</div>
       <div class="servicio-dur">${s.duracion_min} min</div>
       ${s.descripcion?`<div class="servicio-desc">${s.descripcion}</div>`:''}
-    </div>`).join('') || '<p style="color:#555;font-size:13px">No hay servicios disponibles.</p>';
+    </div>`).join('') || '<p style="color:var(--texto-debil);font-size:13px">No hay servicios disponibles.</p>';
 }
 
 // Gemela de renderServicioElegido() en reservar.html.
@@ -623,7 +666,7 @@ function rRenderResumen(){
     <div class="resumen-row"><span class="resumen-label">Profesional</span><span class="resumen-val">${RSEL.profesional?.nombre||''}</span></div>
     <div class="resumen-row"><span class="resumen-label">Fecha</span><span class="resumen-val">${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}</span></div>
     <div class="resumen-row"><span class="resumen-label">Hora</span><span class="resumen-val">${RSEL.hora} hrs</span></div>
-    <div class="resumen-row"><span class="resumen-label">Valor</span><span class="resumen-val" style="color:#7c6af7">$${RSEL.servicio?.precio.toLocaleString('es-CL')}</span></div>
+    <div class="resumen-row"><span class="resumen-label">Valor</span><span class="resumen-val" style="color:var(--acento)">$${RSEL.servicio?.precio.toLocaleString('es-CL')}</span></div>
     <div class="resumen-row"><span class="resumen-label">Cliente</span><span class="resumen-val">${CLIENTE_NOMBRE}</span></div>`;
 }
 
@@ -697,7 +740,7 @@ function rNuevaReserva(){
 // "Plata/Oro/Diamante" fijos.
 const ICONOS_NIVEL = ['🥈','🥇','💎','⭐','🌟','👑'];
 const BADGES_NIVEL = ['b-silver','b-gold','b-blue','b-green'];
-const COLORES_NIVEL = ['#aaa','#d4a853','#6ab0e0','#5cd685'];
+const COLORES_NIVEL = ['var(--nivel-0)','var(--nivel-1)','var(--nivel-2)','var(--nivel-3)'];
 function iconoPos(i){ return i>=0?ICONOS_NIVEL[i%ICONOS_NIVEL.length]:'🌱'; }
 function badgePos(i){ return i>=0?BADGES_NIVEL[i%BADGES_NIVEL.length]:'b-silver'; }
 const MESES_CORTOS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -707,7 +750,7 @@ function fmtFechaCorta(f){
   if(isNaN(d))return f;
   return d.getUTCDate()+' '+MESES_CORTOS[d.getUTCMonth()]+' '+d.getUTCFullYear();
 }
-function colorPos(i){ return i>=0?COLORES_NIVEL[i%COLORES_NIVEL.length]:'#666'; }
+function colorPos(i){ return i>=0?COLORES_NIVEL[i%COLORES_NIVEL.length]:'var(--texto-apagado)'; }
 
 function mostrarError(msg){
   document.getElementById('contenido').innerHTML = `<div class="msg-full">${msg}</div>`;
@@ -751,9 +794,10 @@ async function init(){
   // PostgREST devuelve 400 y ACÁ SE VE COMO "no encontramos este negocio", que
   // no se parece en nada al problema real. Por eso la migración de intervalo_min
   // tuvo que ir ANTES que este código, no después.
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono,intervalo_min').eq('id',BARBERIA_ID).single();
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono,intervalo_min,color_marca,color_fondo_logo,modo_tema').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
+  aplicarTemaPublico(barb);
   // Antes de initReservar(), que arma la grilla.
   R_PASO_MIN = rIntervaloDe(barb);
   document.getElementById('h-nombre').textContent = barb.nombre + ' — Club VIP';
@@ -890,7 +934,7 @@ async function render(cliente, historial, alianzas, niveles){
     <div class="card hero">
       <div class="hero-badge">${esNuevo?'🎉':iconoPos(idx)}</div>
       <div class="hero-nombre">${cliente.nombre}</div>
-      <div class="hero-nivel" style="color:${esNuevo?'#7c6af7':colorPos(idx)}">${esNuevo?'¡Bienvenido/a!':nivel}</div>
+      <div class="hero-nivel" style="color:${esNuevo?'var(--acento)':colorPos(idx)}">${esNuevo?'¡Bienvenido/a!':nivel}</div>
       <div class="hero-beneficio">${beneficio}</div>
       ${progresoHtml}
     </div>
