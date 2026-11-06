@@ -1050,7 +1050,6 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         <div class="fg" style="max-width:320px"><label>Tiempo que se retiene la hora</label><select id="ab-ret"></select>
           <div style="font-size:10px;color:var(--text3);margin-top:4px">Pasado este tiempo sin abono, la hora vuelve a quedar disponible. Si el cliente sube el comprobante, se mantiene al menos 30 minutos más mientras lo revisas.</div></div>
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin:10px 0"><input type="checkbox" id="ab-exige" style="width:auto"> Exigir foto del comprobante (si no, basta con que avisen que transfirieron)</label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin:10px 0 16px"><input type="checkbox" id="ab-club" style="width:auto"> Los clientes del Club VIP reservan sin abono</label>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px">Datos para transferir</div>
         <div class="fr"><div class="fg"><label>Banco</label><input id="ab-banco" type="text" placeholder="Banco Estado"></div><div class="fg"><label>Tipo de cuenta</label><select id="ab-tcuenta"><option value="">—</option><option>Cuenta Vista / RUT</option><option>Cuenta Corriente</option><option>Cuenta de Ahorro</option></select></div></div>
         <div class="fr"><div class="fg"><label>Número de cuenta</label><input id="ab-ncuenta" type="text" inputmode="numeric"></div><div class="fg"><label>Titular</label><input id="ab-titular" type="text"></div></div>
@@ -7432,12 +7431,12 @@ async function cargarAbonoConfig(){
 }
 function pintarAbonoConfig(){
   const g=id=>document.getElementById(id); if(!g('ab-activo')) return;
-  const c={activo:false,tipo:'porcentaje',valor:30,retencion_min:30,exige_comprobante:false,club_exento:true,...(ABONO_CFG||{})};
+  const c={activo:false,tipo:'porcentaje',valor:30,retencion_min:30,exige_comprobante:false,...(ABONO_CFG||{})};
   g('ab-activo').checked=!!c.activo; g('ab-tipo').value=c.tipo; g('ab-valor').value=c.valor;
   const opts=[...new Set([...ABONO_RETENCIONES,c.retencion_min])].sort((a,b)=>a-b);
   g('ab-ret').innerHTML=opts.map(m=>`<option value="${m}">${abonoTextoRetencion(m)}</option>`).join('');
   g('ab-ret').value=String(c.retencion_min);
-  g('ab-exige').checked=!!c.exige_comprobante; g('ab-club').checked=!!c.club_exento;
+  g('ab-exige').checked=!!c.exige_comprobante;
   g('ab-banco').value=c.banco||''; g('ab-tcuenta').value=c.tipo_cuenta||''; g('ab-ncuenta').value=c.numero_cuenta||'';
   g('ab-titular').value=c.titular||''; g('ab-rut').value=c.rut||''; g('ab-instr').value=c.instrucciones||'';
   abonoToggle();
@@ -7458,7 +7457,7 @@ async function guardarAbonoConfig(){
   const g=id=>document.getElementById(id), t=id=>g(id).value.trim()||null;
   const activo=g('ab-activo').checked, tipo=g('ab-tipo').value, valor=parseFloat(g('ab-valor').value)||0;
   const o={barberia_id:S.barberia.id,activo,tipo,valor,retencion_min:parseInt(g('ab-ret').value)||30,
-    exige_comprobante:g('ab-exige').checked,club_exento:g('ab-club').checked,
+    exige_comprobante:g('ab-exige').checked,club_exento:false,
     banco:t('ab-banco'),tipo_cuenta:g('ab-tcuenta').value||null,numero_cuenta:t('ab-ncuenta'),
     titular:t('ab-titular'),rut:t('ab-rut'),instrucciones:t('ab-instr'),updated_at:new Date().toISOString()};
   if(activo){

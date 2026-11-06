@@ -680,3 +680,25 @@ end $$;
 drop trigger if exists reservas_abono_coherente on public.reservas;
 create trigger reservas_abono_coherente before update on public.reservas
   for each row execute function public.trg_reserva_abono_coherente();
+
+-- 12. Club VIP: todos abonan (sin excepción) -------------------------------------
+-- Se decidió que el abono aplica igual a clientes del Club VIP. club_exento queda
+-- en la tabla sin uso para no romper nada; esta función ya no lo mira.
+update public.abono_config set club_exento = false where club_exento;
+create or replace function public.crear_reserva_club_abono(
+  p_barberia_id uuid, p_cliente_id uuid, p_fecha date, p_hora time,
+  p_servicio text default null, p_barbero_nombre text default null, p_notas text default null)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare v_id uuid; v_monto numeric;
+begin
+  perform liberar_abonos_vencidos();
+  v_monto := abono_monto_para(p_barberia_id, p_servicio);
+  if v_monto > 0 and _abono_solapa(p_barberia_id, p_barbero_nombre, p_fecha, p_hora,
+        _abono_duracion(p_barberia_id, p_servicio), null) then
+    raise exception 'Esa hora acaba de ser tomada. Elige otra';
+  end if;
+  v_id := crear_reserva_publica_club(p_barberia_id, p_cliente_id, p_fecha, p_hora,
+    p_servicio, p_barbero_nombre, p_notas);
+  if v_monto > 0 then return _abono_retener(v_id, v_monto); end if;
+  return jsonb_build_object('id', v_id, 'requiere_abono', false);
+end $$;
