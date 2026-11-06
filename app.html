@@ -5365,7 +5365,7 @@ function clientesFiltrados(){
   const q=(document.getElementById('q-cliente').value||'').toLowerCase();
   const ef=document.getElementById('f-estado-cl').value;
   return S.clientes.filter(c=>{
-    const m=!q||(c.nombre+' '+(c.apellido||'')+' '+(c.whatsapp||'')+' '+(c.email||'')).toLowerCase().includes(q);
+    const m=!q||coincideCliente(c,q);
     const e=getEstado(c.id); return m&&(!ef||e===ef);
   });
 }
@@ -7369,7 +7369,7 @@ function renderReporteCliente(){
   const q=(document.getElementById('rep-buscar-cl').value||'').toLowerCase();
   const est=document.getElementById('rep-filtro-estado-cl').value;
   const list=S.clientes.filter(c=>{
-    const m=!q||(c.nombre+' '+(c.apellido||'')+' '+(c.whatsapp||'')).toLowerCase().includes(q);
+    const m=!q||coincideCliente(c,q);
     const e=getEstado(c.id);
     return m&&(!est||e===est);
   });
@@ -8225,11 +8225,23 @@ async function temaGuardar() {
   notify('Tema guardado ✓');
   temaPintar();
 }
+// Búsqueda de clientes: sin importar mayúsculas ni tildes, y cada palabra que se
+// escribe puede estar en el nombre, el apellido, el WhatsApp o el correo, en
+// cualquier orden. Así "perez juan", "Pérez" o "jua" encuentran al mismo cliente
+// tanto si se guardó "Juan"+"Pérez" separados como si todo quedó en el nombre.
+function normBusq(t){ return String(t==null?'':t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function coincideCliente(c,q){
+  const palabras=normBusq(q).split(/\s+/).filter(Boolean);
+  if(!palabras.length) return true;
+  const pajar=normBusq([c.nombre,c.apellido,c.whatsapp,c.email].filter(Boolean).join(' '));
+  const solo=pajar.replace(/[^0-9a-z ]/g,'');
+  return palabras.every(w=>pajar.includes(w)||(/^\+?\d[\d ]*$/.test(w)&&solo.replace(/ /g,'').includes(w.replace(/\D/g,''))));
+}
 // ─── AUTOCOMPLETAR CLIENTE EN RESERVA ───
 function buscarClienteReserva(q){
   const box=document.getElementById('r-sugerencias');
   if(!q||q.length<2){box.style.display='none';return;}
-  const matches=S.clientes.filter(c=>(c.nombre+' '+(c.apellido||'')+' '+(c.whatsapp||'')).toLowerCase().includes(q.toLowerCase())).slice(0,6);
+  const matches=S.clientes.filter(c=>coincideCliente(c,q)).slice(0,6);
   if(!matches.length){box.style.display='none';return;}
   box.style.display='';
   box.innerHTML=matches.map(c=>`

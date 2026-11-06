@@ -72,6 +72,14 @@ async function sesion(rol,signupFalla){
  await p.evaluate(()=>abrirProducto());
  const nuevo=await p.evaluate(()=>({id:document.getElementById('pr-id').value,n:document.getElementById('pr-nombre').value,t:document.getElementById('pr-titulo').textContent}));
  ok('"+ Producto" abre vacío',nuevo.id===''&&nuevo.n===''&&/Agregar/.test(nuevo.t),nuevo);
+ const bq=await p.evaluate(()=>{
+   const sep={nombre:'Juan',apellido:'Pérez',whatsapp:'+56 9 1234 5678',email:'j@x.cl'};
+   const junto={nombre:'Juan Pérez',apellido:'',whatsapp:'+56912345678'};
+   const qs=['juan','perez','Pérez','pére','juan perez','perez juan','JUAN PÉREZ','j p','56912345678','1234','zzz','juan gomez'];
+   return qs.map(q=>[q,coincideCliente(sep,q),coincideCliente(junto,q)]);
+ });
+ const esperado={'zzz':false,'juan gomez':false};
+ ok('búsqueda igual con nombre/apellido separados o juntos',bq.every(([q,a,b])=>a===b&&a===(q in esperado?esperado[q]:true)),bq);
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>/^FALLO/.test(x)).length+' fallos de '+res.length); await b.close();
 })();
