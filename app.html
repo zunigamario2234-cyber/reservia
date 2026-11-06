@@ -49,7 +49,7 @@
   --p1-glow:rgba(124,106,247,0.3);
 }
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
-.sidebar{width:220px;min-height:100vh;background:linear-gradient(180deg,var(--bg2) 0%,var(--bg) 100%);border-right:0.5px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.2s}
+.sidebar{width:220px;height:100vh;height:100dvh;background:linear-gradient(180deg,var(--bg2) 0%,var(--bg) 100%);border-right:0.5px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.2s}
 .logo{padding:20px 16px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:10px}
 .logo-icon{font-size:22px;flex-shrink:0}
 .logo-text h1{font-size:14px;font-weight:700;color:#fff}
@@ -57,7 +57,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 .user-info{padding:12px 16px;border-bottom:0.5px solid var(--border);font-size:11px;color:var(--text3)}
 .user-name{color:var(--text2);font-size:12px;margin-bottom:2px}
 .user-role{display:inline-block;padding:1px 6px;background:var(--bg4);border-radius:4px;color:var(--p1);font-size:10px}
-nav{flex:1;padding:8px 0;overflow-y:auto}
+nav{flex:1;min-height:0;padding:8px 0;overflow-y:auto}
+.nav-bottom{flex-shrink:0}
 .nav-section{padding:0 16px 4px;font-size:9px;font-weight:600;color:#4a4a6a;text-transform:uppercase;letter-spacing:0.8px;margin-top:12px}
 .nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent}
 .nav-item:hover{color:var(--text);background:var(--bg4)}
@@ -783,7 +784,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 <div id="p-inventario" class="page">
   <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <input type="text" id="q-inv" placeholder="Buscar producto..." style="max-width:260px" oninput="renderInventario()">
-    <button class="btn btn-primary" onclick="openM('m-producto')">+ Producto</button>
+    <button class="btn btn-primary" onclick="abrirProducto()">+ Producto</button>
     <button class="btn btn-ghost" onclick="openM('m-entrada')">📦 Entrada stock</button>
   </div>
   <div class="g4" style="margin-bottom:14px">
@@ -1580,10 +1581,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 <!-- Producto -->
 <div class="overlay" id="m-producto">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">Agregar producto</span><button class="xbtn" onclick="closeM('m-producto')">×</button></div>
-    <div class="fr"><div class="fg"><label>Código</label><input id="pr-cod" type="text" placeholder="PRD-001"></div><div class="fg"><label>Nombre *</label><input id="pr-nombre" type="text" placeholder="Cera Matte"></div></div>
+    <div class="modal-hdr"><span class="modal-title" id="pr-titulo">Agregar producto</span><button class="xbtn" onclick="closeM('m-producto')">×</button></div>
+    <input type="hidden" id="pr-id"><div class="fr"><div class="fg"><label>Código</label><input id="pr-cod" type="text" placeholder="PRD-001"></div><div class="fg"><label>Nombre *</label><input id="pr-nombre" type="text" placeholder="Cera Matte"></div></div>
     <div class="fr"><div class="fg"><label>Categoría</label><select id="pr-cat"><option>Styling</option><option>Barba</option><option>Shampoo</option><option>Herramientas</option><option>Otro</option></select></div><div class="fg"><label>Proveedor</label><input id="pr-prov" type="text"></div></div>
-    <div class="fr"><div class="fg"><label>Stock inicial</label><input id="pr-stock" type="number" value="0" min="0"></div><div class="fg"><label>Stock mínimo</label><input id="pr-min" type="number" value="2" min="0"></div></div>
+    <div class="fr"><div class="fg"><label id="pr-stock-lbl">Stock inicial</label><input id="pr-stock" type="number" value="0" min="0"></div><div class="fg"><label>Stock mínimo</label><input id="pr-min" type="number" value="2" min="0"></div></div>
     <div class="fr"><div class="fg"><label>Stock máximo</label><input id="pr-max" type="number" value="20" min="0"></div><div class="fg"><label>Costo unitario ($)</label><input id="pr-costo" type="number" value="0" min="0"></div></div>
     <div class="fg"><label>Precio venta ($)</label><input id="pr-precio" type="number" value="0" min="0"></div>
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
@@ -3246,19 +3247,47 @@ async function guardarCosto(){
   await loadCostos();closeM('m-costo');notify(id?'Gasto actualizado ✓':'Gasto registrado ✓');renderCostos();renderDashboard();
 }
 
+// Un mismo formulario para agregar y editar. Con id en #pr-id es edición:
+// se precarga el producto y al guardar se actualiza (nombre, precios, mínimos
+// y también el stock, para corregir un conteo).
+function abrirProducto(id){
+  const p=id?S.inventario.find(x=>x.id===id):null;
+  const set=(k,v)=>{document.getElementById(k).value=v;};
+  set('pr-id',p?p.id:'');
+  set('pr-cod',p?(p.codigo||''):''); set('pr-nombre',p?p.nombre:'');
+  const selCat=document.getElementById('pr-cat');
+  if(p&&p.categoria&&![...selCat.options].some(o=>o.value===p.categoria)) selCat.add(new Option(p.categoria));
+  set('pr-cat',p?(p.categoria||'Otro'):'Styling'); set('pr-prov',p?(p.proveedor||''):'');
+  set('pr-stock',p?p.stock:0); set('pr-min',p?p.stock_min:2); set('pr-max',p?p.stock_max:20);
+  set('pr-costo',p?(p.costo_unitario||0):0); set('pr-precio',p?(p.precio_venta||0):0);
+  document.getElementById('pr-titulo').textContent=p?'Editar producto':'Agregar producto';
+  document.getElementById('pr-stock-lbl').textContent=p?'Stock actual':'Stock inicial';
+  openM('m-producto');
+}
+
 async function guardarProducto(){
   const n=document.getElementById('pr-nombre').value.trim();
   if(!n){notify('El nombre es obligatorio','warn');return;}
-  const {error}=await sb.from('inventario').insert({
-    barberia_id:S.barberia.id,
-    codigo:document.getElementById('pr-cod').value||'PRD-'+String(S.inventario.length+1).padStart(3,'0'),
+  const id=document.getElementById('pr-id').value;
+  const num=(k,def,f)=>{const v=f(document.getElementById(k).value);return isNaN(v)?def:v;};
+  const datos={
     nombre:n,categoria:document.getElementById('pr-cat').value,proveedor:document.getElementById('pr-prov').value,
-    stock:parseInt(document.getElementById('pr-stock').value)||0,
-    stock_min:parseInt(document.getElementById('pr-min').value)||2,
-    stock_max:parseInt(document.getElementById('pr-max').value)||20,
-    costo_unitario:parseFloat(document.getElementById('pr-costo').value)||0,
-    precio_venta:parseFloat(document.getElementById('pr-precio').value)||0
-  });
+    stock:num('pr-stock',0,parseInt),
+    stock_min:num('pr-min',2,parseInt),
+    stock_max:num('pr-max',20,parseInt),
+    costo_unitario:num('pr-costo',0,parseFloat),
+    precio_venta:num('pr-precio',0,parseFloat)
+  };
+  if(id){
+    datos.codigo=document.getElementById('pr-cod').value.trim()||null;
+    const {error}=await sb.from('inventario').update(datos).eq('id',id);
+    if(error){notify(error.message,'err');return;}
+    await loadInventario();closeM('m-producto');notify('Producto actualizado ✓');renderInventario();
+    return;
+  }
+  datos.barberia_id=S.barberia.id;
+  datos.codigo=document.getElementById('pr-cod').value||'PRD-'+String(S.inventario.length+1).padStart(3,'0');
+  const {error}=await sb.from('inventario').insert(datos);
   if(error){notify(error.message,'err');return;}
   await loadInventario();closeM('m-producto');notify('Producto agregado ✓');renderInventario();
 }
@@ -5950,6 +5979,7 @@ function renderInventario(){
            y el precio, y el producto entra preseleccionado al buscador. Se
            deshabilita sin stock, igual que en el buscador del cobro. -->
       <button class="btn btn-primary btn-sm" onclick="abrirVentaProducto('${p.id}')" ${p.stock<=0?'disabled':''} title="${p.stock<=0?'Sin stock':'Vender este producto'}">💵 Vender</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirProducto('${p.id}')" title="Editar producto">✏️ Editar</button>
       <button class="btn btn-danger btn-sm" onclick="eliminar('inventario','${p.id}',loadInventario,renderInventario)">×</button></td></tr>`;
   }).join('');
 }
