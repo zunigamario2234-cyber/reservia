@@ -319,6 +319,62 @@ input[readonly]{background:#111;color:#666;cursor:default}
   #horario-dias > div{flex-direction:column;align-items:flex-start!important;gap:6px!important}
   #horario-dias input[type=time]{width:auto;flex:1}
 }
+
+/* ═══ PANEL EN MODO CLARO ═══════════════════════════════════════════════
+   Solo actúa cuando aplicarTemaPanel() pone la clase panel-claro en <body>
+   (el dueño eligió modo claro). Sin la clase, NADA de esto aplica y el panel
+   es exactamente el de siempre. Las variables (--bg, --text, --p1…) las
+   escribe aplicarTemaPanel() desde tema.js; acá solo van los colores que el
+   panel traía escritos a mano (blanco para títulos, verde/rojo/dorado de
+   estados) y que en fondo claro no se leen. */
+body.panel-claro .logo-text h1,body.panel-claro .topbar h2,body.panel-claro .mc-val,body.panel-claro .modal-title{color:var(--texto-fuerte)}
+body.panel-claro .nav-section{color:var(--text3)}
+body.panel-claro .btn-primary{color:var(--texto-sobre-acento)}
+body.panel-claro .btn-primary:hover{background:var(--acento-hover)}
+body.panel-claro .btn-ghost{color:var(--text2)}
+body.panel-claro .btn-danger{background:var(--alerta-fondo);color:var(--alerta-texto);border-color:var(--alerta-borde)}
+body.panel-claro .btn-wa{background:var(--wa-fondo);color:var(--wa-texto);border-color:var(--wa-borde)}
+body.panel-claro .btn-wa:hover{background:var(--wa-hover)}
+body.panel-claro .up,body.panel-claro .imp-step-tab.done{color:var(--exito)}
+body.panel-claro .imp-step-tab.done::before{background:var(--exito);color:#fff}
+body.panel-claro .down{color:var(--alerta-texto)}
+body.panel-claro .card:hover{border-color:var(--borde-fuerte)}
+body.panel-claro td{color:var(--texto-medio);border-bottom-color:var(--borde-suave)}
+body.panel-claro tr:hover td{background:var(--bg4)}
+body.panel-claro .b-silver{background:var(--b-silver-fondo);color:var(--b-silver-texto)}
+body.panel-claro .b-green{background:var(--b-green-fondo);color:var(--b-green-texto)}
+body.panel-claro .b-red{background:var(--alerta-fondo);color:var(--alerta-texto)}
+body.panel-claro .b-blue{background:var(--b-blue-fondo);color:var(--b-blue-texto)}
+body.panel-claro .b-purple{background:#F1E8FB;color:#6B21A8}
+body.panel-claro .b-orange{background:#FFEBD6;color:#9A3412}
+body.panel-claro input[readonly]{background:var(--bg4);color:var(--text2)}
+body.panel-claro .tab.active{color:var(--b-gold-texto);border-bottom-color:var(--b-gold-texto)}
+body.panel-claro .al-warn{background:var(--aviso-fondo);border-color:var(--aviso-borde);color:var(--b-gold-texto)}
+body.panel-claro .al-err{background:var(--alerta-fondo);border-color:var(--alerta-borde);color:var(--alerta-texto)}
+body.panel-claro .al-ok{background:var(--b-green-fondo);border-color:var(--exito);color:var(--b-green-texto)}
+body.panel-claro .al-info{background:var(--b-blue-fondo);border-color:var(--b-blue-texto);color:var(--b-blue-texto)}
+body.panel-claro .empty{color:var(--text3)}
+body.panel-claro .notif.ok{background:var(--b-green-fondo);border-color:var(--exito);color:var(--b-green-texto)}
+body.panel-claro .notif.warn{color:var(--b-gold-texto);border-color:var(--aviso-borde)}
+body.panel-claro .notif.err{color:var(--alerta-texto);border-color:var(--alerta-borde)}
+body.panel-claro .spinner{border-color:var(--borde-2);border-top-color:var(--p1)}
+body.panel-claro .cal-block{box-shadow:0 1px 4px rgba(20,24,40,.14)}
+body.panel-claro .cal-block:hover{box-shadow:0 3px 10px rgba(20,24,40,.22)}
+body.panel-claro .cb-menu-btn{background:rgba(255,255,255,.55)}
+body.panel-claro .cb-menu-btn:hover{background:rgba(255,255,255,.85)}
+body.panel-claro .ag-ctx-menu{box-shadow:0 8px 24px rgba(20,24,40,.18)}
+/* Colores escritos en línea dentro de las plantillas de cada pantalla */
+body.panel-claro [style*="color:#ccc"],body.panel-claro [style*="color:#bbb"]{color:var(--text2)!important}
+body.panel-claro [style*="color:#00e096"],body.panel-claro [style*="color:#5cd685"],body.panel-claro [style*="color:#4caf87"]{color:var(--exito)!important}
+body.panel-claro [style*="color:#ff5555"],body.panel-claro [style*="color:#e05050"],body.panel-claro [style*="color:#ff8f8f"]{color:var(--alerta-texto)!important}
+body.panel-claro [style*="color:#5b8def"]{color:var(--b-blue-texto)!important}
+body.panel-claro [style*="color:#d4a853"],body.panel-claro [style*="color:#e0a850"],body.panel-claro [style*="color:#e0a030"],body.panel-claro [style*="color:#f0a500"]{color:var(--b-gold-texto)!important}
+body.panel-claro [style*="solid #1a1a1a"],body.panel-claro [style*="solid #2a2a2a"]{border-color:var(--borde-suave)!important}
+body.panel-claro [style*="solid #2a2a50"]{border-color:var(--borde-2)!important}
+body.panel-claro [style*="background:#1f0000"]{background:var(--alerta-fondo)!important}
+body.panel-claro [style*="background:#0f2a1a"]{background:var(--b-green-fondo)!important}
+body.panel-claro [style*="background:#002210"]{background:var(--wa-fondo)!important;color:var(--wa-texto)!important;border-color:var(--wa-borde)!important}
+body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--alerta-fondo)!important}
 </style>
 </head>
 <body>
@@ -339,8 +395,8 @@ input[readonly]{background:#111;color:#666;cursor:default}
         <path d="M11 20l2.5 2.5L21 17" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
         <defs>
           <linearGradient id="lg_s" x1="0" y1="0" x2="32" y2="32">
-            <stop stop-color="#7c6af7"/>
-            <stop offset="0.5" stop-color="#5b8def"/>
+            <stop style="stop-color:var(--p1,#7c6af7)"/>
+            <stop offset="0.5" style="stop-color:var(--p2,#5b8def)"/>
             <stop offset="1" stop-color="#38c9b0"/>
           </linearGradient>
         </defs>
@@ -1630,6 +1686,7 @@ async function loadAll(){
   const {data:b,error:eb} = await sb.from('barberias').select('*').eq('id',p.barberia_id).single();
   if(eb||!b) throw new Error('No encontramos el negocio asociado a tu cuenta. Contacta al soporte.');
   S.barberia = b;
+  aplicarTemaPanel();
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
   const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos()];
@@ -4329,13 +4386,13 @@ function mkChart(canvasId,config){
   DASH_CHARTS[canvasId]=new Chart(el.getContext('2d'),config);
 }
 
-const CHART_GRID={color:'#1e2030'};
+const CHART_GRID={get color(){return PANEL_CLARO?'#E3E5EC':'#1e2030';}};
 const CHART_TICKS={color:'#888',font:{size:10}};
 
 function renderChartIngresos(periodo){
   const b=buildIngresosBuckets(periodo);
   document.getElementById('d-ing-title').textContent='Ingresos — '+({dia:'hoy vs. ayer',semana:'esta semana',mes:'mes actual',anio:'este año'}[periodo]);
-  const datasets=[{label:b.curLabel,data:b.curData,borderColor:'#7c6af7',backgroundColor:b.tipo==='bar'?'#7c6af7':'rgba(124,106,247,0.15)',tension:0.3,fill:b.tipo==='line'}];
+  const datasets=[{label:b.curLabel,data:b.curData,borderColor:cvar('--p1','#7c6af7'),backgroundColor:b.tipo==='bar'?cvar('--p1','#7c6af7'):panelRgba(cvar('--p1','#7c6af7'),0.15),tension:0.3,fill:b.tipo==='line'}];
   if(b.prevData)datasets.push({label:b.prevLabel,data:b.prevData,borderColor:'#3a3a5a',backgroundColor:'#3a3a5a',borderDash:b.tipo==='line'?[5,4]:undefined,tension:0.3,fill:false});
   mkChart('d-chart-ingresos',{
     type:b.tipo,
@@ -4365,7 +4422,7 @@ function renderChartEstados(range){
   }
   mkChart('d-chart-estados',{
     type:'doughnut',
-    data:{labels,datasets:[{data,backgroundColor:labels.map(e=>ESTADO_HEX[e]),borderColor:'#0f1020',borderWidth:2}]},
+    data:{labels,datasets:[{data,backgroundColor:labels.map(e=>ESTADO_HEX[e]),borderColor:cvar('--bg3','#0f1020'),borderWidth:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#888',font:{size:10},boxWidth:10}}}}
   });
 }
@@ -4383,7 +4440,7 @@ function renderChartServicios(range){
   const top=Object.entries(conteo).sort((a,b)=>b[1]-a[1]).slice(0,5);
   mkChart('d-chart-servicios',{
     type:'bar',
-    data:{labels:top.map(t=>t[0]),datasets:[{label:'Citas',data:top.map(t=>t[1]),backgroundColor:'#5b8def',borderRadius:5}]},
+    data:{labels:top.map(t=>t[0]),datasets:[{label:'Citas',data:top.map(t=>t[1]),backgroundColor:cvar('--p2','#5b8def'),borderRadius:5}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false}},
       scales:{x:{grid:CHART_GRID,ticks:{...CHART_TICKS,stepSize:1}},y:{grid:{display:false},ticks:CHART_TICKS}}
@@ -4404,7 +4461,7 @@ function renderChartNuevos(range){
   });
   mkChart('d-chart-nuevos',{
     type:'doughnut',
-    data:{labels:['Nuevos','Recurrentes'],datasets:[{data:[nuevos,recurrentes],backgroundColor:['#00e096','#5b8def'],borderColor:'#0f1020',borderWidth:2}]},
+    data:{labels:['Nuevos','Recurrentes'],datasets:[{data:[nuevos,recurrentes],backgroundColor:['#00e096','#5b8def'],borderColor:cvar('--bg3','#0f1020'),borderWidth:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#888',font:{size:11},boxWidth:10}}}}
   });
 }
@@ -5713,9 +5770,12 @@ function hexToRgba(hex,a){
   const n=parseInt(hex.slice(1),16);
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
 }
+// En modo claro el borde y el fondo siguen siendo el color del estado, pero el
+// TEXTO va en una versión oscura: #00e096 sobre blanco no se lee.
+const ESTADO_TEXTO_CLARO={'Pendiente':'#7A5A0B','Confirmada':'#1D4FA8','En curso':'#4B2FC8','Atendida':'#0F6B3A','No asistió':'#9A3412','Cancelada':'#B42318'};
 function estadoColor(estado){
   const hex=ESTADO_HEX[estado]||ESTADO_HEX['Pendiente'];
-  return {bg:hexToRgba(hex,0.16),border:hex,text:hex};
+  return {bg:hexToRgba(hex,0.16),border:hex,text:PANEL_CLARO?(ESTADO_TEXTO_CLARO[estado]||ESTADO_TEXTO_CLARO['Pendiente']):hex};
 }
 
 function renderAgenda(){
@@ -5793,7 +5853,7 @@ function renderAgenda(){
         <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
-    return `<div class="cal-col" data-barbero="${barb}" data-idx="${i}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,#16172a ${slotH-1}px,#16172a ${slotH}px)" onclick="agendaColClick(event)">${nowLine}${blocks}</div>`;
+    return `<div class="cal-col" data-barbero="${barb}" data-idx="${i}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,var(--cal-linea,#16172a) ${slotH-1}px,var(--cal-linea,#16172a) ${slotH}px)" onclick="agendaColClick(event)">${nowLine}${blocks}</div>`;
   }).join('');
 
   // Paginado mobile: en pantallas angostas se ve una sola columna de
@@ -6839,6 +6899,41 @@ async function temaRefrescar(src, anPre) {
   return an;
 }
 
+
+// ─── TEMA DEL PANEL (modo claro/oscuro + color de marca del negocio) ────────
+// El panel sigue lo que el dueño eligió en Configuración → Tema:
+//  · negocio sin color de marca y sin modo claro → el panel de siempre, intacto;
+//  · con color de marca → ese color es el acento (--p1/--p2);
+//  · modo claro → superficies y textos claros (derivarSuperficies, tema.js, la
+//    misma función que usan las páginas públicas, con contraste verificado).
+// Se escriben variables CSS sobre <html> y, en claro, la clase panel-claro en
+// <body> activa los ajustes de arriba. Quitar todo esto es borrar este bloque.
+let PANEL_CLARO = false, PANEL_VARS_PUESTAS = [];
+function panelRgba(hex, a){ const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
+function aplicarTemaPanel(){
+  const r = document.documentElement;
+  PANEL_VARS_PUESTAS.forEach(k => r.style.removeProperty(k)); PANEL_VARS_PUESTAS = [];
+  PANEL_CLARO = false; document.body.classList.remove('panel-claro');
+  const b = S.barberia || {};
+  let t = null;
+  try { t = derivarSuperficies({ modo: b.modo_tema === 'claro' ? 'claro' : 'oscuro', colorMarca: b.color_marca, colorFondoLogo: b.color_fondo_logo }); } catch (e) { t = null; }
+  if (!t) return;
+  const claro = b.modo_tema === 'claro';
+  const v = {
+    '--bg': t['--fondo'], '--bg2': claro ? t['--tarjeta'] : t['--portada-fondo'], '--bg3': t['--tarjeta'],
+    '--bg4': claro ? t['--superficie-2'] : t['--prefijo-fondo'],
+    '--border': t['--borde'], '--border2': claro ? t['--borde-2'] : t['--borde'],
+    '--p1': t['--acento'], '--p2': t['--acento-2'],
+    '--p1-light': panelRgba(t['--acento'], claro ? 0.12 : 0.18), '--p1-glow': panelRgba(t['--acento'], 0.3),
+    '--cal-linea': claro ? t['--borde-suave'] : '#16172a'
+  };
+  if (claro) Object.assign(v, { '--text': t['--texto'], '--text2': t['--texto-suave'], '--text3': t['--texto-debil'] });
+  Object.keys(t).forEach(k => { if (!(k in v)) v[k] = t[k]; });   // el resto (--exito, --b-gold-texto…) lo usa el CSS de panel-claro
+  Object.keys(v).forEach(k => { r.style.setProperty(k, v[k]); PANEL_VARS_PUESTAS.push(k); });
+  if (claro) { PANEL_CLARO = true; document.body.classList.add('panel-claro'); }
+}
+function cvar(nombre, defecto){ return (getComputedStyle(document.documentElement).getPropertyValue(nombre) || '').trim() || defecto; }
+
 function temaModoEfectivo() {
   if (TEMA.modo === 'claro' || TEMA.modo === 'oscuro') return TEMA.modo;
   return TEMA.an ? TEMA.an.modoSugerido : 'claro';
@@ -7006,6 +7101,9 @@ async function temaGuardar() {
   }
   S.barberia.color_marca = fresco.color_marca;
   S.barberia.modo_tema = fresco.modo_tema;
+  S.barberia.color_marca = fresco.color_marca; S.barberia.color_fondo_logo = fresco.color_fondo_logo;
+  aplicarTemaPanel();
+  try { renderDashboard(); } catch (e) {}
   S.barberia.color_fondo_logo = fresco.color_fondo_logo;
   TEMA.color = fresco.color_marca;
   TEMA.modo = fresco.modo_tema;
