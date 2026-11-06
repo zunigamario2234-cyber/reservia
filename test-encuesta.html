@@ -384,14 +384,14 @@ function correr(src){
   var salida = (function(){
     try {
       var src2 = 'var S = ESTADO;\n' + fuentes.join('\n') + '\nrenderEncuestas();';
-      new Function('document','ESTADO', src2)(doc, {
+      new Function('document','ESTADO','wspLink', src2)(doc, {
         barberia: {id:'b1'},
         clientes: [{id:'c1', nombre:'Ana', apellido:'Pérez', whatsapp:'+56911112222'}],
         visitas:  [{id:'v1', servicio:'Corte'}],
         encuestas:[{id:'e1', cliente_id:'c1', visita_id:'v1', puntaje:2,
                     comentario: ATAQUE, respondida_at:'2026-09-12T10:00:00Z',
                     vista_at:null, enviada_at:'2026-09-12T09:00:00Z'}]
-      });
+      }, function(n){ return 'https://wa.me/' + String(n).replace(/\D/g,''); });
       return doc._html('l-enc-resp');
     } catch(e){ return '⟪excepción: ' + e.message + '⟫'; }
   })();

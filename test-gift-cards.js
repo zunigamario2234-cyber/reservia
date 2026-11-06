@@ -39,6 +39,8 @@ const res=[]; const ok=(n,c,extra)=>{res.push((c?'OK    ':'FALLO ')+n+(c?'':'  -
      const body=req.postData()?JSON.parse(req.postData()):{}; rpcs.push({n:t,body});
      if(t==='crear_gift_card') return json({id:'gnew',barberia_id:BID,codigo:'GC-NEW1-NEW2',servicio:body.p_servicio,valor:12000,estado:'Activa',para_nombre:body.p_para_nombre,de_nombre:body.p_de_nombre,vence:body.p_vence});
      if(t==='registrar_cobro_conjunto') return json('cobro-1');
+     if(t==='gift_card_consultar') return json(T.gift_cards.filter(g=>g.codigo===body.p_codigo));
+     if(t==='listar_recepcion') return json([]);
      return json([]);
    }
    if(req.method()!=='GET'){ updates.push({t,m:req.method(),body:req.postData(),u}); return json([],204); }

@@ -167,6 +167,15 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .loading-overlay{position:fixed;inset:0;background:rgba(10,10,10,0.9);display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:12px}
 .loading-overlay p{color:var(--text3);font-size:13px}
 /* Agenda calendar */
+.caja-met{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.caja-met .mc-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.caja-cuadre{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.caja-cuadre .fg{margin:0;min-width:150px}
+.caja-dif{font-size:15px;font-weight:700;padding:9px 12px;border-radius:8px;background:var(--bg2)}
+.caja-dif.ok{color:#00e096}.caja-dif.mal{color:#ff8f8f}
+body.modo-recepcion .nav-item:not([data-page="agenda"]):not([data-page="reservas"]):not([data-page="caja"]){display:none!important}
+body.modo-recepcion .nav-section{display:none}
+body.modo-recepcion .topbar button[onclick*="m-cita"]{display:none}
 .ag-origen{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;vertical-align:-3px;margin-right:4px;flex-shrink:0}
 .ag-origen svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .ag-leyenda{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text3);margin:-6px 0 12px}
@@ -444,6 +453,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
       <span>Reservas</span>
     </div>
+    <div class="nav-item" data-page="caja" onclick="nav('caja')">
+      <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+      <span>Caja del día</span>
+    </div>
     <div class="nav-section">Negocio</div>
     <div class="nav-item vip-only" data-page="vip" onclick="nav('vip')">
       <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -662,6 +675,36 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 </div>
 
 <!-- INVENTARIO -->
+<div id="p-caja" class="page">
+  <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+    <strong id="caja-fecha" style="font-size:14px"></strong>
+    <span style="font-size:12px;color:var(--text3)">Solo ventas de hoy</span>
+    <button class="btn btn-primary" style="margin-left:auto" onclick="abrirVentaProducto()">+ Venta de productos</button>
+    <button class="btn btn-ghost" onclick="cajaCopiarResumen()">Copiar resumen</button>
+  </div>
+  <div class="g4" id="caja-cards" style="margin-bottom:14px"></div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hdr"><span class="card-title">Por método de pago</span></div>
+    <div class="caja-met" id="caja-metodos"></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hdr"><span class="card-title">Cuadre de efectivo</span></div>
+    <div class="caja-cuadre">
+      <div class="fg"><label>Fondo inicial ($)</label><input id="caja-fondo" type="number" min="0" placeholder="0" oninput="cajaCuadre()"></div>
+      <div class="fg"><label>Efectivo esperado</label><input id="caja-esperado" readonly></div>
+      <div class="fg"><label>Efectivo contado ($)</label><input id="caja-contado" type="number" min="0" placeholder="0" oninput="cajaCuadre()"></div>
+      <div class="caja-dif" id="caja-dif">—</div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">Esperado = fondo inicial + ventas en efectivo + propinas en efectivo. Las gift cards no entran dinero a la caja.</div>
+  </div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Movimientos de hoy</span></div>
+    <div id="e-caja" style="display:none;padding:14px;color:var(--text3);font-size:13px">Todavía no hay ventas hoy.</div>
+    <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Hora</th><th>Detalle</th><th>Profesional</th><th>Pago</th><th>Valor</th><th>Propina</th></tr></thead>
+    <tbody id="t-caja"></tbody></table></div>
+  </div>
+</div>
+
 <div id="p-gift" class="page">
   <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <input type="text" id="q-gift" placeholder="Buscar por código o nombre..." style="max-width:260px" oninput="renderGiftCards()">
@@ -757,6 +800,12 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <button class="btn btn-primary" onclick="openM('m-profesional')">+ Agregar profesional</button>
   </div>
   <div class="g3" id="cards-profesionals"></div>
+  <div class="card" id="recepcion-card" style="margin-top:18px">
+    <div class="card-hdr"><span class="card-title">Recepción</span>
+      <button class="btn btn-primary btn-sm" onclick="abrirCrearRecepcion()">+ Crear cuenta de Recepción</button></div>
+    <p style="font-size:12px;color:var(--text3);line-height:1.6;margin:0 0 12px">Para quien atiende el mostrador. Ve la agenda y las reservas, agenda, cobra y cuadra la caja del día. No ve reportes, costos, comisiones ni las ventas de otros días.</p>
+    <div id="l-recepcion"></div>
+  </div>
 </div>
 
 <!-- CONFIG -->
@@ -869,7 +918,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
       <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"><button type="button" onclick="verEnMapa()" style="background:none;border:none;color:var(--p1);font-size:11px;font-family:inherit;padding:5px 0 0;cursor:pointer">📍 Ver cómo lo encuentran tus clientes</button></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
       <div class="fr"><div class="fg"><label>Teléfono</label><input id="cfg-telefono" type="text" placeholder="+56 2 XXXX XXXX"></div><div class="fg"><label>Email de contacto</label><input id="cfg-email" type="email" placeholder="contacto@tunegocio.cl"></div></div>
-      <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link Google Reviews</label><input id="cfg-reviews" type="url"></div></div>
+      <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link para dejar reseña en Google</label><input id="cfg-reviews" type="url" placeholder="https://g.page/r/…/review"><div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.5">Es el link que se le muestra al cliente contento (4★ o 5★) en la encuesta, y el que va en el mensaje "Pedir reseña". Lo sacas de Google Business Profile → <em>Pedir reseñas</em> → copiar link. <a href="#" onclick="probarLinkResenas();return false" style="color:var(--gold)">Probar link</a></div></div></div>
       <div class="fg"><label>Descripción del local (se muestra en el link de reservas)</label><textarea id="cfg-descripcion" rows="2" placeholder="Ej: Barbería especializada en cortes clásicos y modernos, en el corazón de Providencia."></textarea></div>
       <div style="display:none"><input id="cfg-setmore" type="url"></div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
@@ -1519,6 +1568,32 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   </div>
 </div>
 
+<!-- Crear cuenta de Recepción -->
+<div class="overlay" id="m-recepcion">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">Cuenta de Recepción</span><button class="xbtn" onclick="closeM('m-recepcion')">×</button></div>
+    <div id="rec-form">
+      <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Crea un acceso propio para quien atiende el mostrador. Entra desde la página de ingreso de siempre y solo ve lo necesario para atender y cuadrar la caja.</p>
+      <div class="fg"><label>Nombre *</label><input id="rec-nombre" type="text" placeholder="María"></div>
+      <div class="fg"><label>Correo *</label><input id="rec-email" type="email" placeholder="recepcion@correo.com" autocomplete="off"></div>
+      <div class="fg"><label>Contraseña inicial *</label><input id="rec-pass" type="text" placeholder="Mínimo 6 caracteres"></div>
+      <div id="rec-alert" style="display:none;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;background:#1f0000;border:0.5px solid #e05050;color:#e05050"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" id="rec-btn" onclick="crearCuentaRecepcion()">Crear cuenta</button>
+        <button class="btn btn-ghost" onclick="closeM('m-recepcion')">Cancelar</button>
+      </div>
+    </div>
+    <div id="rec-listo" style="display:none">
+      <div style="padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;background:#0f2a1a;border:0.5px solid #5cd685;color:#5cd685">Cuenta creada ✓. Entrégale estos datos: entra por la página de ingreso del negocio.</div>
+      <div id="rec-datos" style="font-size:13px;line-height:1.8;background:var(--bg2);border-radius:8px;padding:12px;margin-bottom:10px;user-select:all"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="copiarDatosRecepcion()">Copiar datos</button>
+        <button class="btn btn-ghost" onclick="closeM('m-recepcion')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Invitar profesional a Mi Agenda -->
 <div class="overlay" id="m-invitar-prof">
   <div class="modal">
@@ -1727,10 +1802,11 @@ async function init(){
   await loadAll();
   document.getElementById('loading-screen').style.display='none';
   document.getElementById('sb-user').textContent = S.perfil?.nombre || S.user.email;
-  document.getElementById('sb-rol').textContent = S.perfil?.rol==='dueno'?'Dueño':'Profesional';
+  document.getElementById('sb-rol').textContent = S.perfil?.rol==='dueno'?'Dueño':(S.perfil?.rol==='recepcion'?'Recepción':'Profesional');
+  if(esRecepcion()) document.body.classList.add('modo-recepcion');
   document.getElementById('sb-barberia').textContent = S.barberia?.nombre || '—';
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
-  nav('dashboard');
+  nav(esRecepcion()?'agenda':'dashboard');
   // El prototipo del tema guardaba un tema violeta en localStorage y lo
   // aplicaba al arrancar. Ya no existe; se limpia la clave para que nadie
   // la encuentre dentro de un año sin saber qué era. En try/catch porque
@@ -1842,7 +1918,8 @@ async function loadGiftCards(){
     S.gifts=error?[]:(data||[]);
   }catch(e){ S.gifts=[]; }
 }
-async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
+// Recepción lee la vista inventario_recepcion (sin costo ni proveedor).
+async function loadInventario(){ const {data}=await sb.from(esRecepcion()?'inventario_recepcion':'inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadCobroProductos(){ S.cobroProductos=await traerTodo('cobro_productos'); construirVentas(); }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
@@ -1963,17 +2040,21 @@ function closeM(id){
   MODAL_STACK=MODAL_STACK.filter(m=>m!==id);
   if(!MODAL_STACK.length) MODAL_Z_TOPE=MODAL_Z_BASE;
 }
+function esRecepcion(){ return S.perfil?.rol==='recepcion'; }
 function nav(page){
+  // Recepción solo entra a estas tres pantallas. Es comodidad: lo que de verdad
+  // le impide ver lo demás son las políticas de la base.
+  if(esRecepcion()&&!['agenda','reservas','caja'].includes(page)) page='agenda';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('p-'+page).classList.add('active');
   const ni=document.querySelector(`.nav-item[data-page="${page}"]`);
   if(ni)ni.classList.add('active');
-  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
+  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',caja:'Caja del día',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
   document.getElementById('page-title').textContent=titles[page]||page;
   // costos entra por entrarCostos y no por renderCostos: resetea el período al
   // mes en curso cada vez que se abre la pantalla.
-  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
+  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,caja:renderCaja,gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
   if(renders[page])renders[page]();
 }
 function switchTab(el,tid){
@@ -3584,6 +3665,8 @@ function verEnMapa(){
 }
 
 async function guardarConfig(){
+  const _lr=normalizarLinkResenas(document.getElementById('cfg-reviews').value);
+  if(!_lr.ok){notify('El link de Google no es válido. Cópialo desde Google Business Profile → Pedir reseñas','warn');return;}
   const {error}=await sb.from('barberias').update({
     nombre:document.getElementById('cfg-nombre').value,
     whatsapp:document.getElementById('cfg-wsp').value,
@@ -3594,7 +3677,7 @@ async function guardarConfig(){
     descripcion:document.getElementById('cfg-descripcion').value.trim()||null,
     iva_pct:parseFloat(document.getElementById('cfg-iva').value)||19,
     link_setmore:document.getElementById('cfg-setmore').value,
-    link_reviews:document.getElementById('cfg-reviews').value,
+    link_reviews:_lr.url||null,
     modo_comision:document.getElementById('cfg-modo-comision').value||'total'
   }).eq('id',S.barberia.id);
   if(error){notify(error.message,'err');return;}
@@ -4157,6 +4240,154 @@ function cobroMontarModal(resumenHtml){
 // ─── Gift cards ─────────────────────────────────────────────────────────────
 // La venta de la tarjeta no se registra como ingreso (el dinero entró fuera de
 // la plataforma). El ingreso cuenta el día del canje, con método 'Gift card'.
+// ─── Caja del día ───────────────────────────────────────────────────────────
+// Función pura (sin DOM): recibe las visitas y las líneas de producto y devuelve
+// el cuadre de UN día. Para Recepción la base solo entrega las de hoy; para el
+// dueño se filtra acá por la misma fecha.
+const CAJA_METODOS=['Efectivo','Transferencia','Débito','Crédito','Gift card'];
+function calcularCaja(visitas,productos,hoy,nombreCliente){
+  const por={}; CAJA_METODOS.forEach(m=>{por[m]={n:0,valor:0,propina:0};});
+  const mov=[]; let vendido=0, propinas=0;
+  const metodoDe=m=>CAJA_METODOS.includes(m)?m:'Sin método';
+  const sumar=(m,valor,propina)=>{ const k=metodoDe(m); if(!por[k])por[k]={n:0,valor:0,propina:0}; por[k].n++; por[k].valor+=valor; por[k].propina+=propina; };
+  (visitas||[]).filter(v=>v.fecha===hoy&&v.estado!=='Cancelada'&&v.estado!=='No asistió'&&(+v.valor||0)>0).forEach(v=>{
+    const valor=Math.round(+v.valor||0), propina=Math.round(+v.propina||0);
+    sumar(v.metodo_pago,valor,propina); vendido+=valor; propinas+=propina;
+    mov.push({hora:(v.hora||'').slice(0,5),detalle:(nombreCliente?nombreCliente(v.cliente_id):'')||'Cliente',concepto:v.servicio||'Servicio',
+              profesional:v.barbero_nombre||'',metodo:metodoDe(v.metodo_pago),valor,propina,orden:v.hora||'99'});
+  });
+  (productos||[]).filter(p=>p.fecha===hoy&&(+p.valor||0)>0).forEach(p=>{
+    const valor=Math.round(+p.valor||0);
+    sumar(p.metodo_pago,valor,0); vendido+=valor;
+    mov.push({hora:(p.created_at?new Date(p.created_at).toLocaleTimeString('es-CL',{timeZone:'America/Santiago',hour:'2-digit',minute:'2-digit',hour12:false}):''),
+              detalle:'Producto ×'+(p.cantidad||1),concepto:'Venta de producto',profesional:p.barbero_nombre||'',metodo:metodoDe(p.metodo_pago),valor,propina:0,orden:p.created_at||'99'});
+  });
+  mov.sort((a,b)=>String(a.orden).localeCompare(String(b.orden)));
+  const efectivoVentas=por['Efectivo'].valor, efectivoPropinas=por['Efectivo'].propina;
+  const recibido=Object.keys(por).filter(k=>k!=='Gift card').reduce((s,k)=>s+por[k].valor+por[k].propina,0);
+  return {por,mov,vendido,propinas,recibido,efectivoEsperadoSinFondo:efectivoVentas+efectivoPropinas,n:mov.length};
+}
+function cajaClave(){ return 'caja_'+(S.barberia?.id||'')+'_'+ahoraEnChile().fecha; }
+function cajaLeerLocal(){ try{ return JSON.parse(localStorage.getItem(cajaClave())||'{}'); }catch(e){ return {}; } }
+function cajaGuardarLocal(o){ try{ localStorage.setItem(cajaClave(),JSON.stringify(o)); }catch(e){} }
+let CAJA_ULTIMA=null;
+function renderCaja(){
+  const hoy=ahoraEnChile().fecha;
+  const nombreCliente=id=>{ const c=S.clientes.find(x=>x.id===id); return c?(c.nombre+' '+(c.apellido||'')).trim():''; };
+  const c=calcularCaja(S.visitas,S.cobroProductos,hoy,nombreCliente);
+  CAJA_ULTIMA=c;
+  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+  document.getElementById('caja-fecha').textContent=fFechaLinda(hoy);
+  document.getElementById('caja-cards').innerHTML=
+    `<div class="mc"><div class="mc-label">Vendido hoy</div><div class="mc-val">${fmt(c.vendido)}</div></div>
+     <div class="mc"><div class="mc-label">Propinas</div><div class="mc-val">${fmt(c.propinas)}</div></div>
+     <div class="mc"><div class="mc-label">Dinero recibido</div><div class="mc-val gold">${fmt(c.recibido)}</div><div class="mc-sub">sin gift cards</div></div>
+     <div class="mc"><div class="mc-label">Movimientos</div><div class="mc-val">${c.n}</div></div>`;
+  document.getElementById('caja-metodos').innerHTML=Object.keys(c.por).filter(k=>CAJA_METODOS.includes(k)||c.por[k].n).map(k=>{
+    const m=c.por[k];
+    return `<div class="mc"><div class="mc-label">${k}</div><div class="mc-val">${fmt(m.valor+m.propina)}</div><div class="mc-sub">${m.n} ${m.n===1?'venta':'ventas'}${m.propina?' · propina '+fmt(m.propina):''}</div></div>`;
+  }).join('');
+  document.getElementById('e-caja').style.display=c.n?'none':'';
+  document.getElementById('t-caja').innerHTML=c.mov.map(m=>`<tr>
+    <td data-label="Hora">${esc(m.hora)}</td>
+    <td data-label="Detalle">${esc(m.detalle)}<br><span style="font-size:10px;color:var(--text3)">${esc(m.concepto)}</span></td>
+    <td data-label="Profesional">${esc(m.profesional)||'—'}</td>
+    <td data-label="Pago"><span class="badge b-gold">${esc(m.metodo)}</span></td>
+    <td data-label="Valor">${fmt(m.valor)}</td>
+    <td data-label="Propina">${m.propina?fmt(m.propina):'—'}</td></tr>`).join('');
+  const loc=cajaLeerLocal();
+  document.getElementById('caja-fondo').value=loc.fondo!=null?loc.fondo:'';
+  document.getElementById('caja-contado').value=loc.contado!=null?loc.contado:'';
+  cajaCuadre();
+}
+function cajaCuadre(){
+  if(!CAJA_ULTIMA)return;
+  const fondoRaw=document.getElementById('caja-fondo').value, contadoRaw=document.getElementById('caja-contado').value;
+  const fondo=parseFloat(fondoRaw)||0;
+  const esperado=fondo+CAJA_ULTIMA.efectivoEsperadoSinFondo;
+  document.getElementById('caja-esperado').value=fmt(esperado);
+  cajaGuardarLocal({fondo:fondoRaw===''?null:fondo,contado:contadoRaw===''?null:(parseFloat(contadoRaw)||0)});
+  const dif=document.getElementById('caja-dif');
+  if(contadoRaw===''){ dif.className='caja-dif'; dif.textContent='Ingresa el efectivo contado'; return; }
+  const d=Math.round((parseFloat(contadoRaw)||0)-esperado);
+  dif.className='caja-dif '+(d===0?'ok':'mal');
+  dif.textContent=d===0?'Cuadra ✓':(d>0?'Sobran '+fmt(d):'Faltan '+fmt(-d));
+}
+function cajaCopiarResumen(){
+  if(!CAJA_ULTIMA)return;
+  const c=CAJA_ULTIMA, hoy=ahoraEnChile().fecha;
+  const lineas=['Caja del día '+hoy+' — '+(S.barberia?.nombre||''),
+    'Vendido: '+fmt(c.vendido)+' · Propinas: '+fmt(c.propinas)+' · Dinero recibido: '+fmt(c.recibido)];
+  Object.keys(c.por).forEach(k=>{ const m=c.por[k]; if(m.n) lineas.push(k+': '+fmt(m.valor+m.propina)+' ('+m.n+')'); });
+  copiarAlPortapapeles(lineas.join('\n'));
+}
+
+// ─── Cuentas de Recepción (solo las gestiona el dueño) ──────────────────────
+async function cargarRecepcion(){
+  const cont=document.getElementById('l-recepcion'); if(!cont)return;
+  if(S.perfil?.rol!=='dueno'){ const card=document.getElementById('recepcion-card'); if(card)card.style.display='none'; return; }
+  const {data,error}=await sb.rpc('listar_recepcion');
+  if(error){ cont.innerHTML='<div class="empty">No se pudo cargar: '+error.message+'</div>'; return; }
+  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+  cont.innerHTML=(data&&data.length)?data.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:0.5px solid var(--border)">
+      <div><strong>${esc(r.nombre)}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.email)}</span></div>
+      <button class="btn btn-danger btn-sm" onclick="quitarRecepcion('${r.id}','${esc(r.nombre)}')">Quitar acceso</button></div>`).join('')
+    :'<div class="empty">Aún no hay cuentas de Recepción.</div>';
+}
+function abrirCrearRecepcion(){
+  ['rec-nombre','rec-email'].forEach(i=>{document.getElementById(i).value='';});
+  document.getElementById('rec-pass').value=generarPasswordSimple();
+  document.getElementById('rec-alert').style.display='none';
+  document.getElementById('rec-form').style.display='';
+  document.getElementById('rec-listo').style.display='none';
+  openM('m-recepcion');
+}
+let REC_DATOS=null;
+async function crearCuentaRecepcion(){
+  const nombre=document.getElementById('rec-nombre').value.trim();
+  const email=document.getElementById('rec-email').value.trim().toLowerCase();
+  const pass=document.getElementById('rec-pass').value;
+  const al=document.getElementById('rec-alert');
+  const fallo=t=>{ al.textContent=t; al.style.display=''; };
+  if(!nombre){ fallo('Falta el nombre.'); return; }
+  if(!email||!pass||pass.length<6){ fallo('Correo válido y contraseña de al menos 6 caracteres.'); return; }
+  const btn=document.getElementById('rec-btn'); btn.disabled=true; btn.textContent='Creando...';
+  al.style.display='none';
+  // 1) El dueño registra la invitación (la base verifica que lo sea).
+  const {error:e0}=await sb.rpc('invitar_recepcion',{p_email:email,p_nombre:nombre});
+  if(e0){ fallo(e0.message); btn.disabled=false; btn.textContent='Crear cuenta'; return; }
+  // 2) Cliente aislado para no cerrar la sesión del dueño (igual que Mi Agenda).
+  const sbInvite=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{storageKey:'sb-invite-temp'}});
+  const {data:auth,error:e1}=await sbInvite.auth.signUp({email,password:pass});
+  if(e1||!auth?.user||!auth?.session){
+    await sb.rpc('cancelar_invitacion_recepcion',{p_email:email});
+    fallo(e1?('Error: '+e1.message):'No se pudo crear la cuenta. Revisa el correo e intenta de nuevo.');
+    btn.disabled=false; btn.textContent='Crear cuenta'; return;
+  }
+  // 3) La nueva cuenta reclama su invitación: así nace con rol Recepción.
+  const {error:e2}=await sbInvite.rpc('reclamar_recepcion');
+  await sbInvite.auth.signOut();
+  btn.disabled=false; btn.textContent='Crear cuenta';
+  if(e2){ await sb.rpc('cancelar_invitacion_recepcion',{p_email:email}); fallo('La cuenta se creó pero no quedó como Recepción: '+e2.message); return; }
+  REC_DATOS={nombre,email,pass};
+  document.getElementById('rec-datos').innerHTML=
+    'Ingreso: <strong>'+location.origin+'/ingresar.html</strong><br>Correo: <strong>'+email+'</strong><br>Contraseña: <strong>'+pass+'</strong>';
+  document.getElementById('rec-form').style.display='none';
+  document.getElementById('rec-listo').style.display='';
+  cargarRecepcion();
+  notify('Cuenta de Recepción creada ✓');
+}
+function copiarDatosRecepcion(){
+  if(!REC_DATOS)return;
+  copiarAlPortapapeles('Hola '+REC_DATOS.nombre+'! Tu acceso a '+(S.barberia?.nombre||'Reservia')+':\n'+location.origin+'/ingresar.html\nCorreo: '+REC_DATOS.email+'\nContraseña: '+REC_DATOS.pass+'\nTe recomiendo cambiarla la primera vez que entres.');
+}
+async function quitarRecepcion(id,nombre){
+  if(!confirm('¿Quitar el acceso de '+nombre+'? Su cuenta se elimina y ya no podrá entrar.'))return;
+  const {error}=await sb.rpc('quitar_recepcion',{p_id:id});
+  if(error){ notify(error.message,'err'); return; }
+  notify('Acceso quitado'); cargarRecepcion();
+}
+
 function giftNorm(t){ return String(t==null?'':t).trim().toLowerCase(); }
 function giftEstadoEfectivo(g){
   if(g.estado!=='Activa') return g.estado;
@@ -4256,7 +4487,8 @@ async function cobroAplicarGift(){
   const codigo=document.getElementById('cob-gift-codigo').value.trim().toUpperCase();
   const mal=t=>{ msg.innerHTML='<span style="color:#ff8f8f">'+t+'</span>'; };
   if(!codigo){ mal('Escribe el código de la gift card.'); return; }
-  const {data,error}=await sb.from('gift_cards').select('*').eq('barberia_id',S.barberia.id).eq('codigo',codigo).maybeSingle();
+  const {data:filas,error}=await sb.rpc('gift_card_consultar',{p_codigo:codigo});
+  const data=Array.isArray(filas)?filas[0]:filas;
   if(error){ mal('No se pudo consultar: '+error.message); return; }
   if(!data){ mal('Ese código no existe en este negocio.'); return; }
   const est=giftEstadoEfectivo(data);
@@ -4495,7 +4727,7 @@ function enRango(fecha,from,to){ return !!fecha&&fecha>=from&&fecha<=to; }
 // Cada rango trae su comparación EQUIVALENTE (mismo largo, mismo punto del
 // período anterior): el 6 de noviembre se compara con el 1–6 de octubre, no con
 // todo octubre, que haría ver cualquier mes en curso como una caída.
-function fAdd(f,n){ const [y,m,d]=f.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); }
+function fAdd(f,n){ const [y,m,d]=f.split('-').map(Number); const t=new Date(Date.UTC(y,m-1,d+n)); return t.getUTCFullYear()+'-'+String(t.getUTCMonth()+1).padStart(2,'0')+'-'+String(t.getUTCDate()).padStart(2,'0'); }
 function fDiasMes(y,m){ return new Date(Date.UTC(y,m,0)).getUTCDate(); }
 function fArmar(y,m,d){ const dm=fDiasMes(y,m); return y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(d,dm)).padStart(2,'0'); }
 function fDiff(a,b){ const p=x=>{const [y,m,d]=x.split('-').map(Number);return Date.UTC(y,m-1,d);}; return Math.round((p(b)-p(a))/86400000); }
@@ -5187,7 +5419,7 @@ function renderReservas(){
     <td style="white-space:nowrap">
       ${!r.procesado?`<button class="btn btn-ghost btn-sm" onclick="abrirCobro('${r.id}')">Cobrar</button>`:''}
       <button class="btn-wa btn-sm" onclick="enviarConfirm('${r.id}')">📱</button>
-      <button class="btn btn-danger btn-sm" onclick="eliminar('reservas','${r.id}',loadReservas,renderReservas)">×</button>
+      ${esRecepcion()?'':`<button class="btn btn-danger btn-sm" onclick="eliminar('reservas','${r.id}',loadReservas,renderReservas)">×</button>`}
     </td></tr>`).join('');
 }
 
@@ -5291,6 +5523,37 @@ function irAEncuestas(){
   if(tab)switchTab(tab,'tm-encuesta');
 }
 
+// Link de reseñas de Google: se acepta lo que entrega Google Business Profile
+// (g.page/r/…, maps.app.goo.gl, search.google.com/local/writereview?placeid=…,
+// google.com/maps…). Cualquier otra cosa se rechaza al guardar: un link mal
+// pegado le llegaría al cliente en la encuesta y no llevaría a ninguna parte.
+function normalizarLinkResenas(v){
+  v=(v||'').trim();
+  if(!v) return {ok:true,url:''};
+  if(!/^https?:\/\//i.test(v)) v='https://'+v;
+  let u; try{ u=new URL(v); }catch(e){ return {ok:false}; }
+  const h=u.hostname.toLowerCase().replace(/^www\./,'');
+  const okHost = h==='g.page' || h==='maps.app.goo.gl' || h==='goo.gl' || h==='g.co'
+    || h==='search.google.com' || /^(maps\.)?google\.(com|[a-z]{2}|com\.[a-z]{2})$/.test(h);
+  return okHost ? {ok:true,url:u.toString()} : {ok:false};
+}
+function probarLinkResenas(){
+  const r=normalizarLinkResenas(document.getElementById('cfg-reviews').value);
+  if(!r.ok){ notify('Ese no parece un link de Google. Debe venir de Google Business Profile (g.page/r/… o maps.app.goo.gl/…)','warn'); return; }
+  if(!r.url){ notify('Pega primero tu link de reseñas','warn'); return; }
+  window.open(r.url,'_blank','noopener');
+}
+// Pide una reseña de Google por WhatsApp a quien puso 4★ o 5★.
+function pedirResenaWA(id){
+  const e=S.encuestas.find(x=>x.id===id); if(!e)return;
+  const c=S.clientes.find(x=>x.id===e.cliente_id);
+  if(!c?.whatsapp){ notify('Ese cliente no tiene WhatsApp en su ficha','warn'); return; }
+  if(!S.barberia?.link_reviews){ notify('Falta tu link de Google en Configuración','warn'); return; }
+  const msg=buildMsg('Pedir reseña',{nombre:c.nombre});
+  if(!msg){ notify('Falta la plantilla "Pedir reseña" en Mensajes → Plantillas','warn'); return; }
+  abrirWA(c.whatsapp,msg);
+}
+
 function renderEncuestas(){
   const nombreDe=e=>{
     const c=S.clientes.find(x=>x.id===e.cliente_id);
@@ -5323,6 +5586,7 @@ function renderEncuestas(){
           <span style="font-size:11px;color:var(--text3)">${escapeHtml(servicioDe(e))} · ${e.respondida_at.slice(0,10)}</span></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${mala&&c?.whatsapp&&wspLink(c.whatsapp)?`<a class="btn-wa" href="${wspLink(c.whatsapp)}" target="_blank" rel="noopener">📱 Contactar</a>`:''}
+          ${e.puntaje>=4&&c?.whatsapp&&S.barberia?.link_reviews?`<button class="btn-wa" onclick="pedirResenaWA('${e.id}')">⭐ Pedir reseña en Google</button>`:''}
           ${!e.vista_at?`<button class="btn btn-ghost btn-sm" onclick="marcarEncuestaVista('${e.id}')">Marcar vista</button>`:''}
         </div>
       </div>
@@ -5872,6 +6136,7 @@ function renderProfesionals(){
       </div>
     </div>`;
   }).join('')||'<div class="empty" style="grid-column:1/-1">Agrega tu primer profesional.</div>';
+  cargarRecepcion();
 }
 
 function renderConfig(){
@@ -6264,7 +6529,7 @@ function abrirEditarReserva(id){
   const selS=document.getElementById('r-servicio'); if(r.servicio)selS.value=r.servicio;
   const selP=document.getElementById('r-profesional'); if(r.barbero_nombre)selP.value=r.barbero_nombre;
   document.getElementById('rm-tabs').style.display='none';
-  document.getElementById('r-btn-eliminar').style.display='';
+  document.getElementById('r-btn-eliminar').style.display=esRecepcion()?'none':'';
   document.getElementById('r-procesado').value=r.procesado?'1':'0';
   document.getElementById('r-btn-pagar').style.display=r.procesado?'none':'';
   document.getElementById('r-btn-wa').style.display='';
