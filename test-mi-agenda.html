@@ -161,7 +161,7 @@ function domFalso(){
 // Es la única forma de comprobar el escape: mirar el código como texto diría
 // que "menciona escapeHtml", no que lo aplique a cada campo.
 function pintarCitas(js, citas){
-  var necesarias = ['escapeHtml','jsonAttr','fmt','fmtHora','estadoBadge','renderCitas'];
+  var necesarias = ['escapeHtml','jsonAttr','fmt','fmtHora','estadoBadge','citaCardHtml','renderCitas'];
   var fuentes = [];
   for(var i = 0; i < necesarias.length; i++){
     var f = extraerFuncion(js, necesarias[i]);

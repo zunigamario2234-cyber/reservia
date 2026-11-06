@@ -21,84 +21,128 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
+<script src="tema.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e6e0;min-height:100vh}
+/* TEMA: valores por defecto = los colores de siempre; aplicarTema() (tema.js) los
+   reemplaza con el color de marca y el modo del negocio. Ver club.html. */
+:root{
+  --acento:#7c6af7;--acento-2:#5b8def;--acento-hover:#6b59e6;--acento-2-hover:#4a7cde;--texto-sobre-acento:#fff;--spinner-anillo:#333;
+  --fondo:#08090d;--tarjeta:#0f1018;--borde:#222;--input-fondo:#161616;--input-borde:#252525;
+  --texto:#e8e6e0;--texto-fuerte:#fff;--texto-suave:#888;--texto-medio:#777;--texto-debil:#555;--texto-apagado:#666;--texto-tenue:#444;--texto-inerte:#333;--texto-bio:#999;
+  --borde-suave:#1a1a1a;--borde-2:#2a2a2a;--borde-fuerte:#555;--superficie-2:#1a1a1a;--chip-fondo:#13142a;
+  --alerta-fondo:#1f0000;--alerta-borde:#e05050;--alerta-texto:#e05050;--alerta-hover:#2a0000;
+  --wa-fondo:#002210;--wa-borde:#25d366;--wa-texto:#25d366;--wa-hover:#003318;
+  --b-green-fondo:#0f2a1a;--b-green-texto:#5cd685;--b-blue-texto:#6ab0e0;
+  --nota-fondo:#231b0e;--nota-borde:#4a3a1a;--nota-acento:#e0a850;--nota-texto:#d8c9a8;
+  --veil:rgba(0,0,0,0.7);
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--texto);min-height:100vh}
 .header{padding:24px;text-align:center}
-.header h1{font-size:15px;font-weight:600;color:#888;letter-spacing:0.3px}
+.header h1{font-size:15px;font-weight:600;color:var(--texto-suave);letter-spacing:0.3px}
 .container{max-width:560px;margin:0 auto;padding:0 16px 40px}
-.card{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:20px;margin-bottom:14px}
-.card-title{font-size:13px;font-weight:600;color:#e8e6e0;margin-bottom:14px}
-.empty{text-align:center;color:#444;font-size:12px;padding:16px 0}
-.msg-full{text-align:center;padding:80px 20px;color:#555;font-size:13px;line-height:1.6}
+.card{background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;padding:20px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:600;color:var(--texto);margin-bottom:14px}
+.empty{text-align:center;color:var(--texto-tenue);font-size:12px;padding:16px 0}
+.msg-full{text-align:center;padding:80px 20px;color:var(--texto-debil);font-size:13px;line-height:1.6}
 .tabs-top{display:flex;gap:8px;margin-bottom:18px}
-.tab-btn{flex:1;padding:10px;border-radius:10px;border:0.5px solid #222;background:#0f1018;color:#666;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit}
-.tab-btn.active{border-color:#7c6af7;color:#e8e6e0;background:#13142a}
-label{font-size:11px;color:#555;display:block;margin-bottom:4px}
+.tab-btn{flex:1;padding:10px;border-radius:10px;border:0.5px solid var(--borde);background:var(--tarjeta);color:var(--texto-apagado);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit}
+.tab-btn.active{border-color:var(--acento);color:var(--texto);background:var(--chip-fondo)}
+label{font-size:11px;color:var(--texto-debil);display:block;margin-bottom:4px}
 .form-group{margin-bottom:12px}
-input,textarea,select{background:#161616;border:0.5px solid #252525;border-radius:8px;color:#e8e6e0;padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
-input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
+input,textarea,select{background:var(--input-fondo);border:0.5px solid var(--input-borde);border-radius:8px;color:var(--texto);padding:10px 12px;font-size:13px;width:100%;transition:border-color 0.15s;font-family:inherit}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btn{width:100%;padding:12px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
-.btn-primary{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
-.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,#6b59e6,#4a7cde)}
+.btn-primary{background:linear-gradient(135deg,var(--acento),var(--acento-2));color:var(--texto-sobre-acento)}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,var(--acento-hover),var(--acento-2-hover))}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
-.btn-ghost{background:transparent;color:#777;border:0.5px solid #2a2a2a}
-.btn-ghost:hover{color:#e8e6e0}
-.btn-danger{background:#1f0000;color:#e05050;border:0.5px solid #e05050}
-.btn-danger:hover{background:#2a0000}
-.btn-wa{display:inline-block;text-decoration:none;text-align:center;background:#002210;color:#25d366;border:0.5px solid #25d366;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600}
-.btn-wa:hover{background:#003318}
+.btn-ghost{background:transparent;color:var(--texto-medio);border:0.5px solid var(--borde-2)}
+.btn-ghost:hover{color:var(--texto)}
+.btn-danger{background:var(--alerta-fondo);color:var(--alerta-texto);border:0.5px solid var(--alerta-borde)}
+.btn-danger:hover{background:var(--alerta-hover)}
+.btn-wa{display:inline-block;text-decoration:none;text-align:center;background:var(--wa-fondo);color:var(--wa-texto);border:0.5px solid var(--wa-borde);padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600}
+.btn-wa:hover{background:var(--wa-hover)}
 .btn-sm{width:auto;padding:8px 12px;font-size:12px}
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px}
-.alert-err{background:#1f0000;border:0.5px solid #e05050;color:#e05050}
-.alert-ok{background:#0f2a1a;border:0.5px solid #5cd685;color:#5cd685;line-height:1.5}
-.link-btn{background:none;border:none;color:#7c6af7;font-size:12px;cursor:pointer;font-family:inherit;padding:10px 0 0;width:100%;text-align:center}
+.alert-err{background:var(--alerta-fondo);border:0.5px solid var(--alerta-borde);color:var(--alerta-texto)}
+.alert-ok{background:var(--b-green-fondo);border:0.5px solid var(--b-green-texto);color:var(--b-green-texto);line-height:1.5}
+.link-btn{background:none;border:none;color:var(--acento);font-size:12px;cursor:pointer;font-family:inherit;padding:10px 0 0;width:100%;text-align:center}
 .link-btn:hover{text-decoration:underline}
 .link-btn:disabled{opacity:0.5;cursor:not-allowed}
-.ayuda{font-size:12px;color:#777;line-height:1.6;margin-bottom:14px}
-.spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;border-top-color:#7c6af7;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
+.ayuda{font-size:12px;color:var(--texto-medio);line-height:1.6;margin-bottom:14px}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--spinner-anillo);border-top-color:var(--acento);border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
-.cita-item{border:0.5px solid #1a1a1a;border-radius:10px;padding:14px;margin-bottom:10px}
-.cita-hora{font-size:16px;font-weight:700;color:#7c6af7}
-.cita-cliente{font-size:14px;font-weight:600;color:#e8e6e0;margin-top:2px}
-.cita-detalle{font-size:12px;color:#777;margin-top:4px}
+.cita-item{border:0.5px solid var(--borde-suave);border-radius:10px;padding:14px;margin-bottom:10px}
+.cita-hora{font-size:16px;font-weight:700;color:var(--acento)}
+.cita-cliente{font-size:14px;font-weight:600;color:var(--texto);margin-top:2px}
+.cita-detalle{font-size:12px;color:var(--texto-medio);margin-top:4px}
 /* La nota del CLIENTE (clientes.notas), distinta de la nota de la CITA
    (.cita-detalle con 📝). Tres señales a la vez para que no se confundan:
    posición —va pegada al nombre, porque habla de la persona, no del turno—,
    forma —caja con borde, no texto suelto— y la etiqueta "Del cliente:".
    Ámbar y no rojo: muchas son neutrales ("prefiere poco charla"), no alertas. */
-.cita-nota-cliente{margin-top:6px;padding:8px 10px;border-radius:8px;background:#231b0e;border:0.5px solid #4a3a1a;border-left:2px solid #e0a850;font-size:12px;color:#d8c9a8;line-height:1.5}
-.cita-nota-cliente b{color:#e0a850;font-weight:600}
+.cita-nota-cliente{margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--nota-fondo);border:0.5px solid var(--nota-borde);border-left:2px solid var(--nota-acento);font-size:12px;color:var(--nota-texto);line-height:1.5}
+.cita-nota-cliente b{color:var(--nota-acento);font-weight:600}
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
-.b-green{background:#0f2a1a;color:#5cd685}
-.b-blue{background:#13142a;color:#6ab0e0}
-.b-red{background:#2a0f0f;color:#e05050}
-.b-gray{background:#1a1a1a;color:#888}
+.b-green{background:var(--b-green-fondo);color:var(--b-green-texto)}
+.b-blue{background:var(--b-blue-fondo);color:var(--b-blue-texto)}
+.b-red{background:var(--alerta-fondo);color:var(--alerta-texto)}
+.b-gray{background:var(--superficie-2);color:var(--texto-suave)}
 .cita-acciones{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-.serv-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px}
+.serv-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--borde-suave);font-size:12px}
 .serv-row:last-child{border-bottom:none}
 .com-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-.com-chip{flex:1 1 calc(50% - 4px);padding:11px 8px;border-radius:10px;border:0.5px solid #222;background:#0f1018;color:#888;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit;text-align:center}
-.com-chip.active{border-color:#7c6af7;color:#e8e6e0;background:#13142a}
-.com-hero{background:#13142a;border:0.5px solid #7c6af7;border-radius:14px;padding:20px;margin-bottom:14px;text-align:center}
-.com-hero-label{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
+.com-chip{flex:1 1 calc(50% - 4px);padding:11px 8px;border-radius:10px;border:0.5px solid var(--borde);background:var(--tarjeta);color:var(--texto-suave);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:inherit;text-align:center}
+.com-chip.active{border-color:var(--acento);color:var(--texto);background:var(--chip-fondo)}
+.com-hero{background:var(--chip-fondo);border:0.5px solid var(--acento);border-radius:14px;padding:20px;margin-bottom:14px;text-align:center}
+.com-hero-label{font-size:11px;color:var(--texto-bio);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
 .com-hero-row{display:flex;gap:16px}
 .com-hero-item{flex:1}
-.com-hero-item .val{font-size:24px;font-weight:700;color:#e8e6e0;line-height:1.2}
-.com-hero-item .val.comision{color:#7c6af7}
-.com-hero-item .lbl{font-size:11px;color:#999;margin-top:6px}
-.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:flex-start;justify-content:center;z-index:100;overflow-y:auto;padding:20px 0}
+.com-hero-item .val{font-size:24px;font-weight:700;color:var(--texto);line-height:1.2}
+.com-hero-item .val.comision{color:var(--acento)}
+.com-hero-item .lbl{font-size:11px;color:var(--texto-bio);margin-top:6px}
+.overlay{display:none;position:fixed;inset:0;background:var(--veil);align-items:flex-start;justify-content:center;z-index:100;overflow-y:auto;padding:20px 0}
 .overlay.open{display:flex}
-.modal{background:#0f1018;border:0.5px solid #222;border-radius:14px;padding:22px;max-width:440px;width:calc(100% - 32px);margin-top:20px}
+.modal{background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;padding:22px;max-width:440px;width:calc(100% - 32px);margin-top:20px}
 .modal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.modal-title{font-size:14px;font-weight:600;color:#e8e6e0}
-.xbtn{background:none;border:none;color:#666;font-size:18px;cursor:pointer}
+.modal-title{font-size:14px;font-weight:600;color:var(--texto)}
+.xbtn{background:none;border:none;color:var(--texto-apagado);font-size:18px;cursor:pointer}
 .suggest-box{position:relative}
-.suggest-list{display:none;position:absolute;top:100%;left:0;right:0;background:#161616;border:0.5px solid #2a2a2a;border-radius:8px;z-index:50;max-height:160px;overflow-y:auto;margin-top:2px}
+.suggest-list{display:none;position:absolute;top:100%;left:0;right:0;background:var(--input-fondo);border:0.5px solid var(--borde-2);border-radius:8px;z-index:50;max-height:160px;overflow-y:auto;margin-top:2px}
 .suggest-list.open{display:block}
 .suggest-item{padding:8px 12px;font-size:12px;cursor:pointer}
-.suggest-item:hover{background:#1a1a1a}
+.suggest-item:hover{background:var(--superficie-2)}
+
+/* Selector de vista y calendario por horas */
+.vista-toggle{display:flex;gap:6px;margin-bottom:12px}
+.vista-btn{flex:1;padding:9px;border-radius:10px;border:0.5px solid var(--borde);background:var(--tarjeta);color:var(--texto-apagado);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.vista-btn.active{border-color:var(--acento);color:var(--texto);background:var(--chip-fondo)}
+.cal-wrap{position:relative;display:flex;background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;overflow:hidden;margin-bottom:14px}
+.cal-gutter{width:46px;flex-shrink:0;position:relative;border-right:0.5px solid var(--borde-suave)}
+.cal-hora{position:absolute;left:0;right:6px;transform:translateY(-50%);font-size:10px;color:var(--texto-debil);text-align:right}
+.cal-hora.primera{transform:none}
+.cal-hora.ultima{transform:translateY(-100%)}
+.cal-col{flex:1;position:relative;min-width:0}
+.cal-linea{position:absolute;left:0;right:0;height:0;border-top:0.5px solid var(--borde-suave);pointer-events:none}
+.cal-linea.hora{border-top-color:var(--borde)}
+.cal-banda{position:absolute;left:0;right:0;pointer-events:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;font-size:10px;font-weight:600;color:var(--texto-debil);background-image:repeating-linear-gradient(135deg,transparent 0,transparent 6px,var(--borde) 6px,var(--borde) 7px);background-color:var(--superficie-2)}
+.cal-banda span{margin-top:4px;padding:1px 6px;border-radius:4px;background:var(--tarjeta);border:0.5px solid var(--borde-2)}
+.cal-banda.colacion{color:var(--nota-acento)}
+.cal-banda.bloqueo{color:var(--alerta-texto)}
+.cal-cita{position:absolute;left:4px;right:4px;z-index:3;border-radius:8px;padding:4px 8px;overflow:hidden;cursor:pointer;border:1px solid var(--c);color:var(--c);background:var(--superficie-2);background:color-mix(in srgb,var(--c) 14%,var(--tarjeta));font-size:11px;line-height:1.3;text-align:left;font-family:inherit;box-sizing:border-box}
+.cal-cita b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-cita span{display:block;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-cita.sel{box-shadow:0 0 0 2px var(--acento)}
+.cal-cita.e-pendiente{--c:var(--nota-acento)}
+.cal-cita.e-confirmada{--c:var(--b-blue-texto)}
+.cal-cita.e-curso{--c:var(--acento)}
+.cal-cita.e-atendida{--c:var(--b-green-texto)}
+.cal-cita.e-cancelada{--c:var(--alerta-texto);opacity:.6;text-decoration:line-through}
+.cal-cita.e-noasistio{--c:var(--texto-suave)}
+.cal-ahora{position:absolute;left:0;right:0;height:1.5px;background:var(--alerta-texto);z-index:4;pointer-events:none}
+.cal-ahora::before{content:'';position:absolute;left:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--alerta-texto)}
+.cal-ayuda{font-size:11px;color:var(--texto-debil);text-align:center;margin:-4px 0 12px}
 </style>
 </head>
 <body>
@@ -147,7 +191,12 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6af7}
           <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="abrirNuevaReserva()">+ Reservar</button></div>
         </div>
       </div>
+      <div class="vista-toggle" role="tablist" aria-label="Forma de ver la agenda">
+        <button type="button" id="vista-lista" class="vista-btn" role="tab" onclick="setVistaAgenda('lista')">☰ Lista</button>
+        <button type="button" id="vista-cal" class="vista-btn" role="tab" onclick="setVistaAgenda('calendario')">▦ Calendario</button>
+      </div>
       <div id="citas-lista"></div>
+      <div id="citas-cal" style="display:none"></div>
     </div>
 
     <div id="tab-comisiones" style="display:none">
@@ -241,6 +290,7 @@ let BARBERO = null;
 let SERVICIOS = [];
 let NEGOCIO_NOMBRE = '';
 let NEGOCIO_DIRECCION = '';
+let NEGOCIO_ID = null;
 let CLIENTE_SEL = null;
 let CITAS_ACTUALES = [];
 let PAGO_ABIERTO_MIAGENDA = null;
@@ -387,16 +437,46 @@ async function afterLogin(){
   // reservar.html usa para leer B.barberia. Nombre y dirección, una vez
   // al loguear (no en cada mensaje de WhatsApp) — dirección hace falta
   // para {direccion} si la plantilla "Confirmación reserva" la usa.
-  const {data:negocio}=await sb.from('barberias').select('nombre,direccion').eq('id',perfil.barberia_id).single();
+  const {data:negocio}=await sb.from('barberias').select('nombre,direccion,color_marca,color_fondo_logo,modo_tema').eq('id',perfil.barberia_id).single();
+  aplicarTemaAgenda(negocio);
   NEGOCIO_NOMBRE=negocio?.nombre||'';
   NEGOCIO_DIRECCION=negocio?.direccion||'';
+  NEGOCIO_ID=perfil.barberia_id;
 
   document.getElementById('h-nombre').textContent='Mi Agenda — '+barbero.nombre;
   document.title='Mi Agenda — '+barbero.nombre;
   document.getElementById('login-view').style.display='none';
   document.getElementById('app-view').style.display='';
   document.getElementById('ag-fecha').value=hoyStr();
+  setVistaAgenda(leerVistaAgenda(),true);
+  cargarContextoAgenda();
   cargarAgenda();
+}
+
+// Tema del negocio (color de marca + modo claro/oscuro); ver club.html.
+function aplicarTemaAgenda(barb){
+  // Guardas typeof: si tema.js no cargó, estos nombres no existen y
+  // referenciarlos lanzaría ReferenceError. Con typeof no lanza.
+  if(typeof hexValido!=='function' || typeof derivarSuperficies!=='function'){
+    console.warn('tema.js no está disponible; la página queda con su aspecto por defecto');
+    return false;
+  }
+  if(!barb) return false;
+  // El modo lo elige el dueño en el panel. Solo «claro» cambia la página: 'auto'
+  // y 'oscuro' son la página oscura de siempre (12 de los 13 negocios están en
+  // 'auto'; si 'auto' también cambiara, casi todas las páginas se moverían).
+  const modo = barb.modo_tema === 'claro' ? 'claro' : 'oscuro';
+  // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
+  // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
+  // variable se toca y la página es la de antes, píxel por píxel.
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  if(!vars) return false;
+  // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
+  // valor que no pase hexValido no debe poder convertirse en una regla. Con
+  // setProperty el peor caso es una variable ignorada.
+  const raiz = document.documentElement;
+  Object.keys(vars).forEach(k => raiz.style.setProperty(k, vars[k]));
+  return true;
 }
 
 function cambiarTab(tab){
@@ -416,7 +496,7 @@ async function cargarAgenda(){
   const {data,error}=await sb.rpc('mi_agenda_citas',{p_fecha:fecha});
   if(error){ cont.innerHTML='<div class="msg-full">Error al cargar la agenda: '+escapeHtml(error.message)+'</div>'; return; }
   CITAS_ACTUALES=data||[];
-  renderCitas(CITAS_ACTUALES);
+  renderAgendaActual(CITAS_ACTUALES);
 }
 
 function estadoBadge(estado){
@@ -462,10 +542,107 @@ async function mensajeWhatsAppCita(c){
   return fallback;
 }
 
+
+// ─── Vista de la agenda: Lista o Calendario por horas ─────────────────────
+// Cada profesional elige la suya; queda guardada en este dispositivo.
+let VISTA_AGENDA='lista';
+let HORARIO_NEGOCIO=[];
+let BLOQUEOS=[];
+let CITA_SEL=null;
+const CAL_PX_MIN=1.5, CAL_INI_H=8, CAL_FIN_H=20;
+function leerVistaAgenda(){ try{ return localStorage.getItem('miagenda_vista')==='calendario'?'calendario':'lista'; }catch(e){ return 'lista'; } }
+function setVistaAgenda(v,sinRender){
+  VISTA_AGENDA=v==='calendario'?'calendario':'lista';
+  try{ localStorage.setItem('miagenda_vista',VISTA_AGENDA); }catch(e){}
+  document.getElementById('vista-lista').classList.toggle('active',VISTA_AGENDA==='lista');
+  document.getElementById('vista-cal').classList.toggle('active',VISTA_AGENDA==='calendario');
+  document.getElementById('citas-lista').style.display=VISTA_AGENDA==='lista'?'':'none';
+  document.getElementById('citas-cal').style.display=VISTA_AGENDA==='calendario'?'':'none';
+  if(!sinRender) renderAgendaActual(CITAS_ACTUALES);
+}
+// Horario del negocio y bloqueos: si no se pueden leer, el calendario se ve
+// igual, solo sin franjas bloqueadas.
+async function cargarContextoAgenda(){
+  try{
+    const [h,b]=await Promise.all([
+      sb.from('horario_negocio').select('*').eq('barberia_id',NEGOCIO_ID),
+      sb.from('bloqueos_profesional').select('*').eq('barberia_id',NEGOCIO_ID).eq('profesional_id',BARBERO.id)
+    ]);
+    HORARIO_NEGOCIO=(h.data||[]); BLOQUEOS=(b.data||[]);
+  }catch(e){ HORARIO_NEGOCIO=[]; BLOQUEOS=[]; }
+  if(VISTA_AGENDA==='calendario') renderAgendaActual(CITAS_ACTUALES);
+}
+function hmAMin(h){ if(!h)return null; const [a,b]=String(h).split(':').map(Number); return a*60+(b||0); }
+function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
+  const out=[];
+  const add=(ini,fin,tipo,texto)=>{ ini=Math.max(ini,iniMin); fin=Math.min(fin,finMin); if(fin>ini)out.push({ini,fin,tipo,texto}); };
+  const dow=new Date(fecha+'T12:00:00').getDay();
+  const h=(horario||[]).find(x=>x.dia_semana===dow);
+  if(h){
+    if(h.cerrado) add(iniMin,finMin,'cerrado','Cerrado');
+    else{
+      const ap=hmAMin(h.hora_apertura), ci=hmAMin(h.hora_cierre);
+      if(ap!==null) add(iniMin,ap,'cerrado','Fuera de horario');
+      if(ci!==null) add(ci,finMin,'cerrado','Fuera de horario');
+      const c1=hmAMin(h.hora_colacion_inicio), c2=hmAMin(h.hora_colacion_fin);
+      if(c1!==null&&c2!==null) add(c1,c2,'colacion','Colación');
+    }
+  }
+  (bloqueos||[]).forEach(b=>{
+    if(!b.activo||b.profesional_id!==profId)return;
+    const motivo=b.motivo||'Bloqueo';
+    if(b.tipo==='dia_completo'&&b.fecha===fecha) add(iniMin,finMin,'bloqueo',motivo);
+    else if(b.tipo==='puntual'&&b.fecha===fecha) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
+    else if(b.tipo==='recurrente'&&b.dia_semana===dow) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
+  });
+  return out;
+}
+
+function claseEstadoCal(e){ return {'Pendiente':'e-pendiente','Confirmada':'e-confirmada','En curso':'e-curso','Atendida':'e-atendida','Cancelada':'e-cancelada','No asistió':'e-noasistio'}[e]||'e-pendiente'; }
+function duracionCita(c){ const s=SERVICIOS.find(x=>x.id===c.servicio||x.nombre===c.servicio); return (s&&s.duracion_min)||30; }
+function renderCalendario(lista){
+  const cont=document.getElementById('citas-cal');
+  const fecha=document.getElementById('ag-fecha').value||hoyStr();
+  const conHora=lista.filter(c=>c.hora);
+  const sinHora=lista.filter(c=>!c.hora);
+  // La grilla cubre 8–20 h y se amplía si hay citas fuera de ese rango.
+  let ini=CAL_INI_H*60, fin=CAL_FIN_H*60;
+  conHora.forEach(c=>{ const m=hmAMin(c.hora); ini=Math.min(ini,Math.floor(m/60)*60); fin=Math.max(fin,Math.ceil((m+duracionCita(c))/60)*60); });
+  const alto=(fin-ini)*CAL_PX_MIN;
+  const horas=[]; for(let m=ini;m<=fin;m+=60) horas.push(m);
+  const gutter=horas.map((m,i)=>`<div class="cal-hora${i===0?' primera':''}${i===horas.length-1?' ultima':''}" style="top:${(m-ini)*CAL_PX_MIN}px">${String(m/60).padStart(2,'0')}:00</div>`).join('');
+  const lineas=[]; for(let m=ini;m<=fin;m+=30) lineas.push(`<div class="cal-linea${m%60===0?' hora':''}" style="top:${(m-ini)*CAL_PX_MIN}px"></div>`);
+  const bandas=agendaBandas(fecha,HORARIO_NEGOCIO,BLOQUEOS,BARBERO.id,ini,fin).map(b=>`<div class="cal-banda ${b.tipo}" style="top:${(b.ini-ini)*CAL_PX_MIN}px;height:${(b.fin-b.ini)*CAL_PX_MIN}px"><span>${escapeHtml(b.texto)}</span></div>`).join('');
+  const bloques=conHora.map(c=>{
+    const top=(hmAMin(c.hora)-ini)*CAL_PX_MIN, h=Math.max(duracionCita(c)*CAL_PX_MIN,26);
+    return `<button type="button" class="cal-cita ${claseEstadoCal(c.estado)}${CITA_SEL===c.id?' sel':''}" style="top:${top}px;height:${h}px" onclick="selCitaCal('${c.id}')"><b>${fmtHora(c.hora)} · ${escapeHtml(c.nombre_cliente)||'Cliente'}</b><span>${escapeHtml(c.servicio)||'—'} · ${escapeHtml(c.estado)}</span></button>`;
+  }).join('');
+  let ahora='';
+  if(fecha===hoyStr()){ const d=new Date(), m=d.getHours()*60+d.getMinutes(); if(m>=ini&&m<=fin) ahora=`<div class="cal-ahora" style="top:${(m-ini)*CAL_PX_MIN}px"></div>`; }
+  let html=`<div class="cal-wrap"><div class="cal-gutter" style="height:${alto}px">${gutter}</div><div class="cal-col" style="height:${alto}px">${lineas.join('')}${bandas}${bloques}${ahora}</div></div>`;
+  if(!lista.length) html+='<div class="card"><div class="empty">Sin citas para este día.</div></div>';
+  else html+='<div class="cal-ayuda">Toca una cita para ver sus acciones.</div>';
+  if(sinHora.length) html+='<div class="card-title" style="margin:6px 0 10px">Sin hora</div>'+sinHora.map(citaCardHtml).join('');
+  const sel=lista.find(c=>c.id===CITA_SEL);
+  if(sel) html+='<div id="cal-detalle">'+citaCardHtml(sel)+'</div>';
+  cont.innerHTML=html;
+}
+function selCitaCal(id){ CITA_SEL=CITA_SEL===id?null:id; renderCalendario(CITAS_ACTUALES); if(CITA_SEL){ const d=document.getElementById('cal-detalle'); if(d&&d.scrollIntoView) d.scrollIntoView({block:'nearest',behavior:'smooth'}); } }
+
+function renderAgendaActual(lista){
+  if(VISTA_AGENDA==='calendario'){ renderCalendario(lista); return; }
+  renderCitas(lista);
+}
+// Vista Lista (la de siempre).
 function renderCitas(lista){
   const cont=document.getElementById('citas-lista');
   if(!lista.length){ cont.innerHTML='<div class="card"><div class="empty">Sin citas para este día.</div></div>'; return; }
-  cont.innerHTML=lista.map(c=>{
+  cont.innerHTML=lista.map(citaCardHtml).join('');
+}
+// Tarjeta de una cita (con todas sus acciones). La usan la vista Lista y el
+// detalle de la vista Calendario, así no hay dos formas de cobrar o cancelar.
+function citaCardHtml(c){
+  {
     const cancelable=c.estado!=='Cancelada';
     const puedePagar=BARBERO?.puede_procesar_pagos&&c.tipo==='reserva'&&c.estado!=='Cancelada';
     const pagoAbierto=PAGO_ABIERTO_MIAGENDA===c.id;
@@ -484,12 +661,12 @@ function renderCitas(lista){
         ${!pagoAbierto&&c.tipo!=='reserva'?`<button class="btn btn-ghost btn-sm" onclick="eliminarCita('${c.id}','${c.tipo}')">Quitar de mi agenda</button>`:''}
       </div>
     </div>`;
-  }).join('');
+  }
 }
 
 function togglePagoMiAgenda(id){
   PAGO_ABIERTO_MIAGENDA=PAGO_ABIERTO_MIAGENDA===id?null:id;
-  renderCitas(CITAS_ACTUALES);
+  renderAgendaActual(CITAS_ACTUALES);
 }
 
 async function pagarCitaMiAgenda(id,metodo){

@@ -425,6 +425,13 @@ function derivarSuperficies(op) {
     out['--b-gold-fondo'] = bg[0];   out['--b-gold-texto'] = bg[1];
     out['--b-blue-fondo'] = bb[0];   out['--b-blue-texto'] = bb[1];
     out['--b-green-fondo'] = bv[0];  out['--b-green-texto'] = bv[1];
+    // Nota del cliente (mi-agenda.html): ámbar claro, texto legible
+    out['--nota-fondo'] = '#FFF4DC';
+    out['--nota-borde'] = '#E6CC94';
+    out['--nota-acento'] = oscurecerContra('#B8860B', 4.6, '#FFF4DC');
+    out['--nota-texto'] = oscurecerContra('#6B5320', 7, '#FFF4DC');
+    out['--alerta-hover'] = '#FAD9D6';
+    out['--veil'] = 'rgba(20,24,40,0.45)';
     out['--texto-bio'] = oscurecerContra('#999999', 4.6, pisoTxt);
     out['--aviso-fondo'] = '#FFF6E0';
     out['--aviso-borde'] = oscurecerContra('#D4A853', 3.1, '#FFF6E0');

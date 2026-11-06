@@ -788,7 +788,7 @@ async function grupoE(txtApp) {
 // Mismos 60+ colores del grupo L. Insignias, chip, éxito y niveles son TEXTO:
 // deben leerse. Además, club.html no puede tener un color a mano que no sea una
 // variable (salvo la lista cerrada de abajo): un hex suelto no cambia con el modo.
-async function grupoM(txtOriginal, txtClub, txtReservar) {
+async function grupoM(txtOriginal, txtClub, txtReservar, txtMiAgenda) {
   var casos = COLORES_L.slice();
   for (var i = 0; i < 20; i++) { var h = i * 18; casos.push(['h' + h + ' vivo', hsl2hex(h, 1, 0.5), null]); casos.push(['h' + h + ' claro', hsl2hex(h, 0.9, 0.78), null]); casos.push(['h' + h + ' oscuro', hsl2hex(h, 0.8, 0.22), null]); }
   var w = await montar(prepararPagina(txtOriginal)), K = w.contrasteHex, fallos = [], minB = 99, minN = 99, minC = 99;
@@ -799,21 +799,22 @@ async function grupoM(txtOriginal, txtClub, txtReservar) {
     var niv = Math.min(K(v['--nivel-0'], fon), K(v['--nivel-1'], fon), K(v['--nivel-2'], fon), K(v['--nivel-3'], fon), K(v['--nivel-0'], tar), K(v['--nivel-3'], tar));
     var chip = Math.min(K(v['--chip-texto'], v['--chip-fondo']), K(v['--texto-sobre-acento'], v['--acento']));
     var exito = Math.min(K(v['--exito'], fon), K('#FFFFFF', v['--exito']));
+    var nota = Math.min(K(v['--nota-acento'], v['--nota-fondo']), K(v['--nota-texto'], v['--nota-fondo']), K(v['--alerta-texto'], v['--alerta-fondo']));
     var apag = Math.min(K(v['--texto-apagado'], fon), K(v['--texto-tenue'], fon), K(v['--texto-bio'], fon), K(v['--acento'], v['--aviso-fondo']));
     minB = Math.min(minB, ins); minN = Math.min(minN, niv); minC = Math.min(minC, chip);
-    if (ins < 4.5 || niv < 4.5 || chip < 4.5 || exito < 4.5 || apag < 4.5) fallos.push(c[0] + ' ' + c[1] + ': insignias ' + f2(ins) + ' niveles ' + f2(niv) + ' chip ' + f2(chip) + ' éxito ' + f2(exito) + ' apagado ' + f2(apag));
+    if (ins < 4.5 || niv < 4.5 || chip < 4.5 || exito < 4.5 || apag < 4.5 || nota < 4.5) fallos.push(c[0] + ' ' + c[1] + ': insignias ' + f2(ins) + ' niveles ' + f2(niv) + ' chip ' + f2(chip) + ' éxito ' + f2(exito) + ' apagado ' + f2(apag));
   }
   verdad('M ' + casos.length + ' colores en claro: insignias, niveles, chip, éxito y textos apagados >= 4.5:1 (mín. insignia ' + f2(minB) + ', nivel ' + f2(minN) + ', chip ' + f2(minC) + ')', fallos.length === 0, fallos.slice(0, 3).join(' | '));
   var dark = w.derivarSuperficies({ modo: 'oscuro', colorMarca: '#3104F2', colorFondoLogo: null });
   verdad('M en oscuro NO se escribe ninguna de las variables extra de club (quedan los colores de siempre)', !('--b-gold-fondo' in dark) && !('--nivel-1' in dark) && !('--chip-fondo' in dark));
-  var paginas = [['club.html', txtClub], ['reservar.html', txtReservar]];
+  var paginas = [['club.html', txtClub], ['reservar.html', txtReservar], ['mi-agenda.html', txtMiAgenda]];
   for (var q = 0; q < paginas.length; q++) {
     var nomP = paginas[q][0], txtClub = paginas[q][1];
   var css = txtClub.slice(txtClub.indexOf('<style>'), txtClub.indexOf('</style>'));
   var sinRoot = css.replace(/:root\{[\s\S]*?\n\}/, '');
   var sueltos = (sinRoot.match(/#[0-9a-fA-F]{3,6}\b/g) || []).filter(function (x) { return ['#fff', '#0a0a0a', '#d4a853'].indexOf(x.toLowerCase()) < 0; });
   verdad('M ' + nomP + ': el CSS no tiene colores sueltos fuera de :root (salvo #fff del check, #0a0a0a y #d4a853 del horario elegido)', sueltos.length === 0, sueltos.slice(0, 5).join(' '));
-  verdad('M ' + nomP + ' pide color_marca, color_fondo_logo y modo_tema y llama a aplicarTemaPublico', (nomP === 'reservar.html' || /color_marca,color_fondo_logo,modo_tema/.test(txtClub)) && /aplicarTemaPublico\(barb\)/.test(txtClub));
+  verdad('M ' + nomP + ' pide color_marca, color_fondo_logo y modo_tema y llama a aplicarTemaPublico', (nomP === 'reservar.html' || /color_marca,color_fondo_logo,modo_tema/.test(txtClub)) && /aplicarTema(Publico|Agenda)\((barb|negocio)\)/.test(txtClub));
   }
 }
 
@@ -830,7 +831,7 @@ async function grupoM(txtOriginal, txtClub, txtReservar) {
     await grupoR(txtPagina);
     await grupoS(txtPagina);
     await grupoL(txtPagina);
-    await grupoM(txtPagina, await bajar('club.html'), await bajar('reservar.html'));
+    await grupoM(txtPagina, await bajar('club.html'), await bajar('reservar.html'), await bajar('mi-agenda.html'));
     await grupoE(txtApp);
   } catch (e) {
     fallas.push('EL ARNES LANZO: ' + (e && e.message) + '\n      ' + ((e && e.stack) || '').split('\n')[1]);
