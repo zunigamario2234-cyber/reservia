@@ -380,8 +380,16 @@ function rGenerarSlots(ini, fin, colIni, colFin){
   return out;
 }
 
+// El Club es de todo el negocio, pero cada sucursal tiene su horario: se usa el
+// de la sucursal del profesional elegido.
+function rHorarioActual(){
+  const id = RSEL.profesional && RSEL.profesional.sucursal_id;
+  if(!id || !RB.horarioRows) return RB.horario;
+  const m = {}; RB.horarioRows.filter(h=>h.sucursal_id===id).forEach(h=>{ m[h.dia_semana]=h; });
+  return m;
+}
 function rSlotsParaDia(diaSemana){
-  const cfg = RB.horario[diaSemana];
+  const cfg = rHorarioActual()[diaSemana];
   if(!cfg) return rHorariosBase();
   if(cfg.cerrado) return [];
   return rGenerarSlots(rTimeToMin(cfg.hora_apertura), rTimeToMin(cfg.hora_cierre),
@@ -393,7 +401,7 @@ function rSeSolapan(aIni,aDur,bIni,bDur){
 }
 
 function rCierreDelDia(diaSemana){
-  const cfg = RB.horario[diaSemana];
+  const cfg = rHorarioActual()[diaSemana];
   if(!cfg || cfg.cerrado) return null;
   return rTimeToMin(cfg.hora_cierre);
 }
@@ -490,7 +498,10 @@ async function initReservar(){
     sb.from('bloqueos_profesional').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
   ]);
   RB.servicios = sv||[]; RB.profesionales = ba||[];
-  RB.horario = {}; (hn||[]).forEach(h=>{ RB.horario[h.dia_semana]=h; });
+  RB.horarioRows = hn||[];
+  const sucBase = ((ba||[])[0]||{}).sucursal_id || ((hn||[])[0]||{}).sucursal_id;
+  RB.horario = {}; (hn||[]).filter(h=>!sucBase||h.sucursal_id===sucBase).forEach(h=>{ RB.horario[h.dia_semana]=h; });
+  try{ const {data:sc}=await sb.from('sucursales').select('id,nombre').eq('barberia_id',BARBERIA_ID).eq('activa',true); RB.sucursales=sc||[]; }catch(e){ RB.sucursales=[]; }
   RB.bloqueos = blq||[];
   // El acceso a ubicación se monta acá y no al final de init(): RB.horario se
   // llena recién en esta función, que init() dispara sin await. Montarlo allá
@@ -553,6 +564,7 @@ function rRenderProfesionales(){
     <div class="profesional-card" onclick="rSelProfesional('${b.id}')" id="r-ba-${b.id}">
       <div class="profesional-avatar">${b.foto_url?`<img src="${encodeURI(b.foto_url)}" alt="" onerror="this.replaceWith(document.createTextNode('✂'))" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">`:(b.emoji||'✂')}</div>
       <div class="profesional-nombre">${b.nombre}</div>
+      ${(RB.sucursales&&RB.sucursales.length>1&&b.sucursal_id)?`<div style="font-size:10px;color:var(--texto-tenue)">📍 ${(RB.sucursales.find(x=>x.id===b.sucursal_id)||{}).nombre||''}</div>`:''}
     </div>`).join('');
   if(items.length===1) rSelProfesional(items[0].id);
 }

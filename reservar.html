@@ -412,8 +412,16 @@ function generarSlots(ini, fin, colIni, colFin){
 //
 // OJO: esto devuelve dónde PUEDE EMPEZAR una cita, no dónde cabe. Que una cita
 // de 60 min quepa a esa hora lo decide cabeEnLaJornada().
+// Horario de la sucursal en juego: la del profesional elegido, si no la
+// sucursal elegida, si no la primera. Cada sucursal tiene el suyo.
+function horarioActual(){
+  const id = (SEL.profesional && SEL.profesional.sucursal_id) || SEL.sucursal || (B.sucursales && B.sucursales[0] && B.sucursales[0].id);
+  if(!id || !B.horarioRows) return B.horario;
+  const m = {}; B.horarioRows.filter(h=>h.sucursal_id===id).forEach(h=>{ m[h.dia_semana]=h; });
+  return m;
+}
 function slotsParaDia(diaSemana){
-  const cfg = B.horario[diaSemana];
+  const cfg = horarioActual()[diaSemana];
   if(!cfg) return horariosBase();
   if(cfg.cerrado) return [];
   return generarSlots(timeToMin(cfg.hora_apertura), timeToMin(cfg.hora_cierre),
@@ -431,7 +439,7 @@ function seSolapan(aIni,aDur,bIni,bDur){
 // Hora de cierre del día en minutos, o null si el negocio no configuró ese día
 // (ahí manda la jornada por defecto y no hay cierre que consultar).
 function cierreDelDia(diaSemana){
-  const cfg = B.horario[diaSemana];
+  const cfg = horarioActual()[diaSemana];
   if(!cfg || cfg.cerrado) return null;
   return timeToMin(cfg.hora_cierre);
 }
@@ -624,7 +632,9 @@ async function init(){
     const {data:sc}=await sb.from('sucursales').select('*').eq('barberia_id',BARBERIA_ID).eq('activa',true).order('orden').order('created_at');
     B.sucursales = sc||[];
   }catch(e){ B.sucursales = []; }
-  B.horario = {}; (hn||[]).forEach(h=>{ B.horario[h.dia_semana]=h; });
+  B.horarioRows = hn||[];
+  const sucBase = (B.sucursales&&B.sucursales[0]&&B.sucursales[0].id)||((hn||[])[0]||{}).sucursal_id;
+  B.horario = {}; (hn||[]).filter(h=>!sucBase||h.sucursal_id===sucBase).forEach(h=>{ B.horario[h.dia_semana]=h; });
   B.bloqueos = blq||[];
   B.barberoServicios = bs||[];
   // Con guarda: si ubicacion-modal.js no cargara, el ReferenceError cortaría

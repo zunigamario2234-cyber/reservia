@@ -572,7 +572,8 @@ async function cargarContextoAgenda(){
       sb.from('horario_negocio').select('*').eq('barberia_id',NEGOCIO_ID),
       sb.from('bloqueos_profesional').select('*').eq('barberia_id',NEGOCIO_ID).eq('profesional_id',BARBERO.id)
     ]);
-    HORARIO_NEGOCIO=(h.data||[]); BLOQUEOS=(b.data||[]);
+    // Cada sucursal tiene su horario: el profesional ve el de la suya.
+    HORARIO_NEGOCIO=(h.data||[]).filter(r=>!BARBERO.sucursal_id||r.sucursal_id===BARBERO.sucursal_id); BLOQUEOS=(b.data||[]);
   }catch(e){ HORARIO_NEGOCIO=[]; BLOQUEOS=[]; }
   if(VISTA_AGENDA==='calendario') renderAgendaActual(CITAS_ACTUALES);
 }

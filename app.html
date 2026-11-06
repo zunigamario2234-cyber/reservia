@@ -1003,6 +1003,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         </select>
         <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6">Son las horas que ven tus clientes en tu link de reservas: con 60 minutos ven 09:00, 10:00, 11:00… y no las medias horas.<br>No cambia las reservas ya tomadas ni la agenda de este panel.</div>
       </div>
+      <div class="fg" id="hn-suc-fg" style="display:none;margin-bottom:12px"><label>Horario de la sucursal</label><select id="hn-suc" onchange="cambiarSucHorario(this.value)"></select></div>
       <div id="horario-dias"></div>
       <button class="btn btn-primary" id="btn-guardar-horario" style="margin-top:10px" onclick="guardarHorarioNegocio()">Guardar horario</button>
     </div>
@@ -1587,6 +1588,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div id="co-aviso-mes" class="alert al-warn" style="display:none;margin-bottom:10px;font-size:12px"></div>
     <!-- Sugerencias: las descripciones más repetidas de meses anteriores. -->
     <div id="co-sugerencias" style="display:none;margin-bottom:10px"></div>
+    <div class="fg" id="co-suc-fg" style="display:none"><label>Sucursal</label><select id="co-suc"></select></div>
     <div class="fg"><label>Descripción *</label><input id="co-desc" type="text" placeholder="Arriendo local"></div>
     <div class="fr">
       <div class="fg"><label>Monto neto ($) *</label><input id="co-monto" type="number" min="1" placeholder="0" oninput="calcIvaCo()"></div>
@@ -1673,6 +1675,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   <div class="modal">
     <div class="modal-hdr"><span class="modal-title" id="pr-titulo">Agregar producto</span><button class="xbtn" onclick="closeM('m-producto')">×</button></div>
     <input type="hidden" id="pr-id"><div class="fr"><div class="fg"><label>Código</label><input id="pr-cod" type="text" placeholder="PRD-001"></div><div class="fg"><label>Nombre *</label><input id="pr-nombre" type="text" placeholder="Cera Matte"></div></div>
+    <div class="fg" id="pr-suc-fg" style="display:none"><label>Sucursal</label><select id="pr-suc"></select></div>
     <div class="fr"><div class="fg"><label>Categoría</label><select id="pr-cat"><option>Styling</option><option>Barba</option><option>Shampoo</option><option>Herramientas</option><option>Otro</option></select></div><div class="fg"><label>Proveedor</label><input id="pr-prov" type="text"></div></div>
     <div class="fr"><div class="fg"><label id="pr-stock-lbl">Stock inicial</label><input id="pr-stock" type="number" value="0" min="0"></div><div class="fg"><label>Stock mínimo</label><input id="pr-min" type="number" value="2" min="0"></div></div>
     <div class="fr"><div class="fg"><label>Stock máximo</label><input id="pr-max" type="number" value="20" min="0"></div><div class="fg"><label>Costo unitario ($)</label><input id="pr-costo" type="number" value="0" min="0"></div></div>
@@ -2269,7 +2272,7 @@ async function loadGiftCards(){
   }catch(e){ S.gifts=[]; }
 }
 // Recepción lee la vista inventario_recepcion (sin costo ni proveedor).
-async function loadInventario(){ const {data}=await sb.from(esRecepcion()?'inventario_recepcion':'inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
+async function loadInventario(){ let q=sb.from(esRecepcion()?'inventario_recepcion':'inventario').select('*').eq('barberia_id',S.barberia.id); if(S.sucFiltro) q=q.eq('sucursal_id',S.sucFiltro); const {data}=await q.order('nombre'); S.inventario=data||[]; }
 async function loadAnticipos(){
   // Solo el dueño tiene permiso (RLS); para los demás roles ni se pregunta.
   if(S.perfil?.rol!=='dueno'){ S.anticipos=[]; return; }
@@ -2279,7 +2282,7 @@ async function loadIvaHistorico(){
   if(S.perfil?.rol!=='dueno'){ S.ivaHist=[]; return; }
   try{ S.ivaHist=await traerTodo('iva_historico'); }catch(e){ S.ivaHist=[]; }
 }
-async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
+async function loadCostos(){ let q=sb.from('costos').select('*').eq('barberia_id',S.barberia.id); if(S.sucFiltro) q=q.eq('sucursal_id',S.sucFiltro); const {data}=await q.order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadCobroProductos(){
   S.cobroProductos=await traerTodo('cobro_productos');
   // El costo de cada venta vive en una tabla que solo lee el dueño; para
@@ -2297,15 +2300,24 @@ async function loadAlianzaCanjes(){
   S.alianzaCanjes=data||[];
 }
 async function loadNivelesVip(){ const {data}=await sb.from('niveles_vip').select('*').eq('barberia_id',S.barberia.id).order('orden'); S.nivelesVip=data||[]; }
+// Sucursal por defecto para formularios: la que el dueño tiene filtrada, la de
+// la recepción, o la primera activa.
+function sucDefecto(){ return S.sucFiltro||S.perfil?.sucursal_id||(sucActivas()[0]||{}).id||null; }
+// Los 7 días de UNA sucursal. El día sin fila se muestra con un horario por
+// defecto que NO está en la base: existe solo para que el formulario no salga
+// vacío. Ojo, el primer "Guardar horario" lo persiste tal cual, aunque no se
+// haya tocado nada. La colación arranca nula (= atiende corrido).
+function horarioDeSuc(sucId){
+  const rows=(S.horarioAll||[]).filter(r=>!sucId||r.sucursal_id===sucId);
+  return DIAS_SEMANA.map((_,i)=>rows.find(r=>r.dia_semana===i) || {dia_semana:i,hora_apertura:'09:00',hora_cierre:'19:00',cerrado:i===0,hora_colacion_inicio:null,hora_colacion_fin:null});
+}
 async function loadHorarioNegocio(){
   const {data}=await sb.from('horario_negocio').select('*').eq('barberia_id',S.barberia.id);
-  const rows=data||[];
-  // El día sin fila se muestra con un horario por defecto que NO está en la
-  // base: existe solo para que el formulario no salga vacío. Ojo, el primer
-  // "Guardar horario" lo persiste tal cual, aunque no se haya tocado nada.
-  // La colación arranca nula, que es lo mismo que decir "atiende corrido".
-  S.horario = DIAS_SEMANA.map((_,i)=>rows.find(r=>r.dia_semana===i) || {dia_semana:i,hora_apertura:'09:00',hora_cierre:'19:00',cerrado:i===0,hora_colacion_inicio:null,hora_colacion_fin:null});
+  S.horarioAll=data||[];
+  if(!S.sucHorario||!(S.sucursales||[]).some(x=>x.id===S.sucHorario)) S.sucHorario=sucDefecto();
+  S.horario=horarioDeSuc(S.sucHorario);
 }
+function cambiarSucHorario(v){ S.sucHorario=v; S.horario=horarioDeSuc(v); renderHorarioNegocio(); }
 async function loadBloqueos(){ const {data}=await sb.from('bloqueos_profesional').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.bloqueos=data||[]; }
 async function loadPlantillas(){ const {data}=await sb.from('plantillas_mensajes').select('*').eq('barberia_id',S.barberia.id).order('evento'); S.plantillas=data||[]; }
 // Encuestas de los últimos 60 días. El corte no es por performance: una
@@ -2853,7 +2865,8 @@ function initModal(id){
   }
   if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);pintarSelectSucursal('ba-suc',S.sucFiltro,'ba-suc-fg');}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
-  if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
+  if(id==='m-costo') pintarSelectSucursal('co-suc',sucDefecto(),'co-suc-fg');
+  if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre+((sucActivas().length>1&&!S.sucFiltro&&p.sucursal_id)?' · '+sucNombre(p.sucursal_id):'')})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-abono-tipo').value='';document.getElementById('sv-abono-valor').value='';svAbonoCambio();document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;}
   if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';FOTO_ALZ_CROPPED_BLOB=null;}
   if(id==='m-bloqueo'){
@@ -3378,7 +3391,7 @@ async function guardarCosto(){
   // Mismo cálculo que el preview del modal, para que lo que se guarda sea
   // exactamente lo que el dueño vio antes de apretar Guardar.
   const iva=conIva?ivaSobreNeto(m):0;
-  const payload={barberia_id:S.barberia.id,fecha:f,descripcion:d,tipo:document.getElementById('co-tipo').value,categoria:document.getElementById('co-cat').value,monto_neto:m,iva,total:m+iva};
+  const payload={barberia_id:S.barberia.id,fecha:f,descripcion:d,tipo:document.getElementById('co-tipo').value,categoria:document.getElementById('co-cat').value,monto_neto:m,iva,total:m+iva,sucursal_id:document.getElementById('co-suc').value||sucDefecto()};
   // Con id es edición; sin id, alta. Mismo patrón que guardarCliente().
   const id=document.getElementById('co-id').value;
   let error;
@@ -3405,6 +3418,8 @@ function abrirProducto(id){
   set('pr-costo',p?(p.costo_unitario||0):0); set('pr-precio',p?(p.precio_venta||0):0);
   document.getElementById('pr-titulo').textContent=p?'Editar producto':'Agregar producto';
   document.getElementById('pr-stock-lbl').textContent=p?'Stock actual':'Stock inicial';
+  pintarSelectSucursal('pr-suc',sucDefecto(),'pr-suc-fg');
+  if(p) document.getElementById('pr-suc-fg').style.display='none';
   openM('m-producto');
 }
 
@@ -3429,7 +3444,8 @@ async function guardarProducto(){
     return;
   }
   datos.barberia_id=S.barberia.id;
-  datos.codigo=document.getElementById('pr-cod').value||'PRD-'+String(S.inventario.length+1).padStart(3,'0');
+  datos.sucursal_id=document.getElementById('pr-suc').value||sucDefecto();
+  datos.codigo=document.getElementById('pr-cod').value||'PRD-'+String(S.inventario.filter(x=>!x.sucursal_id||x.sucursal_id===datos.sucursal_id).length+1).padStart(3,'0');
   const {error}=await sb.from('inventario').insert(datos);
   if(error){notify(error.message,'err');return;}
   await loadInventario();closeM('m-producto');notify('Producto agregado ✓');renderInventario();
@@ -4137,6 +4153,8 @@ async function guardarConfig(){
 function renderHorarioNegocio(){
   const cont=document.getElementById('horario-dias');
   if(!cont)return;
+  const hs=document.getElementById('hn-suc'), hsf=document.getElementById('hn-suc-fg');
+  if(hs){ const act=sucActivas(); hsf.style.display=(S.perfil?.rol==='dueno'&&act.length>1)?'':'none'; hs.innerHTML=act.map(x=>`<option value="${x.id}">${escHtml(x.nombre)}</option>`).join(''); if(S.sucHorario) hs.value=S.sucHorario; }
   cont.innerHTML=S.horario.map((h,i)=>`
     <div style="padding:10px 0;border-bottom:0.5px solid #1a1a1a">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -4214,7 +4232,7 @@ async function guardarHorarioNegocio(){
   const payload=DIAS_SEMANA.map((_,i)=>{
     const cerrado=document.getElementById('hn-cerrado-'+i).checked;
     return {
-      barberia_id:S.barberia.id,dia_semana:i,
+      barberia_id:S.barberia.id,sucursal_id:S.sucHorario,dia_semana:i,
       cerrado,
       hora_apertura:document.getElementById('hn-apertura-'+i).value||null,
       hora_cierre:document.getElementById('hn-cierre-'+i).value||null,
@@ -4226,7 +4244,7 @@ async function guardarHorarioNegocio(){
       hora_colacion_fin:cerrado?null:(document.getElementById('hn-colfin-'+i).value||null)
     };
   });
-  const {error}=await sb.from('horario_negocio').upsert(payload,{onConflict:'barberia_id,dia_semana'});
+  const {error}=await sb.from('horario_negocio').upsert(payload,{onConflict:'sucursal_id,dia_semana'});
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar horario';return;}
   await loadHorarioNegocio();renderHorarioNegocio();notify('Horario guardado ✓');
   btn.disabled=false;btn.textContent='Guardar horario';
@@ -4452,8 +4470,14 @@ function cobroReservasDisponibles(){
 function productosQueCoinciden(texto){
   const q=(texto||'').trim().toLowerCase();
   if(!q)return [];
+  // Con varias sucursales, solo los productos de la sucursal del profesional
+  // que vende (la base rechaza la venta de un producto de otra sucursal).
+  const profNom=(document.getElementById('cobprod-prof')||{}).value;
+  const pb=profNom?(S.barberos||[]).find(b=>b.nombre===profNom&&b.activo):null;
+  const suc=pb&&pb.sucursal_id;
   return S.inventario.filter(p=>
-    (p.codigo||'').toLowerCase().includes(q)||p.nombre.toLowerCase().includes(q)).slice(0,12);
+    (!suc||!p.sucursal_id||p.sucursal_id===suc)&&
+    ((p.codigo||'').toLowerCase().includes(q)||p.nombre.toLowerCase().includes(q))).slice(0,12);
 }
 
 function renderBuscadorProductos(){
@@ -4466,7 +4490,7 @@ function renderBuscadorProductos(){
     return `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:0.5px solid var(--border);font-size:12px${sinStock?';opacity:.5':''}">
       <div style="flex:1;min-width:0">
         <strong style="color:var(--text)">${escHtml(p.nombre)}</strong>
-        <span style="color:var(--text3);font-size:10px"> ${escHtml(p.codigo||'')}</span><br>
+        <span style="color:var(--text3);font-size:10px"> ${escHtml(p.codigo||'')}${(sucActivas().length>1&&p.sucursal_id)?' · 📍 '+escHtml(sucNombre(p.sucursal_id)):''}</span><br>
         <span style="font-size:11px;color:${sinStock?'#e05050':'var(--text3)'}">${sinStock?'Sin stock':'Stock: '+p.stock}</span>
       </div>
       <span style="white-space:nowrap;color:var(--text2)">${fmt(p.precio_venta)}</span>
@@ -4502,6 +4526,7 @@ function abrirAgregarProducto(){
 function cobprodProfesionalElegido(){
   if(!COBRO_CTX)return;
   if(!document.getElementById('cobprod-prof').value)return;
+  renderBuscadorProductos();
   const list=productosQueCoinciden(document.getElementById('cobprod-q').value);
   if(list.length!==1)return;
   // Sin stock no se agrega, igual que el botón de la fila, que va disabled.
@@ -4515,6 +4540,8 @@ function cobroAgregarProducto(id){
   if(!p)return;
   const prof=document.getElementById('cobprod-prof').value;
   if(!prof){ notify('Elige el profesional que vende el producto','warn'); return; }
+  const pbv=(S.barberos||[]).find(b=>b.nombre===prof&&b.activo);
+  if(pbv&&pbv.sucursal_id&&p.sucursal_id&&pbv.sucursal_id!==p.sucursal_id){ notify('Ese producto es de otra sucursal; elige un profesional de la misma','warn'); return; }
   if(!COBRO_CTX.productos)COBRO_CTX.productos=[];
   // Sumar cantidad si ya está en el cobro con el mismo profesional; si lo
   // vendió otro, va como línea aparte porque la comisión es de cada uno.
@@ -4787,6 +4814,8 @@ async function loadSucursales(){
   if(S.perfil?.rol==='dueno'){ try{ f=localStorage.getItem('suc-'+S.barberia.id); }catch(e){} }
   S.sucFiltro=(f&&S.sucursales.some(x=>x.id===f&&x.activa))?f:null;
 }
+// Etiqueta chica con la sucursal; solo cuando hay varias y no se está filtrando una.
+function etiquetaSuc(id){ return (sucActivas().length>1&&!S.sucFiltro&&id)?`<div style="font-size:10px;color:var(--text3)">📍 ${escHtml(sucNombre(id))}</div>`:''; }
 function sucActivas(){ return (S.sucursales||[]).filter(x=>x.activa); }
 function sucNombre(id){ const x=(S.sucursales||[]).find(y=>y.id===id); return x?x.nombre:''; }
 function pintarSucursalSwitch(){
@@ -4805,7 +4834,7 @@ async function cambiarSucursal(v){
   S.sucFiltro=v||null;
   try{ if(v) localStorage.setItem('suc-'+S.barberia.id,v); else localStorage.removeItem('suc-'+S.barberia.id); }catch(e){}
   document.body.style.cursor='progress';
-  try{ await Promise.all([loadVisitas(),loadReservas(),loadBarberos(),loadCobroProductos()]); construirVentas(); }
+  try{ await Promise.all([loadVisitas(),loadReservas(),loadBarberos(),loadCobroProductos(),loadInventario(),loadCostos(),loadHorarioNegocio()]); construirVentas(); }
   catch(e){ notify('No se pudo cambiar de sucursal: '+e.message,'err'); }
   document.body.style.cursor='';
   const pg=document.querySelector('.page.active');
@@ -6220,7 +6249,7 @@ function renderInventario(){
   document.getElementById('t-inv').innerHTML=list.map(p=>{
     const est=p.stock<=p.stock_min?'Crítico':p.stock>p.stock_max?'Sobrestock':'Normal';
     const eb=est==='Crítico'?'b-red':est==='Sobrestock'?'b-orange':'b-green';
-    return`<tr><td data-label="Código" style="font-size:10px;color:var(--text3)">${p.codigo||'—'}</td><td data-label="Producto"><strong style="color:var(--text)">${p.nombre}</strong></td><td data-label="Categoría">${p.categoria||'—'}</td>
+    return`<tr><td data-label="Código" style="font-size:10px;color:var(--text3)">${p.codigo||'—'}</td><td data-label="Producto"><strong style="color:var(--text)">${p.nombre}</strong>${etiquetaSuc(p.sucursal_id)}</td><td data-label="Categoría">${p.categoria||'—'}</td>
     <td data-label="Stock" style="color:${p.stock<=p.stock_min?'#e05050':'inherit'};font-weight:600">${p.stock}</td>
     <td data-label="Mín" style="color:var(--text3)">${p.stock_min}</td><td data-label="Máx" style="color:var(--text3)">${p.stock_max}</td>
     <td data-label="Estado"><span class="badge ${eb}">${est}</span></td>
@@ -6461,6 +6490,7 @@ function editarCosto(id){
   document.getElementById('co-fecha').value=c.fecha||'';
   document.getElementById('co-tipo').value=c.tipo||'fijo';
   document.getElementById('co-cat').value=c.categoria||'Arriendo';
+  pintarSelectSucursal('co-suc',c.sucursal_id||sucDefecto(),'co-suc-fg');
   document.getElementById('co-iva-opt').value=(c.iva||0)>0?'si':'no';
   // Editando no se ofrecen sugerencias: la descripción ya está puesta y un
   // clic accidental la pisaría.
@@ -6507,7 +6537,8 @@ function abrirRepetirGastos(){
     descripcion:c.descripcion||'', monto:c.monto_neto||0,
     tipo:c.tipo||'fijo', categoria:c.categoria||'Arriendo',
     conIva:(c.iva||0)>0, dia:Number((c.fecha||'').slice(8,10))||1,
-    repetido:nombres.indexOf((c.descripcion||'').trim().toLowerCase())!==-1
+    repetido:nombres.indexOf((c.descripcion||'').trim().toLowerCase())!==-1,
+    sucursal_id:c.sucursal_id||null
   }));
   document.getElementById('m-rep-title').textContent='Repetir gastos de '+nombreMesLargo(origen);
   const aviso=document.getElementById('rep-aviso');
@@ -6549,7 +6580,7 @@ async function confirmarRepetirGastos(){
     const iva=c.conIva?ivaSobreNeto(m):0;
     filas.push({barberia_id:S.barberia.id,fecha:repFechaDestino(c.dia,destino),
                 descripcion:c.descripcion,tipo:c.tipo,categoria:c.categoria,
-                monto_neto:m,iva,total:m+iva});
+                monto_neto:m,iva,total:m+iva,sucursal_id:c.sucursal_id||sucDefecto()});
   });
   if(!filas.length){notify('No marcaste ningún gasto con monto mayor que 0','warn');return;}
   const btn=document.getElementById('rep-btn');
@@ -6592,7 +6623,7 @@ function renderCostos(){
   // qué mes pertenece— y debajo, en chico, cuándo se registró.
   document.getElementById('t-costos').innerHTML=list.map(c=>`<tr>
     <td data-label="Fecha"><div>${fechaCorta(c.fecha)}</div>${c.created_at?`<div style="font-size:10px;color:var(--text3)">Registrado ${fechaRegistro(c.created_at)}</div>`:''}</td>
-    <td data-label="Descripción">${escHtml(c.descripcion)}</td>
+    <td data-label="Descripción">${escHtml(c.descripcion)}${etiquetaSuc(c.sucursal_id)}</td>
     <td data-label="Tipo"><span class="badge ${c.tipo==='fijo'?'b-blue':'b-purple'}">${escHtml(c.tipo)}</span></td>
     <td data-label="Categoría">${escHtml(c.categoria)||'—'}</td><td data-label="Neto">${fmt(c.monto_neto)}</td>
     <td data-label="IVA" class="gold">${fmt(c.iva)}</td><td data-label="Total" style="font-weight:600">${fmt(c.total)}</td>
@@ -6868,7 +6899,8 @@ function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
   return out;
 }
 function agendaBandasHtml(fecha,profId){
-  return agendaBandas(fecha,S.horario,S.bloqueos,profId,AG_START_HOUR*60,AG_END_HOUR*60).map(b=>
+  const _pb=(S.barberos||[]).find(b=>b.id===profId); const _hor=(_pb&&_pb.sucursal_id)?horarioDeSuc(_pb.sucursal_id):S.horario;
+  return agendaBandas(fecha,_hor,S.bloqueos,profId,AG_START_HOUR*60,AG_END_HOUR*60).map(b=>
     `<div class="cal-banda ${b.tipo}" style="top:${(b.ini-AG_START_HOUR*60)*AG_PX_MIN}px;height:${(b.fin-b.ini)*AG_PX_MIN}px" title="${String(b.texto).replace(/"/g,'&quot;')}"><span>${String(b.texto).replace(/</g,'&lt;')}</span></div>`).join('');
 }
 
