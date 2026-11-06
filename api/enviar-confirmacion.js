@@ -286,3 +286,8 @@ module.exports = async function handler(req, res) {
     res.status(500).json({ ok: false, error: e.message || 'Error interno' });
   }
 };
+
+// Los helpers de arriba los reutiliza api/avisar-modificacion-reserva.js.
+module.exports.resolverProfesional = resolverProfesional;
+module.exports.esc = esc;
+module.exports.normalizar = normalizar;

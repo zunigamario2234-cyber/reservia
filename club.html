@@ -195,6 +195,7 @@ label{font-size:11px;color:var(--texto-debil);display:block;margin-bottom:4px}
   </div>
 
   <div id="tab-reservar" style="display:none">
+    <div id="r-modo-modificar" class="alert" style="display:none;background:var(--tarjeta,#14152b);border:1px solid var(--acento);color:var(--texto);margin-bottom:14px"></div>
     <div class="steps">
       <div class="step-tab active" id="r-st-1" data-num="1"><span class="step-label">Servicio</span></div>
       <div class="step-tab" id="r-st-2" data-num="2"><span class="step-label">Profesional</span></div>
@@ -262,7 +263,7 @@ label{font-size:11px;color:var(--texto-debil);display:block;margin-bottom:4px}
     <div class="step-content" id="r-sc-exito">
       <div class="success-screen">
         <div class="success-icon">✅</div>
-        <div class="success-title">¡Reserva confirmada!</div>
+        <div class="success-title" id="r-success-title">¡Reserva confirmada!</div>
         <div class="success-sub" id="r-success-msg"></div>
         <button class="btn btn-wa" id="r-btn-wa-confirmar" style="max-width:260px;margin-left:auto;margin-right:auto" onclick="rConfirmarPorWhatsApp()">📱 Confirmar por WhatsApp a la barbería</button>
         <button class="btn btn-ghost" style="margin-top:12px;max-width:260px;margin-left:auto;margin-right:auto" onclick="rNuevaReserva()">Hacer otra reserva</button>
@@ -442,10 +443,12 @@ function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&
 // que matchea por whatsapp normalizado —en la base conviven cuatro formatos
 // del mismo número— y devuelve SOLO fecha, hora, servicio y profesional: ni
 // teléfono, ni montos, ni ids.
+let MIS_RESERVAS = [];
+let RMOD = null; // {id, orig:{fecha,hora,servicio,profesional}} mientras se modifica una reserva
 async function cargarMisReservas(){
   const cont = document.getElementById('mis-reservas');
   cont.innerHTML = '<div class="msg-full">Cargando tus reservas...</div>';
-  const {data, error} = await sb.rpc('get_proximas_reservas_publico',
+  const {data, error} = await sb.rpc('get_proximas_reservas_club',
     {p_barberia_id:BARBERIA_ID, p_cliente_id:CLIENTE_ID});
   if(error){
     // Nunca se deja la pantalla en "Cargando..." para siempre: si falla, el
@@ -454,6 +457,7 @@ async function cargarMisReservas(){
     return;
   }
   const lista = data||[];
+  MIS_RESERVAS = lista;
   if(!lista.length){
     cont.innerHTML = `<div class="card" style="text-align:center">
       <div style="font-size:32px;margin-bottom:8px">📭</div>
@@ -471,6 +475,7 @@ async function cargarMisReservas(){
       <div style="font-size:22px;font-weight:700;color:var(--texto);margin:4px 0 8px">${escapeHtml((r.hora||'').slice(0,5))}</div>
       <div style="font-size:13px;color:var(--texto)">${escapeHtml(r.servicio||'Servicio')}</div>
       ${r.profesional?`<div style="font-size:12px;color:var(--texto-apagado);margin-top:2px">con ${escapeHtml(r.profesional)}</div>`:''}
+      <button class="btn btn-ghost" style="margin-top:12px" onclick="iniciarModificacion('${r.id}')">✏️ Modificar día, hora o profesional</button>
     </div>`;
   }).join('');
 }
@@ -604,6 +609,11 @@ async function rSelFecha(fecha){
   // ahí por qué ya no se filtra por procesado=false.
   const {data:ocupadas} = await sb.from('reservas_disponibilidad').select('hora,barbero_nombre,duracion_min').eq('barberia_id',BARBERIA_ID).eq('fecha',fecha);
   RB.reservasOcupadas = ocupadas||[];
+  // Al modificar, la propia reserva no debe bloquearle su horario actual.
+  if(RMOD && fecha===RMOD.orig.fecha){
+    const i = RB.reservasOcupadas.findIndex(r=>(r.hora||'').slice(0,5)===RMOD.orig.hora.slice(0,5) && (r.barbero_nombre||'').trim().toLowerCase()===(RMOD.orig.profesional||'').trim().toLowerCase());
+    if(i>=0) RB.reservasOcupadas.splice(i,1);
+  }
   rRenderHorarios();
 }
 
@@ -661,7 +671,8 @@ function rRenderResumen(){
   const d=new Date(RSEL.fecha+'T12:00:00');
   const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  document.getElementById('r-resumen-reserva').innerHTML=`
+  const filaOrig = RMOD ? `<div class="resumen-row"><span class="resumen-label">Antes</span><span class="resumen-val" style="text-decoration:line-through;opacity:.7">${escapeHtml(RMOD.orig.fecha)} ${escapeHtml(RMOD.orig.hora.slice(0,5))} · ${escapeHtml(RMOD.orig.servicio||'')} · ${escapeHtml(RMOD.orig.profesional||'')}</span></div>` : '';
+  document.getElementById('r-resumen-reserva').innerHTML=filaOrig+`
     <div class="resumen-row"><span class="resumen-label">Servicio</span><span class="resumen-val">${RSEL.servicio?.nombre}</span></div>
     <div class="resumen-row"><span class="resumen-label">Profesional</span><span class="resumen-val">${RSEL.profesional?.nombre||''}</span></div>
     <div class="resumen-row"><span class="resumen-label">Fecha</span><span class="resumen-val">${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}</span></div>
@@ -688,6 +699,25 @@ async function rConfirmarReserva(){
     // barberia_id Y cliente_id) pero sin pedirle datos de contacto al
     // cliente: los busca en el servidor a partir de CLIENTE_ID, que ya
     // viene validado por get_club_vip_publico al cargar la página.
+    if(RMOD){
+      const {data:rid,error:em}=await sb.rpc('modificar_reserva_club',{
+        p_barberia_id:BARBERIA_ID, p_cliente_id:CLIENTE_ID, p_reserva_id:RMOD.id,
+        p_fecha:RSEL.fecha, p_hora:RSEL.hora, p_servicio:RSEL.servicio?.nombre,
+        p_barbero_nombre:RSEL.profesional.nombre, p_notas:notas||null
+      });
+      if(em)throw em;
+      // Aviso por correo a los profesionales (y confirmación al cliente). El
+      // servidor lee QUÉ cambió desde la base; esto solo le dice cuál reserva.
+      fetch('/api/avisar-modificacion-reserva',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:rid})}).catch(()=>{});
+      document.querySelectorAll('#tab-reservar .step-content').forEach(s=>s.classList.remove('active'));
+      document.getElementById('r-sc-exito').classList.add('active');
+      document.getElementById('r-success-title').textContent='¡Reserva modificada!';
+      document.getElementById('r-success-msg').innerHTML=`Tu reserva quedó así:<br><br>📅 ${escapeHtml(RSEL.fecha)} a las ${escapeHtml(RSEL.hora)} hrs<br>✂️ ${escapeHtml(RSEL.servicio?.nombre||'')} con ${escapeHtml(RSEL.profesional.nombre)}<br><br>Ya le avisamos a ${escapeHtml(RSEL.profesional.nombre)}.`;
+      document.getElementById('r-btn-wa-confirmar').style.display='none';
+      document.getElementById('r-modo-modificar').style.display='none';
+      RMOD=null;
+      return;
+    }
     const {data:reservaId,error}=await sb.rpc('crear_reserva_publica_club',{
       p_barberia_id:BARBERIA_ID,
       p_cliente_id:CLIENTE_ID,
@@ -708,7 +738,7 @@ async function rConfirmarReserva(){
   }catch(e){
     const al=document.getElementById('r-alert-confirm');
     al.textContent='Error al confirmar: '+e.message; al.style.display='';
-    btn.disabled=false; btn.textContent='✓ Confirmar reserva';
+    btn.disabled=false; btn.textContent=RMOD?'✓ Guardar cambios':'✓ Confirmar reserva';
   }
 }
 
@@ -718,7 +748,41 @@ function rConfirmarPorWhatsApp(){
   abrirWA(BARBERIA.whatsapp,msg);
 }
 
+// ─── Modificar una reserva (NUNCA cancelarla desde acá) ──────────────────
+// Reusa el mismo flujo de "Reservar", precargado con la reserva actual. La base
+// (modificar_reserva_club) valida todo de nuevo; esto es solo la pantalla.
+async function iniciarModificacion(id){
+  const r = MIS_RESERVAS.find(x=>x.id===id); if(!r) return;
+  if(!RB.servicios.length) await initReservar();
+  RMOD = {id, orig:{fecha:r.fecha, hora:String(r.hora||''), servicio:r.servicio, profesional:r.profesional}};
+  cambiarTabTop('reservar');
+  rNuevaReserva(); RMOD = {id, orig:{fecha:r.fecha, hora:String(r.hora||''), servicio:r.servicio, profesional:r.profesional}};
+  const sv = RB.servicios.find(s=>(s.nombre||'').trim().toLowerCase()===(r.servicio||'').trim().toLowerCase());
+  if(sv){ RSEL.servicio=sv; const c=document.getElementById('r-sv-'+sv.id); if(c)c.classList.add('selected'); rRenderServicioElegido(); }
+  const pr = RB.profesionales.find(b=>(b.nombre||'').trim().toLowerCase()===(r.profesional||'').trim().toLowerCase());
+  if(pr) rSelProfesional(pr.id);
+  const f = new Date(r.fecha+'T12:00:00'); rCalMes = new Date(f.getFullYear(), f.getMonth(), 1);
+  const dia = f.toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'});
+  const ban = document.getElementById('r-modo-modificar');
+  ban.innerHTML = `✏️ <strong>Modificando tu reserva</strong><br><span style="font-size:12px;opacity:.85">${escapeHtml(dia)} · ${escapeHtml(String(r.hora||'').slice(0,5))} · ${escapeHtml(r.servicio||'')} con ${escapeHtml(r.profesional||'')}</span><br>
+    <span style="font-size:12px;opacity:.85">Elige el nuevo día y hora. Si quieres cambiar servicio o profesional, usa "Volver".</span><br>
+    <a href="#" style="font-size:12px;color:var(--acento)" onclick="salirModificacion();return false">Salir sin cambiar nada</a>`;
+  ban.style.display='';
+  document.getElementById('r-btn-confirmar').textContent='✓ Guardar cambios';
+  rIrPaso(3);
+  await rSelFecha(r.fecha);
+}
+function salirModificacion(){
+  rNuevaReserva();
+  cambiarTabTop('mis');
+}
+
 function rNuevaReserva(){
+  RMOD=null;
+  document.getElementById('r-modo-modificar').style.display='none';
+  document.getElementById('r-success-title').textContent='¡Reserva confirmada!';
+  document.getElementById('r-btn-confirmar').textContent='✓ Confirmar reserva';
+  document.getElementById('r-btn-wa-confirmar').style.display=BARBERIA?.whatsapp?'':'none';
   RSEL={servicio:null,profesional:null,fecha:null,hora:null};
   document.querySelectorAll('#tab-reservar .step-content').forEach(s=>s.classList.remove('active'));
   document.getElementById('r-sc-1').classList.add('active');

@@ -258,7 +258,7 @@ async function correr(src){
 
   var cm = extraerFuncionAsync(js,'cargarMisReservas');
   check('llama a la RPC con los dos ids',
-        /get_proximas_reservas_publico'[\s\S]*p_barberia_id:BARBERIA_ID[\s\S]*p_cliente_id:CLIENTE_ID/.test(cm), true);
+        /get_proximas_reservas_club'[\s\S]*p_barberia_id:BARBERIA_ID[\s\S]*p_cliente_id:CLIENTE_ID/.test(cm), true);
   check('escapa lo que pinta con innerHTML',
         /escapeHtml\(r\.servicio/.test(cm) && /escapeHtml\(r\.profesional\)/.test(cm), true);
   check('define escapeHtml', /function escapeHtml\(/.test(js), true);
