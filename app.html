@@ -1171,9 +1171,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <button class="btn btn-ghost" onclick="exportarExcel('profesional')">📥 Exportar Excel</button>
     </div>
     <div class="g3" id="rep-prof-metrics"></div>
+    <div id="rep-anticipos"></div>
     <div id="rep-honorarios"></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Comisiones por profesional</span></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
+      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Anticipos</th><th>A transferir</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-hdr"><span class="card-title">Totales por método de pago</span></div>
@@ -1607,6 +1608,22 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   </div>
 </div>
 
+<!-- Anticipo a profesional -->
+<div class="overlay" id="m-anticipo">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title" id="an-titulo">Anotar anticipo</span><button class="xbtn" onclick="closeM('m-anticipo')">×</button></div>
+    <input type="hidden" id="an-id">
+    <div class="fg"><label>Profesional *</label><select id="an-prof"></select></div>
+    <div class="fr"><div class="fg"><label>Monto ($) *</label><input id="an-monto" type="number" min="1" inputmode="numeric"></div><div class="fg"><label>Fecha de entrega</label><input id="an-fecha" type="date"></div></div>
+    <div class="fg"><label>Nota (opcional)</label><input id="an-nota" type="text" placeholder="Ej: adelanto de sueldo, transferencia del 15"></div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:8px">Se resta de lo que hay que transferirle en el período que incluya esta fecha.</div>
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary" onclick="guardarAnticipo()">Guardar</button>
+      <button class="btn btn-ghost" onclick="closeM('m-anticipo')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Producto -->
 <div class="overlay" id="m-producto">
   <div class="modal">
@@ -1890,7 +1907,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // `barberoServicios` no tiene ese problema hoy —solo se lee en un render, ya
 // terminada la carga— pero queda declarada por la misma razón: la próxima vez
 // que alguien la lea durante loadAll, no debería enterarse por un panel caído.
-let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[] };
+let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[], anticipos:[] };
 // ⚠ `encuestas:[]` DECLARADO ACÁ, no agregado al vuelo. Omitir una clave ya
 // tiró el panel entero en producción una vez: loadAll() carga en paralelo y
 // cualquier render que corra antes encuentra `undefined` y muere en `.filter`
@@ -2129,7 +2146,7 @@ async function loadAll(){
   aplicarTemaPanel();
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards(),loadAnticipos()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
   // Después de las dos fuentes, nunca antes: S.ventas es derivado.
@@ -2203,6 +2220,11 @@ async function loadGiftCards(){
 }
 // Recepción lee la vista inventario_recepcion (sin costo ni proveedor).
 async function loadInventario(){ const {data}=await sb.from(esRecepcion()?'inventario_recepcion':'inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
+async function loadAnticipos(){
+  // Solo el dueño tiene permiso (RLS); para los demás roles ni se pregunta.
+  if(S.perfil?.rol!=='dueno'){ S.anticipos=[]; return; }
+  try{ S.anticipos=await traerTodo('anticipos_profesional'); }catch(e){ S.anticipos=[]; }
+}
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadCobroProductos(){
   S.cobroProductos=await traerTodo('cobro_productos');
@@ -7168,13 +7190,16 @@ function renderReporteProfesional(){
     <div class="mc"><div class="mc-label">Ventas totales</div><div class="mc-val">${fmt(totalV)}</div></div>
     <div class="mc"><div class="mc-label">Profesionales activos</div><div class="mc-val">${Object.keys(byP).length}</div></div>`;
 
-  renderHonorarios(citas,byP);
+  const antP=anticiposPorProfesional(desde,hasta);
+  renderAnticipos(desde,hasta,prof||null);
+  renderHonorarios(citas,byP,antP);
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
     const comP=Math.round(d.comisionProd||0);
     const prop=Math.round(d.propinas||0);
     const topSrv=Object.entries(d.servicios).sort((a,b)=>b[1].cnt-a[1].cnt)[0]?.[0]||'—';
     const paraNegocio=(d.ventas+(d.ventasProd||0))-com-comP;
+    const ant=Math.round(antP[p]||0), transf=com+comP+prop-ant;
     return`<tr><td data-label="Profesional"><strong style="color:var(--text)">${p}</strong></td><td data-label="Citas">${d.citas}</td>
     <td data-label="Servicios">${fmt(d.ventas)}</td>
     <td data-label="Productos">${d.ventasProd>0?fmt(d.ventasProd):'—'}</td>
@@ -7183,9 +7208,11 @@ function renderReporteProfesional(){
     <td data-label="Comisión productos" class="gold">${comP>0?fmt(comP):'—'}</td>
     <td data-label="Propinas">${prop>0?fmt(prop):'—'}</td>
     <td data-label="Total a pagarle" style="font-weight:600">${fmt(com+comP+prop)}</td>
+    <td data-label="Anticipos">${ant>0?'− '+fmt(ant):'—'}</td>
+    <td data-label="A transferir" style="font-weight:700;${transf<0?'color:#e05050':''}">${fmt(transf)}</td>
     <td data-label="Para negocio">${fmt(paraNegocio)}</td>
     <td data-label="Servicio top"><span class="badge b-purple">${topSrv}</span></td></tr>`;
-  }).join('')||'<tr><td colspan="11" class="empty">Sin datos en este rango</td></tr>';
+  }).join('')||'<tr><td colspan="13" class="empty">Sin datos en este rango</td></tr>';
 
   // Totales por método de pago, mismo rango ya filtrado que el resto de esta pestaña.
   const byPago={};
@@ -7218,6 +7245,66 @@ function renderReporteProfesional(){
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 }
 
+// ─── ANTICIPOS A PROFESIONALES ─────────────────────────────────────────────
+// Lo que el dueño le adelantó a un profesional. Se resta de lo que hay que
+// transferirle en el período que contiene la fecha del anticipo. Solo el dueño
+// los ve (la tabla tiene RLS de dueño).
+function anticiposRango(desde,hasta,prof){
+  return (S.anticipos||[]).filter(a=>(!desde||a.fecha>=desde)&&(!hasta||a.fecha<=hasta)&&(!prof||a.barbero_nombre===prof));
+}
+function anticiposPorProfesional(desde,hasta){
+  const by={};
+  anticiposRango(desde,hasta,null).forEach(a=>{ by[a.barbero_nombre]=(by[a.barbero_nombre]||0)+(+a.monto||0); });
+  return by;
+}
+function renderAnticipos(desde,hasta,prof){
+  const el=document.getElementById('rep-anticipos'); if(!el) return;
+  if(S.perfil?.rol!=='dueno'){ el.innerHTML=''; return; }
+  const lista=anticiposRango(desde,hasta,prof).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  const total=lista.reduce((t,a)=>t+(+a.monto||0),0);
+  el.innerHTML=`<div class="card"><div class="card-hdr"><span class="card-title">Anticipos a profesionales</span>
+      <button class="btn btn-primary btn-sm" onclick="abrirAnticipo()">+ Anotar anticipo</button></div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.55">Lo que adelantaste en este período se resta de lo que hay que transferir a cada profesional.${lista.length?` Total anticipado: <strong style="color:var(--text)">${fmt(total)}</strong>`:''}</div>
+    ${lista.length?`<div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Profesional</th><th>Monto</th><th>Nota</th><th></th></tr></thead><tbody>${lista.map(a=>`<tr>
+      <td data-label="Fecha">${escHtml(a.fecha)}</td><td data-label="Profesional"><strong style="color:var(--text)">${escHtml(a.barbero_nombre)}</strong></td>
+      <td data-label="Monto" class="gold">${fmt(a.monto)}</td><td data-label="Nota">${escHtml(a.nota||'—')}</td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="abrirAnticipo('${a.id}')">Editar</button> <button class="btn btn-danger btn-sm" onclick="borrarAnticipo('${a.id}')">Borrar</button></td></tr>`).join('')}</tbody></table></div>`
+      :'<div class="empty">Sin anticipos en este período</div>'}</div>`;
+}
+function abrirAnticipo(id){
+  const a=id?(S.anticipos||[]).find(x=>x.id===id):null;
+  const g=x=>document.getElementById(x);
+  const nombres=S.barberos.map(b=>b.nombre);
+  if(a&&!nombres.includes(a.barbero_nombre)) nombres.push(a.barbero_nombre);
+  g('an-prof').innerHTML=nombres.map(n=>`<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+  const filtro=document.getElementById('rep-sel-prof')?.value;
+  g('an-id').value=a?a.id:''; g('an-titulo').textContent=a?'Editar anticipo':'Anotar anticipo';
+  g('an-prof').value=a?a.barbero_nombre:(filtro&&nombres.includes(filtro)?filtro:(nombres[0]||''));
+  g('an-monto').value=a?a.monto:''; g('an-fecha').value=a?a.fecha:ahoraEnChile().fecha; g('an-nota').value=a?(a.nota||''):'';
+  openM('m-anticipo');
+}
+async function guardarAnticipo(){
+  const g=x=>document.getElementById(x);
+  const id=g('an-id').value, prof=g('an-prof').value, monto=Math.round(parseFloat(g('an-monto').value)||0), fecha=g('an-fecha').value;
+  if(!prof){ notify('Elige el profesional','warn'); return; }
+  if(monto<=0){ notify('Pon el monto del anticipo','warn'); return; }
+  if(!fecha){ notify('Pon la fecha de entrega','warn'); return; }
+  const o={barbero_nombre:prof,monto,fecha,nota:g('an-nota').value.trim()||null};
+  const q=id?sb.from('anticipos_profesional').update(o).eq('id',id).eq('barberia_id',S.barberia.id)
+            :sb.from('anticipos_profesional').insert({...o,barberia_id:S.barberia.id});
+  const {error}=await q;
+  if(error){ notify(error.message,'err'); return; }
+  closeM('m-anticipo'); notify(id?'Anticipo actualizado ✓':'Anticipo anotado ✓');
+  await loadAnticipos(); renderReporteProfesional();
+}
+async function borrarAnticipo(id){
+  const a=(S.anticipos||[]).find(x=>x.id===id); if(!a) return;
+  if(!confirm('¿Borrar el anticipo de '+fmt(a.monto)+' a '+a.barbero_nombre+'? Volverá a sumarse a lo que hay que transferirle.')) return;
+  const {error}=await sb.from('anticipos_profesional').delete().eq('id',id).eq('barberia_id',S.barberia.id);
+  if(error){ notify(error.message,'err'); return; }
+  notify('Anticipo borrado'); await loadAnticipos(); renderReporteProfesional();
+}
+
 // ─── HONORARIOS: liquidación por profesional del período ───────────────────
 // Solo con el modo "Boleta de honorarios". Por cada profesional arma lo que hay
 // que pagarle: comisión de servicios (su boleta bruta) menos la parte de la
@@ -7228,10 +7315,10 @@ function renderReporteProfesional(){
 // reparto después no mueve lo ya cobrado. Los servicios anteriores al modo
 // honorarios no tienen desglose: su comisión se suma tal cual (sin retención) y
 // se avisa, en vez de dejarla fuera de lo que hay que pagar.
-function renderHonorarios(citas,byP){
+function renderHonorarios(citas,byP,antP){
   const el=document.getElementById('rep-honorarios'); if(!el) return;
   if(!S.barberia?.usa_honorarios){ el.innerHTML=''; return; }
-  byP=byP||{};
+  byP=byP||{}; antP=antP||{};
   const ok=citas.filter(v=>v.estado!=='Cancelada');
   const by={};
   const get=p=>by[p]||(by[p]={n:0,total:0,iva:0,bruto:0,ret:0,retP:0,retN:0,sinDes:0,nSin:0});
@@ -7243,14 +7330,16 @@ function renderHonorarios(citas,byP){
   });
   // Profesionales que solo vendieron productos o recibieron propina también cuentan.
   Object.keys(byP).forEach(p=>{ if((byP[p].comisionProd||0)>0||(byP[p].propinas||0)>0) get(p); });
+  Object.keys(antP).forEach(p=>{ if(antP[p]>0) get(p); });
   const filasP=Object.entries(by).map(([p,d])=>{
     const x=byP[p]||{};
     d.prod=Math.round(x.comisionProd||0); d.prop=Math.round(x.propinas||0);
     d.liq=d.bruto-d.retP;
     d.pagar=d.liq+d.sinDes+d.prod+d.prop;
+    d.ant=Math.round(antP[p]||0); d.transf=d.pagar-d.ant;
     return [p,d];
   }).sort((a,b)=>b[1].pagar-a[1].pagar);
-  const T=filasP.reduce((a,[,d])=>{ ['iva','bruto','ret','retP','retN','liq','sinDes','prod','prop','pagar','nSin'].forEach(k=>a[k]=(a[k]||0)+d[k]); return a; },{});
+  const T=filasP.reduce((a,[,d])=>{ ['iva','bruto','ret','retP','retN','liq','sinDes','prod','prop','pagar','nSin','ant','transf'].forEach(k=>a[k]=(a[k]||0)+d[k]); return a; },{});
   const L=(a,b,o={})=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:12px;${o.borde===false?'':'border-bottom:0.5px solid var(--border);'}${o.fuerte?'font-weight:600;color:var(--text);':''}${o.tenue?'color:var(--text3);':''}"><span>${a}</span><span style="white-space:nowrap">${b}</span></div>`;
   const tarjetas=filasP.map(([p,d])=>`<div class="card" style="margin:0">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><strong style="color:var(--text);font-size:14px">${escHtml(p)}</strong><span style="font-size:11px;color:var(--text3)">${d.n} servicio${d.n===1?'':'s'}</span></div>
@@ -7263,6 +7352,7 @@ function renderHonorarios(citas,byP){
       ${L('Comisión por productos','+ '+fmt(d.prod))}
       ${L('Propinas','+ '+fmt(d.prop))}
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;padding:10px 12px;background:var(--bg4);border-radius:8px"><span style="font-size:12px;color:var(--text2)">Total a pagar a ${escHtml(p)}</span><span style="font-size:18px;font-weight:700;color:var(--text)">${fmt(d.pagar)}</span></div>
+      ${d.ant>0?`${L('Anticipos ya entregados','− '+fmt(d.ant))}<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px;padding:10px 12px;border:1px solid var(--border2);border-radius:8px"><span style="font-size:12px;color:var(--text2)">A transferir a ${escHtml(p)}</span><span style="font-size:18px;font-weight:700;${d.transf<0?'color:#e05050':'color:var(--text)'}">${fmt(d.transf)}</span></div>${d.transf<0?'<div style="font-size:11px;color:#e05050;margin-top:4px">El anticipo supera lo que le toca en este período: queda a favor de la barbería.</div>':''}`:''}
       <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">Retención total de sus boletas: ${fmt(d.ret)} (él ${fmt(d.retP)} · barbería ${fmt(d.retN)}). La barbería la paga toda al SII.</div>
     </div>`).join('');
   el.innerHTML=`<div class="card"><div class="card-hdr"><span class="card-title">Honorarios del período</span></div>
@@ -7275,6 +7365,7 @@ function renderHonorarios(citas,byP){
     ${tarjetas?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${tarjetas}</div>`:'<div class="empty">Sin servicios con desglose en este rango</div>'}
     ${tarjetas?`<div style="margin-top:12px;padding:12px 14px;border:1px solid var(--border2);border-radius:10px">
       ${L('Total a pagar a profesionales (líquido + productos + propinas)',fmt(T.pagar||0),{borde:false})}
+      ${(T.ant||0)>0?L('− Anticipos ya entregados',fmt(T.ant),{borde:false})+L('Total a transferir a profesionales',fmt(T.transf||0),{fuerte:true,borde:false}):''}
       ${L('+ Retención completa al SII (la paga la barbería)',fmt(T.ret||0),{borde:false})}
       ${L('Total que desembolsa la barbería',fmt((T.pagar||0)+(T.ret||0)),{fuerte:true,borde:false})}
     </div>`:''}
@@ -7714,10 +7805,12 @@ function exportarExcel(tipo){
     const citas=getRepCitasRango(desde,hasta,prof||null);
     if(!citas.length){notify('Sin datos para exportar','warn');return;}
     const byP=agregarComisionesPorProfesional(getRepVentasRango(desde,hasta,prof||null));
+    const antP=anticiposPorProfesional(desde,hasta);
     const resumen=Object.entries(byP).map(([p,d])=>{
       const com=Math.round(d.comision);
       const prop=Math.round(d.propinas||0);
-      return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':d.pct,'Comisión $':com,'Propinas':prop,'Total a pagarle':com+prop,'Para negocio':d.ventas-com};
+      const ant=Math.round(antP[p]||0);
+      return{Profesional:p,'Total citas':d.citas,'Ventas brutas':d.ventas,'% Comisión':d.pct,'Comisión $':com,'Propinas':prop,'Total a pagarle':com+prop,'Anticipos':ant,'A transferir':com+prop-ant,'Para negocio':d.ventas-com};
     });
     const desglose=[];
     Object.entries(byP).forEach(([p,d])=>{
