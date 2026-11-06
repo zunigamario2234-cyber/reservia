@@ -95,3 +95,34 @@ $function$;
 drop trigger if exists visitas_honorarios_trg on public.visitas;
 create trigger visitas_honorarios_trg before insert or update on public.visitas
   for each row execute function public.visitas_honorarios();
+
+-- ── Vigencia por FECHA exacta, no solo por año ──────────────────────────────
+-- La ley (Ley 21.133) sube la tasa cada 1 de enero; el SII confirma "a partir
+-- del 1 de enero de 2026". Para 2027 (16%) y 2028 (17%) su página solo da el
+-- año. Con la fecha en la tabla, si cambia el día basta corregir una fila.
+alter table public.retencion_honorarios_tasas add column if not exists vigente_desde date;
+update public.retencion_honorarios_tasas set vigente_desde = make_date(desde_anio, 1, 1) where vigente_desde is null;
+alter table public.retencion_honorarios_tasas alter column vigente_desde set not null;
+create or replace function public.tasa_retencion_honorarios(p_fecha date)
+returns numeric
+language sql
+stable
+set search_path to 'public'
+as $$
+  select pct from retencion_honorarios_tasas
+   where vigente_desde <= p_fecha
+   order by vigente_desde desc limit 1;
+$$;
+
+-- ── Cómo tributa cada negocio (pantalla "Impuestos") ─────────────────────────
+alter table public.barberias
+  add column if not exists regimen_tributario text not null default 'persona_natural',
+  add column if not exists tasa_ppm numeric not null default 0.25,
+  add column if not exists tasa_idpc numeric,
+  add column if not exists uta_valor numeric;
+alter table public.barberias drop constraint if exists barberias_regimen_chk;
+alter table public.barberias add constraint barberias_regimen_chk
+  check (regimen_tributario in ('persona_natural','pro_pyme','general')
+         and tasa_ppm >= 0 and tasa_ppm <= 100
+         and (tasa_idpc is null or (tasa_idpc >= 0 and tasa_idpc <= 100))
+         and (uta_valor is null or uta_valor > 0));

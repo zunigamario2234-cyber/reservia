@@ -51,7 +51,7 @@ async function sesion(rol,signupFalla){
 
 function datosHon(){ const D=datos('dueno');
  D.barberias[0].usa_honorarios=true; D.barberias[0].modo_comision='neto_iva'; D.barberias[0].honorarios_retencion_paga='dividido'; D.barberias[0].honorarios_pct_profesional=50;
- D.retencion_honorarios_tasas=[{desde_anio:2025,pct:14.5},{desde_anio:2026,pct:15.25},{desde_anio:2027,pct:16},{desde_anio:2028,pct:17}];
+ D.retencion_honorarios_tasas=[{desde_anio:2025,vigente_desde:'2025-01-01',pct:14.5},{desde_anio:2026,vigente_desde:'2026-01-01',pct:15.25},{desde_anio:2027,vigente_desde:'2027-01-01',pct:16},{desde_anio:2028,vigente_desde:'2028-01-01',pct:17}];
  const mk=(id,fecha,valor,com,ret,rp)=>({id,barberia_id:BID,fecha,hora:'10:00',cliente_id:'c1',barbero_nombre:'Mario',servicio:'Corte clásico',valor,propina:0,metodo_pago:'Efectivo',estado:'Atendida',comision_monto:com,iva_monto:Math.round(valor*19/119),retencion_pct:15.25,retencion_total:ret,retencion_profesional:rp,retencion_negocio:ret-rp,liquido_profesional:com-rp});
  D.visitas=[mk('h1',hoy,20000,8403,1281,641),mk('h2',hoy,20000,8403,1281,641),
    {id:'h3',barberia_id:BID,fecha:hoy,hora:'12:00',cliente_id:'c1',barbero_nombre:'Mario',servicio:'Corte clásico',valor:15000,propina:0,metodo_pago:'Efectivo',estado:'Atendida',comision_monto:7500}];
@@ -101,11 +101,29 @@ function datosHon(){ const D=datos('dueno');
  ok('el reporte de honorarios aparece',/Honorarios del período/.test(txt),txt.slice(0,200));
  ok('IVA a pagar = 6.386 (2 × 3.193)',/IVA a pagar al SII\s*\$6\.386/.test(txt),txt.slice(0,300));
  ok('líquido a pagar = 15.524 (2 × 7.762)',/Líquido a pagar a profesionales\s*\$15\.524/.test(txt),txt.slice(0,300));
- ok('retención a declarar = 2.562',/Retención a declarar al SII\s*\$2\.562/.test(txt),txt.slice(0,300));
+ ok('retención a pagar al SII = 2.562',/Retención a pagar al SII\s*\$2\.562/.test(txt),txt.slice(0,300));
  ok('avisa del servicio anterior al modo (sin desglose)',/1 servicio del rango son anteriores/.test(txt),txt.slice(-200));
+ok('total que desembolsa la barbería = líquido + retención = 18.086',/Total que desembolsa la barbería\s*\$18\.086/.test(txt),txt.slice(0,400));
  const fila=await p.$$eval('#rep-honorarios tbody tr',a=>a.map(x=>x.innerText.replace(/\s+/g,' ')));
  ok('la fila de Mario: boleta 16.806, paga profesional 1.282, paga barbería 1.280',/16\.806/.test(fila[0])&&/1\.282/.test(fila[0])&&/1\.280/.test(fila[0]),fila);
  await p.screenshot({path:'/tmp/honorarios.png',fullPage:false});
+ // Impuestos
+ const gc=await p.evaluate(()=>({a:impuestoGlobalComplementario(30000000,834504),b:impuestoGlobalComplementario(10000000,834504),c:impuestoGlobalComplementario(120000000,834504),idpc27:tasaIdpcLey('general',2026),pp26:tasaIdpcLey('pro_pyme',2026),pp28:tasaIdpcLey('pro_pyme',2028),pp29:tasaIdpcLey('pro_pyme',2029)}));
+ ok('Global Complementario: $30.000.000 = 947.963 (tabla SII AT2026)',Math.abs(gc.a-947963)<=2,gc);
+ ok('Global Complementario: bajo el mínimo exento paga 0',gc.b===0,gc);
+ ok('Global Complementario: $120.000.000 = 22.539.367 (35% menos rebaja 19.460.633)',Math.abs(gc.c-(120000000*0.35-19460633.28))<=3,gc);
+ ok('tasas de primera categoría por ley',gc.idpc27===27&&gc.pp26===12.5&&gc.pp28===15&&gc.pp29===25,gc);
+ const pr=await p.evaluate(()=>proyectarRenta({ingresosNetos:50000000,gastosNetos:10000000,honorarios:15000000,regimen:'pro_pyme',tasaIdpc:12.5,uta:834504,tasaPpm:0.25,mesesTranscurridos:6}));
+ ok('proyección a 12 meses: utilidad 50M, impuesto 6,25M, PPM 250.000',pr.utilidad===50000000&&pr.impuesto===6250000&&pr.ppmAnual===250000&&pr.aPagar===6000000,pr);
+ await p.evaluate(()=>nav('impuestos')); await p.waitForTimeout(300);
+ const f29=(await p.textContent('#imp-f29-cards')).replace(/\s+/g,' ');
+ ok('F29: IVA a pagar 8.782, PPM 116 y total 11.460 (con 2.562 de retención)',/IVA a pagar\s*\$8\.782/.test(f29)&&/\$116/.test(f29)&&/\$11\.460/.test(f29),f29);
+ ok('muestra el régimen guardado y la tasa de la ley',(await p.inputValue('#imp-regimen'))==='persona_natural'&&!(await p.isVisible('#imp-idpc-box')));
+ await p.selectOption('#imp-regimen','pro_pyme'); await p.waitForTimeout(500);
+ ok('al elegir sociedad aparece la tasa de primera categoría',await p.isVisible('#imp-idpc-box'));
+ ok('guarda el régimen elegido',patches.some(x=>x.regimen_tributario==='pro_pyme'),patches);
+ ok('la proyección dice cuánto apartar al mes',/aparta/.test(await p.textContent('#imp-renta-detalle')));
+ await p.screenshot({path:'/tmp/impuestos.png'});
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length+' fallos de '+res.length);
  await b.close();

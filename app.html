@@ -19,9 +19,9 @@
 <style>@font-face{font-family:'Hanken Grotesk';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:400 800;font-display:swap}
 #aviso-reserva{position:fixed;top:16px;right:16px;z-index:9999;max-width:300px;padding:14px 16px;border-radius:12px;background:var(--p3);color:#04120f;font-size:13px;line-height:1.5;box-shadow:0 8px 28px rgba(0,0,0,.35);transform:translateY(-140%);opacity:0;transition:transform .3s,opacity .3s;cursor:pointer;pointer-events:none}
 #aviso-reserva.show{transform:none;opacity:1;pointer-events:auto}
-#btn-sonido-aviso{position:fixed;left:12px;bottom:12px;z-index:900;width:38px;height:38px;border-radius:50%;border:1px solid var(--border,#2a2a2a);background:var(--bg2,#151515);color:var(--text,#eee);font-size:16px;cursor:pointer;opacity:.75}
+#btn-sonido-aviso{position:fixed;right:16px;bottom:76px;z-index:900;width:38px;height:38px;border-radius:50%;border:1px solid var(--border,#2a2a2a);background:var(--bg2,#151515);color:var(--text,#eee);font-size:16px;cursor:pointer;opacity:.75}
 #btn-sonido-aviso:hover{opacity:1}
-@media(max-width:700px){#btn-sonido-aviso{bottom:70px}}
+@media(max-width:700px){#btn-sonido-aviso{right:12px;bottom:84px}}
 
 #push-card{margin:0 14px 10px;font-size:11px;line-height:1.5;color:var(--text2)}
 #push-card button{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg4);color:var(--text);font-size:12px;cursor:pointer;text-align:left}
@@ -496,6 +496,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       <span>Costos e IVA</span>
     </div>
+    <div class="nav-item" data-page="impuestos" onclick="nav('impuestos')">
+      <svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
+      <span>Impuestos</span>
+    </div>
     <div class="nav-item" data-page="profesionals" onclick="nav('profesionals')">
       <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
       <span>Profesionals</span>
@@ -693,6 +697,36 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 </div>
 
 <!-- INVENTARIO -->
+<div id="p-impuestos" class="page">
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Cómo tributa tu negocio</span></div>
+    <div class="fr">
+      <div class="fg"><label>Régimen</label>
+        <select id="imp-regimen" onchange="impGuardarConfig()">
+          <option value="persona_natural">Persona natural / empresa individual — el dueño paga Global Complementario</option>
+          <option value="pro_pyme">Sociedad Pro Pyme (14 D N°3) — impuesto de primera categoría</option>
+          <option value="general">Sociedad régimen general (14 A) — impuesto de primera categoría</option>
+        </select></div>
+      <div class="fg"><label>PPM (% de las ventas netas, cada mes)</label><input id="imp-ppm" type="number" min="0" max="100" step="0.01" onchange="impGuardarConfig()"></div>
+    </div>
+    <div class="fr">
+      <div class="fg" id="imp-idpc-box"><label>Tasa de primera categoría (%)</label><input id="imp-idpc" type="number" min="0" max="100" step="0.01" onchange="impGuardarConfig()"><div style="font-size:11px;color:var(--text3);margin-top:4px" id="imp-idpc-ayuda"></div></div>
+      <div class="fg"><label>Valor de la UTA (diciembre)</label><input id="imp-uta" type="number" min="1" step="1" onchange="impGuardarConfig()"><div style="font-size:11px;color:var(--text3);margin-top:4px">Se usa para la tabla del Global Complementario. Mientras no sepas la de diciembre, deja la última publicada.</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Declaración mensual (F29)</span>
+      <div style="display:flex;gap:6px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="impMes(-1)">‹</button><span id="imp-mes-label" style="font-size:13px;min-width:110px;text-align:center"></span><button class="btn btn-ghost btn-sm" onclick="impMes(1)">›</button></div></div>
+    <div class="g3" id="imp-f29-cards"></div>
+    <div id="imp-f29-detalle" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title" id="imp-renta-titulo">Proyección de renta</span></div>
+    <div class="g3" id="imp-renta-cards"></div>
+    <div id="imp-renta-detalle" style="margin-top:10px"></div>
+  </div>
+</div>
+
 <div id="p-caja" class="page">
   <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
     <strong id="caja-fecha" style="font-size:14px"></strong>
@@ -2228,11 +2262,11 @@ function nav(page){
   document.getElementById('p-'+page).classList.add('active');
   const ni=document.querySelector(`.nav-item[data-page="${page}"]`);
   if(ni)ni.classList.add('active');
-  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',caja:'Caja del día',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
+  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',caja:'Caja del día',impuestos:'Impuestos',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
   document.getElementById('page-title').textContent=titles[page]||page;
   // costos entra por entrarCostos y no por renderCostos: resetea el período al
   // mes en curso cada vez que se abre la pantalla.
-  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,caja:renderCaja,gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
+  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,caja:renderCaja,impuestos:renderImpuestos,gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
   if(renders[page])renders[page]();
 }
 function switchTab(el,tid){
@@ -2303,8 +2337,8 @@ function calcularComision(valor,pct){
 // en la tabla retencion_honorarios_tasas; esto es solo para mostrar ejemplos y
 // el respaldo del reporte: lo cobrado queda congelado en cada visita.
 function tasaRetencion(fecha){
-  const anio=parseInt(String(fecha||'').slice(0,4),10)||new Date().getFullYear();
-  const t=(S.tasasRet||[]).filter(x=>x.desde_anio<=anio).sort((a,b)=>b.desde_anio-a.desde_anio)[0];
+  const f=String(fecha||'').slice(0,10)||ahoraEnChile().fecha;
+  const t=(S.tasasRet||[]).filter(x=>x.vigente_desde<=f).sort((a,b)=>a.vigente_desde<b.vigente_desde?1:-1)[0];
   return t?Number(t.pct):15.25;
 }
 function actualizarEjemploComision(){
@@ -7087,17 +7121,133 @@ function renderHonorarios(citas){
     <td data-label="Cobrado (con IVA)">${fmt(d.total)}</td><td data-label="IVA">${fmt(d.iva)}</td><td data-label="Neto">${fmt(d.neto)}</td>
     <td data-label="Boleta bruta" class="gold">${fmt(d.bruto)}</td>
     <td data-label="Retención SII">${fmt(d.ret)}</td><td data-label="Paga profesional">${fmt(d.retP)}</td><td data-label="Paga barbería">${fmt(d.retN)}</td>
-    <td data-label="Líquido a pagarle" style="font-weight:600">${fmt(d.liq)}</td><td data-label="Le queda a la barbería">${fmt(quedaNeg(d))}</td></tr>`).join('');
+    <td data-label="Líquido a pagarle" style="font-weight:600">${fmt(d.liq)}</td><td data-label="Total a desembolsar">${fmt(d.liq+d.ret)}</td><td data-label="Le queda a la barbería">${fmt(quedaNeg(d))}</td></tr>`).join('');
   el.innerHTML=`<div class="card"><div class="card-hdr"><span class="card-title">Honorarios del período</span></div>
-    <div class="g3" style="margin-bottom:12px">
+    <div class="g3" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
       <div class="mc"><div class="mc-label">IVA a pagar al SII</div><div class="mc-val">${fmt(T.iva||0)}</div></div>
       <div class="mc"><div class="mc-label">Líquido a pagar a profesionales</div><div class="mc-val">${fmt(T.liq||0)}</div></div>
-      <div class="mc"><div class="mc-label">Retención a declarar al SII</div><div class="mc-val">${fmt(T.ret||0)}</div></div>
+      <div class="mc"><div class="mc-label">Retención a pagar al SII</div><div class="mc-val">${fmt(T.ret||0)}</div></div>
+      <div class="mc"><div class="mc-label">Total que desembolsa la barbería</div><div class="mc-val">${fmt((T.liq||0)+(T.ret||0))}</div></div>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Servicios</th><th>Cobrado (con IVA)</th><th>IVA</th><th>Neto</th><th>Boleta bruta</th><th>Retención SII</th><th>Paga profesional</th><th>Paga barbería</th><th>Líquido a pagarle</th><th>Le queda a la barbería</th></tr></thead>
-    <tbody>${filas||'<tr><td colspan="11" class="empty">Sin servicios con desglose en este rango</td></tr>'}</tbody>
-    ${filas?`<tfoot><tr><td><strong>Total</strong></td><td>${T.n||0}</td><td>${fmt(T.total||0)}</td><td>${fmt(T.iva||0)}</td><td>${fmt(T.neto||0)}</td><td>${fmt(T.bruto||0)}</td><td>${fmt(T.ret||0)}</td><td>${fmt(T.retP||0)}</td><td>${fmt(T.retN||0)}</td><td><strong>${fmt(T.liq||0)}</strong></td><td>${fmt(quedaNeg(T))}</td></tr></tfoot>`:''}</table></div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">La propina va entera al profesional y las ventas de productos no pasan por boleta: ninguna entra acá.${sin?` <span style="color:#e0a850">${sin} servicio${sin>1?'s':''} del rango son anteriores al modo honorarios y no tienen desglose.</span>`:''}</div></div>`;
+    <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Servicios</th><th>Cobrado (con IVA)</th><th>IVA</th><th>Neto</th><th>Boleta bruta</th><th>Retención SII</th><th>Paga profesional</th><th>Paga barbería</th><th>Líquido a pagarle</th><th>Total a desembolsar</th><th>Le queda a la barbería</th></tr></thead>
+    <tbody>${filas||'<tr><td colspan="12" class="empty">Sin servicios con desglose en este rango</td></tr>'}</tbody>
+    ${filas?`<tfoot><tr><td><strong>Total</strong></td><td>${T.n||0}</td><td>${fmt(T.total||0)}</td><td>${fmt(T.iva||0)}</td><td>${fmt(T.neto||0)}</td><td>${fmt(T.bruto||0)}</td><td>${fmt(T.ret||0)}</td><td>${fmt(T.retP||0)}</td><td>${fmt(T.retN||0)}</td><td><strong>${fmt(T.liq||0)}</strong></td><td><strong>${fmt((T.liq||0)+(T.ret||0))}</strong></td><td>${fmt(quedaNeg(T))}</td></tr></tfoot>`:''}</table></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">La barbería paga al profesional su líquido y al SII toda la retención (así el profesional no queda con la deuda): ese es el total a desembolsar. La propina va entera al profesional y las ventas de productos no pasan por boleta: ninguna entra acá.${sin?` <span style="color:#e0a850">${sin} servicio${sin>1?'s':''} del rango son anteriores al modo honorarios y no tienen desglose.</span>`:''}</div></div>`;
+}
+
+// ─── IMPUESTOS: F29 mensual y proyección de la renta anual ────────────────
+// Es una ESTIMACIÓN para saber cuánto apartar, no una declaración: no ve
+// sueldos ni gastos que no estén cargados, ni pérdidas de años anteriores.
+// Cada negocio elige cómo tributa; lo que depende de la ley (tabla del
+// Global Complementario, tasa de primera categoría) va con su valor por defecto
+// y se puede corregir.
+const IMP_UTA_DEFECTO=834504; // UTA de diciembre de 2025 (SII); editable por negocio
+// Tabla del art. 52 LIR en múltiplos de UTA: [desde, hasta, tasa %]. Se calcula
+// por tramos (lo que cae en cada uno × su tasa), que es lo mismo que "factor
+// menos cantidad a rebajar" de la tabla del SII.
+const IMP_TABLA_GC=[[0,13.5,0],[13.5,30,4],[30,50,8],[50,70,13.5],[70,90,23],[90,120,30.4],[120,310,35],[310,Infinity,40]];
+function impuestoGlobalComplementario(renta,uta){
+  const x=Math.max(0,renta||0)/(uta||IMP_UTA_DEFECTO);
+  let t=0;
+  IMP_TABLA_GC.forEach(([d,h,p])=>{ if(x>d) t+=(Math.min(x,h)-d)*p/100; });
+  return Math.round(t*(uta||IMP_UTA_DEFECTO));
+}
+// Tasa de primera categoría según la ley, por AÑO COMERCIAL (Pro Pyme: 12,5%
+// hasta 2027, 15% en 2028 y 25% desde 2029, salvo prórroga; régimen general: 27%).
+function tasaIdpcLey(regimen,anio){
+  if(regimen==='general') return 27;
+  return anio<=2027?12.5:(anio===2028?15:25);
+}
+// Corazón del cálculo anual, puro y sin pantalla (se prueba aparte).
+function proyectarRenta({ingresosNetos,gastosNetos,honorarios,regimen,tasaIdpc,uta,tasaPpm,mesesTranscurridos}){
+  const f=12/Math.max(1,Math.min(12,mesesTranscurridos||12));
+  const ytd=(ingresosNetos||0)-(gastosNetos||0)-(honorarios||0);
+  const utilidad=Math.round(ytd*f);
+  const ppmAnual=Math.round((ingresosNetos||0)*f*(tasaPpm||0)/100);
+  const impuesto=regimen==='persona_natural'?impuestoGlobalComplementario(utilidad,uta):Math.round(Math.max(0,utilidad)*(tasaIdpc||0)/100);
+  const aPagar=impuesto-ppmAnual;
+  return {f,utilidadYtd:Math.round(ytd),utilidad,ppmAnual,impuesto,aPagar,mensual:Math.round(Math.max(0,aPagar)/12)};
+}
+let IMP_MES=null;
+function impMes(d){ IMP_MES=sumarMes(IMP_MES||mesActual(),d); renderImpuestos(); }
+function impValoresConfig(){
+  const b=S.barberia||{}, anio=parseInt((IMP_MES||mesActual()).slice(0,4),10);
+  return {regimen:b.regimen_tributario||'persona_natural', ppm:b.tasa_ppm??0.25,
+          idpc:b.tasa_idpc??tasaIdpcLey(b.regimen_tributario||'persona_natural',anio), uta:b.uta_valor||IMP_UTA_DEFECTO, anio};
+}
+async function impGuardarConfig(){
+  const reg=document.getElementById('imp-regimen').value;
+  const anio=parseInt((IMP_MES||mesActual()).slice(0,4),10);
+  const idpcIn=document.getElementById('imp-idpc').value;
+  const payload={
+    regimen_tributario:reg,
+    tasa_ppm:Math.min(100,Math.max(0,parseFloat(document.getElementById('imp-ppm').value)||0)),
+    // Solo se guarda si el negocio la cambió a mano; si no, sigue a la ley.
+    tasa_idpc:(idpcIn!==''&&parseFloat(idpcIn)!==tasaIdpcLey(reg,anio))?Math.min(100,Math.max(0,parseFloat(idpcIn))):null,
+    uta_valor:(parseFloat(document.getElementById('imp-uta').value)>0&&parseFloat(document.getElementById('imp-uta').value)!==IMP_UTA_DEFECTO)?parseFloat(document.getElementById('imp-uta').value):null
+  };
+  const {error}=await sb.from('barberias').update(payload).eq('id',S.barberia.id);
+  if(error){ notify(error.message,'err'); return; }
+  Object.assign(S.barberia,payload);
+  notify('Guardado ✓'); renderImpuestos(true);
+}
+function renderImpuestos(sinCampos){
+  if(!IMP_MES) IMP_MES=mesActual();
+  const c=impValoresConfig(), hoyMes=mesActual();
+  if(!sinCampos){
+    document.getElementById('imp-regimen').value=c.regimen;
+    document.getElementById('imp-ppm').value=c.ppm;
+    document.getElementById('imp-idpc').value=c.idpc;
+    document.getElementById('imp-uta').value=c.uta;
+  }
+  document.getElementById('imp-idpc-box').style.display=c.regimen==='persona_natural'?'none':'';
+  document.getElementById('imp-idpc-ayuda').textContent='Según la ley para '+c.anio+': '+String(tasaIdpcLey(c.regimen,c.anio)).replace('.',',')+'%. Cámbiala si tu contador te indica otra.';
+  document.getElementById('imp-mes-label').textContent=nombreMesLargo(IMP_MES);
+  // ── F29 del mes
+  const r=resumenIvaMes(IMP_MES);
+  const netas=r.vBruto-r.ivaV;
+  const ppm=Math.round(netas*c.ppm/100);
+  const ret=S.barberia?.usa_honorarios?(S.visitas||[]).filter(v=>v.fecha?.startsWith(IMP_MES)&&v.estado!=='Cancelada').reduce((a,v)=>a+(v.retencion_total||0),0):0;
+  const ivaPag=Math.max(0,r.ivaPagar);
+  const total=ivaPag+ppm+ret;
+  const [y,m]=IMP_MES.split('-').map(Number);
+  const venc=nombreMesLargo(sumarMes(IMP_MES,1));
+  document.getElementById('imp-f29-cards').innerHTML=`
+    <div class="mc"><div class="mc-label">IVA a pagar</div><div class="mc-val">${fmt(ivaPag)}</div></div>
+    <div class="mc"><div class="mc-label">PPM (${String(c.ppm).replace('.',',')}%)</div><div class="mc-val">${fmt(ppm)}</div></div>
+    <div class="mc"><div class="mc-label">Total estimado F29</div><div class="mc-val">${fmt(total)}</div></div>`;
+  const fila=(a,b,fuerte)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;font-size:12px;border-bottom:0.5px solid var(--border)${fuerte?';font-weight:600':''}"><span>${a}</span><span>${b}</span></div>`;
+  document.getElementById('imp-f29-detalle').innerHTML=
+    fila('Ventas cobradas (con IVA)',fmt(r.vBruto))+fila('Ventas netas (base del PPM)',fmt(netas))+
+    fila('IVA débito (ventas)',fmt(r.ivaV))+fila('IVA crédito (gastos con IVA)','− '+fmt(r.ivaC))+
+    fila(r.ivaPagar>=0?'IVA a pagar':'IVA a favor (se arrastra al mes siguiente)',fmt(Math.abs(r.ivaPagar)))+
+    fila('PPM sobre ventas netas',fmt(ppm))+
+    (S.barberia?.usa_honorarios?fila('Retención de boletas de honorarios (la barbería la declara y la paga)',fmt(ret)):'')+
+    fila('Total a pagar con el F29',fmt(total),true)+
+    `<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">Se declara y paga hasta el día 12 de ${venc} (el 20 si declaras por internet). Estimación sobre lo cargado en Reservia.</div>`;
+  // ── Proyección de renta del año comercial
+  const anio=String(y), esActual=anio===hoyMes.slice(0,4);
+  const meses=esActual?parseInt(hoyMes.slice(5,7),10):12;
+  const vAnio=(S.ventas||[]).filter(v=>v.fecha?.startsWith(anio));
+  const brutoA=vAnio.reduce((a,v)=>a+(v.valor||0),0), ingresos=brutoA-ivaDe(brutoA);
+  const gastos=(S.costos||[]).filter(x=>x.fecha?.startsWith(anio)).reduce((a,x)=>a+(x.monto_neto||0),0);
+  const comis=vAnio.reduce((a,v)=>a+(v.comision_monto||0),0)+(S.barberia?.usa_honorarios?(S.visitas||[]).filter(v=>v.fecha?.startsWith(anio)).reduce((a,v)=>a+(v.retencion_negocio||0),0):0);
+  const p=proyectarRenta({ingresosNetos:ingresos,gastosNetos:gastos,honorarios:comis,regimen:c.regimen,tasaIdpc:c.idpc,uta:c.uta,tasaPpm:c.ppm,mesesTranscurridos:meses});
+  const nombreImp=c.regimen==='persona_natural'?'Global Complementario':'Impuesto de primera categoría';
+  document.getElementById('imp-renta-titulo').textContent='Proyección de renta '+anio+' (se paga en abril '+(y+1)+')';
+  document.getElementById('imp-renta-cards').innerHTML=`
+    <div class="mc"><div class="mc-label">Utilidad proyectada ${anio}</div><div class="mc-val">${fmt(p.utilidad)}</div></div>
+    <div class="mc"><div class="mc-label">${nombreImp}</div><div class="mc-val">${fmt(p.impuesto)}</div></div>
+    <div class="mc"><div class="mc-label">${p.aPagar>=0?'A pagar en abril':'A devolver en abril'}</div><div class="mc-val">${fmt(Math.abs(p.aPagar))}</div></div>`;
+  document.getElementById('imp-renta-detalle').innerHTML=
+    fila('Ingresos netos '+(esActual?'a la fecha':anio),fmt(ingresos))+fila('Gastos netos registrados','− '+fmt(gastos))+
+    fila('Comisiones / honorarios pagados a profesionales','− '+fmt(comis))+
+    fila('Utilidad '+(esActual?'a la fecha':anio),fmt(p.utilidadYtd))+
+    (esActual&&meses<12?fila('Proyectada a 12 meses (promedio de '+meses+' mes'+(meses>1?'es':'')+')',fmt(p.utilidad)):'')+
+    fila(nombreImp+' estimado',fmt(p.impuesto))+fila('PPM pagados en el año (estimado)','− '+fmt(p.ppmAnual))+
+    fila(p.aPagar>=0?'Saldo a pagar en abril':'Saldo a favor (devolución)',fmt(Math.abs(p.aPagar)),true)+
+    `<div class="alert al-info" style="margin-top:10px;font-size:12px;line-height:1.6">💡 Para llegar tranquilo a abril, aparta <strong>${fmt(p.mensual)}</strong> al mes.${c.regimen==='persona_natural'?'':' Además, los socios pagan Global Complementario por lo que retiren, con crédito por este impuesto.'}</div>
+     <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">Estimación: no considera sueldos ni gastos que no estén cargados, pérdidas de años anteriores, ni otros créditos. Confírmala con tu contador.</div>`;
 }
 
 function renderReporteCliente(){
