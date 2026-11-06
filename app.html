@@ -375,6 +375,13 @@ body.panel-claro [style*="background:#1f0000"]{background:var(--alerta-fondo)!im
 body.panel-claro [style*="background:#0f2a1a"]{background:var(--b-green-fondo)!important}
 body.panel-claro [style*="background:#002210"]{background:var(--wa-fondo)!important;color:var(--wa-texto)!important;border-color:var(--wa-borde)!important}
 body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--alerta-fondo)!important}
+
+/* Franjas bloqueadas de la agenda: no interceptan clics ni arrastres */
+.cal-banda{position:absolute;left:0;right:0;pointer-events:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;font-size:10px;font-weight:600;letter-spacing:.02em;color:var(--text3);background-image:repeating-linear-gradient(135deg,transparent 0,transparent 6px,var(--border) 6px,var(--border) 7px);background-color:var(--bg4);opacity:.95}
+.cal-banda span{margin-top:4px;padding:1px 6px;border-radius:4px;background:var(--bg3);border:0.5px solid var(--border2)}
+.cal-banda.colacion{color:var(--b-gold-texto,#d4a853)}
+.cal-banda.bloqueo{color:var(--alerta-texto,#e05050)}
+.cal-block{z-index:3}
 </style>
 </head>
 <body>
@@ -386,7 +393,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 
 <aside class="sidebar">
   <div class="logo">
-    <div style="width:32px;height:32px;flex-shrink:0">
+    <div id="sb-logo" style="width:32px;height:32px;flex-shrink:0">
       <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
         <rect width="32" height="32" rx="9" fill="url(#lg_s)"/>
         <rect x="7" y="9" width="18" height="16" rx="2" fill="none" stroke="white" stroke-width="1.8"/>
@@ -5778,6 +5785,42 @@ function estadoColor(estado){
   return {bg:hexToRgba(hex,0.16),border:hex,text:PANEL_CLARO?(ESTADO_TEXTO_CLARO[estado]||ESTADO_TEXTO_CLARO['Pendiente']):hex};
 }
 
+// ─── BANDAS BLOQUEADAS DE LA AGENDA ─────────────────────────────────────────
+// Función pura (se prueba aparte). Devuelve tramos en minutos desde las 00:00:
+//   cerrado: fuera del horario del negocio (o día cerrado completo),
+//   colacion: hora de colación del negocio para ese día,
+//   bloqueo: bloqueos del profesional (puntual, recurrente o día completo).
+// Todo se recorta al tramo visible [iniMin, finMin] de la grilla.
+function hmAMin(h){ if(!h)return null; const [a,b]=String(h).split(':').map(Number); return a*60+(b||0); }
+function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
+  const out=[];
+  const add=(ini,fin,tipo,texto)=>{ ini=Math.max(ini,iniMin); fin=Math.min(fin,finMin); if(fin>ini)out.push({ini,fin,tipo,texto}); };
+  const dow=new Date(fecha+'T12:00:00').getDay();
+  const h=(horario||[]).find(x=>x.dia_semana===dow);
+  if(h){
+    if(h.cerrado) add(iniMin,finMin,'cerrado','Cerrado');
+    else{
+      const ap=hmAMin(h.hora_apertura), ci=hmAMin(h.hora_cierre);
+      if(ap!==null) add(iniMin,ap,'cerrado','Fuera de horario');
+      if(ci!==null) add(ci,finMin,'cerrado','Fuera de horario');
+      const c1=hmAMin(h.hora_colacion_inicio), c2=hmAMin(h.hora_colacion_fin);
+      if(c1!==null&&c2!==null) add(c1,c2,'colacion','Colación');
+    }
+  }
+  (bloqueos||[]).forEach(b=>{
+    if(!b.activo||b.profesional_id!==profId)return;
+    const motivo=b.motivo||'Bloqueo';
+    if(b.tipo==='dia_completo'&&b.fecha===fecha) add(iniMin,finMin,'bloqueo',motivo);
+    else if(b.tipo==='puntual'&&b.fecha===fecha) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
+    else if(b.tipo==='recurrente'&&b.dia_semana===dow) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
+  });
+  return out;
+}
+function agendaBandasHtml(fecha,profId){
+  return agendaBandas(fecha,S.horario,S.bloqueos,profId,AG_START_HOUR*60,AG_END_HOUR*60).map(b=>
+    `<div class="cal-banda ${b.tipo}" style="top:${(b.ini-AG_START_HOUR*60)*AG_PX_MIN}px;height:${(b.fin-b.ini)*AG_PX_MIN}px" title="${String(b.texto).replace(/"/g,'&quot;')}"><span>${String(b.texto).replace(/</g,'&lt;')}</span></div>`).join('');
+}
+
 function renderAgenda(){
   const fecha=document.getElementById('ag-fecha').value||ahoraEnChile().fecha;
   document.getElementById('ag-fecha').value=fecha;
@@ -5853,7 +5896,7 @@ function renderAgenda(){
         <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
-    return `<div class="cal-col" data-barbero="${barb}" data-idx="${i}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,var(--cal-linea,#16172a) ${slotH-1}px,var(--cal-linea,#16172a) ${slotH}px)" onclick="agendaColClick(event)">${nowLine}${blocks}</div>`;
+    return `<div class="cal-col" data-barbero="${barb}" data-idx="${i}" style="height:${gridH}px;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent ${slotH-1}px,var(--cal-linea,#16172a) ${slotH-1}px,var(--cal-linea,#16172a) ${slotH}px)" onclick="agendaColClick(event)">${agendaBandasHtml(fecha,(S.barberos.find(x=>x.nombre===barb)||{}).id)}${nowLine}${blocks}</div>`;
   }).join('');
 
   // Paginado mobile: en pantallas angostas se ve una sola columna de
@@ -6722,6 +6765,7 @@ async function subirLogoBlob(blob){
     S.barberia.logo_url=url.publicUrl;
     // Se toma el valor RELEÍDO, no el que mandamos: es el que quedó.
     S.barberia.color_fondo_logo=fila.color_fondo_logo;
+    aplicarTemaPanel();
     notify('Logo guardado ✓');
     if(dataUrl){
       const preview=document.getElementById('logo-preview');
@@ -6908,9 +6952,28 @@ async function temaRefrescar(src, anPre) {
 //    misma función que usan las páginas públicas, con contraste verificado).
 // Se escriben variables CSS sobre <html> y, en claro, la clase panel-claro en
 // <body> activa los ajustes de arriba. Quitar todo esto es borrar este bloque.
+// ─── Logo del negocio en la barra lateral ─────────────────────────────────
+// Si el negocio subió su logo, reemplaza al ícono de Reservia; con el fondo
+// que se detectó al subirlo (color_fondo_logo) para que un logo blanco no se
+// pierda. Sin logo, queda el ícono de siempre (se guarda la primera vez).
+let SB_LOGO_ORIGINAL = null;
+function renderLogoSidebar(){
+  const el = document.getElementById('sb-logo'); if(!el) return;
+  if (SB_LOGO_ORIGINAL === null) SB_LOGO_ORIGINAL = el.innerHTML;
+  const b = S.barberia || {};
+  if (b.logo_url) {
+    const u = String(b.logo_url).replace(/"/g, '&quot;');
+    el.style.cssText = 'width:32px;height:32px;flex-shrink:0;border-radius:9px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:' + (b.color_fondo_logo || 'transparent');
+    el.innerHTML = '<img alt="' + String(b.nombre || '').replace(/"/g, '&quot;') + '" src="' + u + '" style="width:100%;height:100%;object-fit:contain;padding:2px" onerror="SB_LOGO_ORIGINAL!==null&&(this.parentNode.style.cssText=\'width:32px;height:32px;flex-shrink:0\',this.parentNode.innerHTML=SB_LOGO_ORIGINAL)">';
+  } else {
+    el.style.cssText = 'width:32px;height:32px;flex-shrink:0';
+    el.innerHTML = SB_LOGO_ORIGINAL;
+  }
+}
 let PANEL_CLARO = false, PANEL_VARS_PUESTAS = [];
 function panelRgba(hex, a){ const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
 function aplicarTemaPanel(){
+  renderLogoSidebar();
   const r = document.documentElement;
   PANEL_VARS_PUESTAS.forEach(k => r.style.removeProperty(k)); PANEL_VARS_PUESTAS = [];
   PANEL_CLARO = false; document.body.classList.remove('panel-claro');
