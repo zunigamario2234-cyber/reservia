@@ -6052,7 +6052,6 @@ function repProfRango(tipo){
 }
 
 let REP_PRESET='mes';
-const MESES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 function fFechaLinda(f){ if(!f)return ''; const [y,m,d]=f.split('-').map(Number); return d+' '+MESES_CORTO[m-1]+' '+y; }
 function setRepPreset(p){
   REP_PRESET=p;
