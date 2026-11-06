@@ -7045,7 +7045,7 @@ function renderReporteProfesional(){
     <div class="mc"><div class="mc-label">Ventas totales</div><div class="mc-val">${fmt(totalV)}</div></div>
     <div class="mc"><div class="mc-label">Profesionales activos</div><div class="mc-val">${Object.keys(byP).length}</div></div>`;
 
-  renderHonorarios(citas);
+  renderHonorarios(citas,byP);
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
     const comP=Math.round(d.comisionProd||0);
@@ -7095,44 +7095,67 @@ function renderReporteProfesional(){
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
 }
 
-// ─── HONORARIOS: lo que hay que pagar en el período ───────────────────────
-// Solo con el modo "Boleta de honorarios". Suma el desglose que cada visita
-// guardó al cobrarse (IVA, retención y quién la paga), así cambiar la tasa o el
-// reparto después no mueve lo ya cobrado. Las visitas anteriores a activar el
-// modo no tienen desglose: se cuentan aparte y no se inventan.
-// Propinas y productos quedan fuera: no van por boleta de honorarios.
-function renderHonorarios(citas){
+// ─── HONORARIOS: liquidación por profesional del período ───────────────────
+// Solo con el modo "Boleta de honorarios". Por cada profesional arma lo que hay
+// que pagarle: comisión de servicios (su boleta bruta) menos la parte de la
+// retención que le toca, más comisión de productos y propinas (esas dos no
+// pasan por boleta). La barbería paga al SII TODA la retención, así que el
+// total que desembolsa es lo que se le paga a los profesionales + la retención.
+// Suma el desglose que cada visita guardó al cobrarse: cambiar la tasa o el
+// reparto después no mueve lo ya cobrado. Los servicios anteriores al modo
+// honorarios no tienen desglose: su comisión se suma tal cual (sin retención) y
+// se avisa, en vez de dejarla fuera de lo que hay que pagar.
+function renderHonorarios(citas,byP){
   const el=document.getElementById('rep-honorarios'); if(!el) return;
   if(!S.barberia?.usa_honorarios){ el.innerHTML=''; return; }
+  byP=byP||{};
   const ok=citas.filter(v=>v.estado!=='Cancelada');
-  const con=ok.filter(v=>v.retencion_total!=null), sin=ok.length-con.length;
   const by={};
-  con.forEach(v=>{
-    const p=v.barbero_nombre||'Sin asignar';
-    const d=by[p]||(by[p]={n:0,total:0,iva:0,neto:0,bruto:0,ret:0,retP:0,retN:0,liq:0});
-    const iva=v.iva_monto||0, bruto=v.comision_monto||0;
-    d.n++; d.total+=v.valor||0; d.iva+=iva; d.neto+=(v.valor||0)-iva; d.bruto+=bruto;
-    d.ret+=v.retencion_total||0; d.retP+=v.retencion_profesional||0; d.retN+=v.retencion_negocio||0; d.liq+=v.liquido_profesional||0;
+  const get=p=>by[p]||(by[p]={n:0,total:0,iva:0,bruto:0,ret:0,retP:0,retN:0,sinDes:0,nSin:0});
+  ok.forEach(v=>{
+    const d=get(v.barbero_nombre||'Sin asignar');
+    if(v.retencion_total==null){ d.sinDes+=Math.round(v.comision_monto||0); d.nSin++; return; }
+    d.n++; d.total+=v.valor||0; d.iva+=v.iva_monto||0; d.bruto+=v.comision_monto||0;
+    d.ret+=v.retencion_total||0; d.retP+=v.retencion_profesional||0; d.retN+=v.retencion_negocio||0;
   });
-  const T=Object.values(by).reduce((a,d)=>{ Object.keys(d).forEach(k=>a[k]=(a[k]||0)+d[k]); return a; },{});
-  const quedaNeg=d=>d.neto-d.bruto-d.retN;
-  const filas=Object.entries(by).sort((a,b)=>b[1].total-a[1].total).map(([p,d])=>`<tr>
-    <td data-label="Profesional"><strong style="color:var(--text)">${escHtml(p)}</strong></td><td data-label="Servicios">${d.n}</td>
-    <td data-label="Cobrado (con IVA)">${fmt(d.total)}</td><td data-label="IVA">${fmt(d.iva)}</td><td data-label="Neto">${fmt(d.neto)}</td>
-    <td data-label="Boleta bruta" class="gold">${fmt(d.bruto)}</td>
-    <td data-label="Retención SII">${fmt(d.ret)}</td><td data-label="Paga profesional">${fmt(d.retP)}</td><td data-label="Paga barbería">${fmt(d.retN)}</td>
-    <td data-label="Líquido a pagarle" style="font-weight:600">${fmt(d.liq)}</td><td data-label="Total a desembolsar">${fmt(d.liq+d.ret)}</td><td data-label="Le queda a la barbería">${fmt(quedaNeg(d))}</td></tr>`).join('');
+  // Profesionales que solo vendieron productos o recibieron propina también cuentan.
+  Object.keys(byP).forEach(p=>{ if((byP[p].comisionProd||0)>0||(byP[p].propinas||0)>0) get(p); });
+  const filasP=Object.entries(by).map(([p,d])=>{
+    const x=byP[p]||{};
+    d.prod=Math.round(x.comisionProd||0); d.prop=Math.round(x.propinas||0);
+    d.liq=d.bruto-d.retP;
+    d.pagar=d.liq+d.sinDes+d.prod+d.prop;
+    return [p,d];
+  }).sort((a,b)=>b[1].pagar-a[1].pagar);
+  const T=filasP.reduce((a,[,d])=>{ ['iva','bruto','ret','retP','retN','liq','sinDes','prod','prop','pagar','nSin'].forEach(k=>a[k]=(a[k]||0)+d[k]); return a; },{});
+  const L=(a,b,o={})=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:12px;${o.borde===false?'':'border-bottom:0.5px solid var(--border);'}${o.fuerte?'font-weight:600;color:var(--text);':''}${o.tenue?'color:var(--text3);':''}"><span>${a}</span><span style="white-space:nowrap">${b}</span></div>`;
+  const tarjetas=filasP.map(([p,d])=>`<div class="card" style="margin:0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><strong style="color:var(--text);font-size:14px">${escHtml(p)}</strong><span style="font-size:11px;color:var(--text3)">${d.n} servicio${d.n===1?'':'s'}</span></div>
+      ${L('Servicios cobrados (con IVA)',fmt(d.total),{tenue:true})}
+      ${L('IVA de esos servicios',fmt(d.iva),{tenue:true})}
+      ${L('Comisión por servicios (boleta bruta)',fmt(d.bruto))}
+      ${L('Retención SII · parte del profesional','− '+fmt(d.retP))}
+      ${L('Líquido por servicios',fmt(d.liq),{fuerte:true})}
+      ${d.nSin?L('Servicios sin desglose ('+d.nSin+'), sin retención','+ '+fmt(d.sinDes)):''}
+      ${L('Comisión por productos','+ '+fmt(d.prod))}
+      ${L('Propinas','+ '+fmt(d.prop))}
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;padding:10px 12px;background:var(--bg4);border-radius:8px"><span style="font-size:12px;color:var(--text2)">Total a pagar a ${escHtml(p)}</span><span style="font-size:18px;font-weight:700;color:var(--text)">${fmt(d.pagar)}</span></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">Retención total de sus boletas: ${fmt(d.ret)} (él ${fmt(d.retP)} · barbería ${fmt(d.retN)}). La barbería la paga toda al SII.</div>
+    </div>`).join('');
   el.innerHTML=`<div class="card"><div class="card-hdr"><span class="card-title">Honorarios del período</span></div>
-    <div class="g3" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
-      <div class="mc"><div class="mc-label">IVA a pagar al SII</div><div class="mc-val">${fmt(T.iva||0)}</div></div>
-      <div class="mc"><div class="mc-label">Líquido a pagar a profesionales</div><div class="mc-val">${fmt(T.liq||0)}</div></div>
+    <div class="g3" style="margin-bottom:14px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <div class="mc"><div class="mc-label">Total a pagar a profesionales</div><div class="mc-val">${fmt(T.pagar||0)}</div></div>
       <div class="mc"><div class="mc-label">Retención a pagar al SII</div><div class="mc-val">${fmt(T.ret||0)}</div></div>
-      <div class="mc"><div class="mc-label">Total que desembolsa la barbería</div><div class="mc-val">${fmt((T.liq||0)+(T.ret||0))}</div></div>
+      <div class="mc"><div class="mc-label">Total que desembolsa la barbería</div><div class="mc-val">${fmt((T.pagar||0)+(T.ret||0))}</div></div>
+      <div class="mc"><div class="mc-label">IVA de estos servicios</div><div class="mc-val">${fmt(T.iva||0)}</div></div>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Servicios</th><th>Cobrado (con IVA)</th><th>IVA</th><th>Neto</th><th>Boleta bruta</th><th>Retención SII</th><th>Paga profesional</th><th>Paga barbería</th><th>Líquido a pagarle</th><th>Total a desembolsar</th><th>Le queda a la barbería</th></tr></thead>
-    <tbody>${filas||'<tr><td colspan="12" class="empty">Sin servicios con desglose en este rango</td></tr>'}</tbody>
-    ${filas?`<tfoot><tr><td><strong>Total</strong></td><td>${T.n||0}</td><td>${fmt(T.total||0)}</td><td>${fmt(T.iva||0)}</td><td>${fmt(T.neto||0)}</td><td>${fmt(T.bruto||0)}</td><td>${fmt(T.ret||0)}</td><td>${fmt(T.retP||0)}</td><td>${fmt(T.retN||0)}</td><td><strong>${fmt(T.liq||0)}</strong></td><td><strong>${fmt((T.liq||0)+(T.ret||0))}</strong></td><td>${fmt(quedaNeg(T))}</td></tr></tfoot>`:''}</table></div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">La barbería paga al profesional su líquido y al SII toda la retención (así el profesional no queda con la deuda): ese es el total a desembolsar. La propina va entera al profesional y las ventas de productos no pasan por boleta: ninguna entra acá.${sin?` <span style="color:#e0a850">${sin} servicio${sin>1?'s':''} del rango son anteriores al modo honorarios y no tienen desglose.</span>`:''}</div></div>`;
+    ${tarjetas?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${tarjetas}</div>`:'<div class="empty">Sin servicios con desglose en este rango</div>'}
+    ${tarjetas?`<div style="margin-top:12px;padding:12px 14px;border:1px solid var(--border2);border-radius:10px">
+      ${L('Total a pagar a profesionales (líquido + productos + propinas)',fmt(T.pagar||0),{borde:false})}
+      ${L('+ Retención completa al SII (la paga la barbería)',fmt(T.ret||0),{borde:false})}
+      ${L('Total que desembolsa la barbería',fmt((T.pagar||0)+(T.ret||0)),{fuerte:true,borde:false})}
+    </div>`:''}
+  </div>`;
 }
 
 // ─── IMPUESTOS: F29 mensual y proyección de la renta anual ────────────────

@@ -53,9 +53,9 @@ function datosHon(){ const D=datos('dueno');
  D.barberias[0].usa_honorarios=true; D.barberias[0].modo_comision='neto_iva'; D.barberias[0].honorarios_retencion_paga='dividido'; D.barberias[0].honorarios_pct_profesional=50;
  D.retencion_honorarios_tasas=[{desde_anio:2025,vigente_desde:'2025-01-01',pct:14.5},{desde_anio:2026,vigente_desde:'2026-01-01',pct:15.25},{desde_anio:2027,vigente_desde:'2027-01-01',pct:16},{desde_anio:2028,vigente_desde:'2028-01-01',pct:17}];
  const mk=(id,fecha,valor,com,ret,rp)=>({id,barberia_id:BID,fecha,hora:'10:00',cliente_id:'c1',barbero_nombre:'Mario',servicio:'Corte clásico',valor,propina:0,metodo_pago:'Efectivo',estado:'Atendida',comision_monto:com,iva_monto:Math.round(valor*19/119),retencion_pct:15.25,retencion_total:ret,retencion_profesional:rp,retencion_negocio:ret-rp,liquido_profesional:com-rp});
- D.visitas=[mk('h1',hoy,20000,8403,1281,641),mk('h2',hoy,20000,8403,1281,641),
+ D.visitas=[{...mk('h1',hoy,20000,8403,1281,641),propina:1000},mk('h2',hoy,20000,8403,1281,641),
    {id:'h3',barberia_id:BID,fecha:hoy,hora:'12:00',cliente_id:'c1',barbero_nombre:'Mario',servicio:'Corte clásico',valor:15000,propina:0,metodo_pago:'Efectivo',estado:'Atendida',comision_monto:7500}];
- D.cobro_productos=[]; return D; }
+ D.cobro_productos=[{id:'p1',cobro_id:'k1',barberia_id:BID,producto_id:'i1',barbero_nombre:'Mario',cantidad:1,valor:9000,comision_monto:900,fecha:hoy,created_at:new Date().toISOString()}]; return D; }
 (async()=>{
  const T=datosHon();
  const b=await chromium.launch(); const p=await b.newPage({viewport:{width:1360,height:900}});
@@ -99,14 +99,16 @@ function datosHon(){ const D=datos('dueno');
  await p.waitForTimeout(300);
  const txt=(await p.textContent('#rep-honorarios')).replace(/\s+/g,' ');
  ok('el reporte de honorarios aparece',/Honorarios del período/.test(txt),txt.slice(0,200));
- ok('IVA a pagar = 6.386 (2 × 3.193)',/IVA a pagar al SII\s*\$6\.386/.test(txt),txt.slice(0,300));
- ok('líquido a pagar = 15.524 (2 × 7.762)',/Líquido a pagar a profesionales\s*\$15\.524/.test(txt),txt.slice(0,300));
- ok('retención a pagar al SII = 2.562',/Retención a pagar al SII\s*\$2\.562/.test(txt),txt.slice(0,300));
- ok('avisa del servicio anterior al modo (sin desglose)',/1 servicio del rango son anteriores/.test(txt),txt.slice(-200));
-ok('total que desembolsa la barbería = líquido + retención = 18.086',/Total que desembolsa la barbería\s*\$18\.086/.test(txt),txt.slice(0,400));
- const fila=await p.$$eval('#rep-honorarios tbody tr',a=>a.map(x=>x.innerText.replace(/\s+/g,' ')));
- ok('la fila de Mario: boleta 16.806, paga profesional 1.282, paga barbería 1.280',/16\.806/.test(fila[0])&&/1\.282/.test(fila[0])&&/1\.280/.test(fila[0]),fila);
- await p.screenshot({path:'/tmp/honorarios.png',fullPage:false});
+ const card=(await p.textContent('#rep-honorarios')).replace(/\s+/g,' ');
+ ok('tarjeta de Mario: comisión por servicios (boleta bruta) 16.806',/Comisión por servicios \(boleta bruta\)\s*\$16\.806/.test(card),card.slice(0,600));
+ ok('resta la retención del profesional 1.282 y da líquido 15.524',/− \$1\.282/.test(card)&&/Líquido por servicios\s*\$15\.524/.test(card),card.slice(0,700));
+ ok('suma productos 900 y propinas 1.000',/Comisión por productos\s*\+ \$900/.test(card)&&/Propinas\s*\+ \$1\.000/.test(card),card);
+ ok('incluye el servicio sin desglose (7.500) y lo avisa',/Servicios sin desglose \(1\)[^$]*\+ \$7\.500/.test(card),card);
+ ok('Total a pagar a Mario = 24.924',/Total a pagar a Mario\s*\$24\.924/.test(card),card);
+ ok('arriba: total a pagar a profesionales 24.924 y retención al SII 2.562',/Total a pagar a profesionales\s*\$24\.924/.test(card)&&/Retención a pagar al SII\s*\$2\.562/.test(card),card.slice(0,300));
+ ok('total que desembolsa la barbería = 27.486 (pagos + retención completa)',/Total que desembolsa la barbería\s*\$27\.486/.test(card),card);
+ ok('muestra quién paga qué de la retención',/él \$1\.282 · barbería \$1\.280/.test(card),card);
+ await (await p.$('#rep-honorarios')).screenshot({path:'/tmp/honorarios.png'});
  // Impuestos
  const gc=await p.evaluate(()=>({a:impuestoGlobalComplementario(30000000,834504),b:impuestoGlobalComplementario(10000000,834504),c:impuestoGlobalComplementario(120000000,834504),idpc27:tasaIdpcLey('general',2026),pp26:tasaIdpcLey('pro_pyme',2026),pp28:tasaIdpcLey('pro_pyme',2028),pp29:tasaIdpcLey('pro_pyme',2029)}));
  ok('Global Complementario: $30.000.000 = 947.963 (tabla SII AT2026)',Math.abs(gc.a-947963)<=2,gc);
@@ -117,7 +119,7 @@ ok('total que desembolsa la barbería = líquido + retención = 18.086',/Total q
  ok('proyección a 12 meses: utilidad 50M, impuesto 6,25M, PPM 250.000',pr.utilidad===50000000&&pr.impuesto===6250000&&pr.ppmAnual===250000&&pr.aPagar===6000000,pr);
  await p.evaluate(()=>nav('impuestos')); await p.waitForTimeout(300);
  const f29=(await p.textContent('#imp-f29-cards')).replace(/\s+/g,' ');
- ok('F29: IVA a pagar 8.782, PPM 116 y total 11.460 (con 2.562 de retención)',/IVA a pagar\s*\$8\.782/.test(f29)&&/\$116/.test(f29)&&/\$11\.460/.test(f29),f29);
+ ok('F29: IVA a pagar 10.218 (incluye el producto), PPM 134 y total 12.914 (con 2.562 de retención)',/IVA a pagar\s*\$10\.218/.test(f29)&&/\$134/.test(f29)&&/\$12\.914/.test(f29),f29);
  ok('muestra el régimen guardado y la tasa de la ley',(await p.inputValue('#imp-regimen'))==='persona_natural'&&!(await p.isVisible('#imp-idpc-box')));
  await p.selectOption('#imp-regimen','pro_pyme'); await p.waitForTimeout(500);
  ok('al elegir sociedad aparece la tasa de primera categoría',await p.isVisible('#imp-idpc-box'));
