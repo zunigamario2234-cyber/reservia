@@ -11,7 +11,13 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
-<style>@font-face{font-family:'Hanken Grotesk';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:400 800;font-display:swap}</style>
+<style>@font-face{font-family:'Hanken Grotesk';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:400 800;font-display:swap}
+#aviso-reserva{position:fixed;top:16px;right:16px;z-index:9999;max-width:300px;padding:14px 16px;border-radius:12px;background:var(--p3);color:#04120f;font-size:13px;line-height:1.5;box-shadow:0 8px 28px rgba(0,0,0,.35);transform:translateY(-140%);opacity:0;transition:transform .3s,opacity .3s;cursor:pointer;pointer-events:none}
+#aviso-reserva.show{transform:none;opacity:1;pointer-events:auto}
+#btn-sonido-aviso{position:fixed;left:12px;bottom:12px;z-index:900;width:38px;height:38px;border-radius:50%;border:1px solid var(--border,#2a2a2a);background:var(--bg2,#151515);color:var(--text,#eee);font-size:16px;cursor:pointer;opacity:.75}
+#btn-sonido-aviso:hover{opacity:1}
+@media(max-width:700px){#btn-sonido-aviso{bottom:70px}}
+</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -918,7 +924,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div class="fr"><div class="fg"><label>Nombre negocio</label><input id="cfg-nombre" type="text"></div><div class="fg"><label>WhatsApp negocio</label><input id="cfg-wsp" type="text"></div></div>
       <div class="fr"><div class="fg"><label>Dirección</label><input id="cfg-dir" type="text"><button type="button" onclick="verEnMapa()" style="background:none;border:none;color:var(--p1);font-size:11px;font-family:inherit;padding:5px 0 0;cursor:pointer">📍 Ver cómo lo encuentran tus clientes</button></div><div class="fg"><label>% IVA</label><input id="cfg-iva" type="number" min="0" max="100" onchange="actualizarEjemploComision()"></div></div>
       <div class="fr"><div class="fg"><label>Teléfono</label><input id="cfg-telefono" type="text" placeholder="+56 2 XXXX XXXX"></div><div class="fg"><label>Email de contacto</label><input id="cfg-email" type="email" placeholder="contacto@tunegocio.cl"></div></div>
-      <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link para dejar reseña en Google</label><input id="cfg-reviews" type="url" placeholder="https://g.page/r/…/review"><div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.5">Es el link que se le muestra al cliente contento (4★ o 5★) en la encuesta, y el que va en el mensaje "Pedir reseña". Lo sacas de Google Business Profile → <em>Pedir reseñas</em> → copiar link. <a href="#" onclick="probarLinkResenas();return false" style="color:var(--gold)">Probar link</a></div></div></div>
+      <div class="fr"><div class="fg"><label>Instagram</label><input id="cfg-instagram" type="text" placeholder="@tunegocio"></div><div class="fg"><label>Link para dejar reseña en Google</label><input id="cfg-reviews" type="url" placeholder="https://g.page/r/…/review"><div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.5">Es el link que se le muestra al cliente contento (4★ o 5★) en la encuesta, y el que va en el mensaje "Pedir reseña". Lo sacas de Google Business Profile → <em>Pedir reseñas</em> → copiar link. <a href="#" onclick="probarLinkResenas();return false" style="color:var(--p2)">Probar link</a></div></div></div>
       <div class="fg"><label>Descripción del local (se muestra en el link de reservas)</label><textarea id="cfg-descripcion" rows="2" placeholder="Ej: Barbería especializada en cortes clásicos y modernos, en el corazón de Providencia."></textarea></div>
       <div style="display:none"><input id="cfg-setmore" type="url"></div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
@@ -1745,6 +1751,8 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 </div>
 
 <div class="notif" id="notif"></div>
+<div id="aviso-reserva" role="status" aria-live="polite" onclick="this.classList.remove('show')"></div>
+<button id="btn-sonido-aviso" type="button" onclick="alternarSonidoAviso()" aria-label="Sonido de avisos">🔔</button>
 
 <script>
 // Las credenciales las define supabase-config.js, cargado en el <head>. Si no
@@ -1807,6 +1815,7 @@ async function init(){
   document.getElementById('sb-barberia').textContent = S.barberia?.nombre || '—';
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
   nav(esRecepcion()?'agenda':'dashboard');
+  escucharReservasNuevas();
   // El prototipo del tema guardaba un tema violeta en localStorage y lo
   // aplicaba al arrancar. Ya no existe; se limpia la clave para que nadie
   // la encuentre dentro de un año sin saber qué era. En try/catch porque
@@ -1822,6 +1831,77 @@ async function init(){
     mostrarErrorCarga(e.message||'Ocurrió un error inesperado al cargar tu cuenta.');
   }
   setInterval(()=>{ if(document.getElementById('p-dashboard').classList.contains('active')) renderDashboard(); }, 60000);
+}
+
+// ─── AVISO DE RESERVA NUEVA (sonido + banner, en vivo) ───────────────────
+// Supabase Realtime avisa cuando entra una fila nueva en `reservas` de este
+// negocio (web, app del Club, agenda de un profesional o la recepción). Los
+// navegadores no dejan sonar audio hasta que la persona toca la pantalla una
+// vez, por eso el contexto de audio se "despierta" con el primer toque.
+let _audioCtx=null, _canalReservas=null, _tituloOriginal='';
+function sonidoAvisoActivo(){ try{ return localStorage.getItem('reservia-sonido')!=='off'; }catch(e){ return true; } }
+function despertarAudio(){
+  try{
+    if(!_audioCtx){ const A=window.AudioContext||window.webkitAudioContext; if(A) _audioCtx=new A(); }
+    if(_audioCtx&&_audioCtx.state==='suspended') _audioCtx.resume();
+  }catch(e){}
+}
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev,despertarAudio,{passive:true}));
+function tocarCampanilla(){
+  if(!sonidoAvisoActivo()||!_audioCtx||_audioCtx.state!=='running') return;
+  const t0=_audioCtx.currentTime;
+  [[880,0],[1174.66,0.18],[1318.5,0.36]].forEach(([f,d])=>{
+    const o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
+    o.type='sine'; o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001,t0+d); g.gain.exponentialRampToValueAtTime(0.25,t0+d+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+d+0.7);
+    o.connect(g); g.connect(_audioCtx.destination); o.start(t0+d); o.stop(t0+d+0.75);
+  });
+}
+function alternarSonidoAviso(){
+  const on=!sonidoAvisoActivo();
+  try{ localStorage.setItem('reservia-sonido',on?'on':'off'); }catch(e){}
+  despertarAudio(); pintarBotonSonido();
+  if(on) tocarCampanilla();
+  notify(on?'Sonido de avisos activado 🔔':'Sonido de avisos silenciado 🔕');
+}
+function pintarBotonSonido(){
+  const b=document.getElementById('btn-sonido-aviso'); if(!b) return;
+  b.textContent=sonidoAvisoActivo()?'🔔':'🔕';
+  b.title=sonidoAvisoActivo()?'Avisos con sonido: activados (toca para silenciar)':'Avisos con sonido: silenciados (toca para activar)';
+}
+function avisarReservaNueva(r){
+  tocarCampanilla();
+  const quien=(r.nombre_cliente||'Un cliente'), cuando=(r.fecha||'')+(r.hora?' '+String(r.hora).slice(0,5):'');
+  const el=document.getElementById('aviso-reserva');
+  if(el){
+    el.innerHTML='<strong>Nueva reserva</strong><br>'+escapeHtml(quien)+(r.servicio?' · '+escapeHtml(r.servicio):'')+'<br><span style="opacity:.8">'+escapeHtml(cuando)+(r.fuente?' · '+escapeHtml(r.fuente):'')+'</span>';
+    el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),12000);
+  }
+  // Pestaña en segundo plano: el título parpadea hasta que vuelvan a ella.
+  if(document.hidden){
+    if(!_tituloOriginal) _tituloOriginal=document.title;
+    document.title='🔔 Nueva reserva — '+_tituloOriginal;
+  }
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&_tituloOriginal){ document.title=_tituloOriginal; _tituloOriginal=''; } });
+async function refrescarPorReservaNueva(r){
+  try{
+    await loadReservas();
+    if(document.getElementById('p-agenda')?.classList.contains('active')) renderAgenda();
+    if(document.getElementById('p-reservas')?.classList.contains('active')) renderReservas();
+    if(document.getElementById('p-dashboard')?.classList.contains('active')) renderDashboard();
+  }catch(e){}
+}
+function escucharReservasNuevas(){
+  if(!S.barberia?.id||_canalReservas) return;
+  if(S.perfil?.rol==='profesional') return; // el profesional usa Mi Agenda, no este panel
+  _canalReservas=sb.channel('reservas-'+S.barberia.id)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'reservas',filter:'barberia_id=eq.'+S.barberia.id},payload=>{
+      const r=payload.new||{};
+      avisarReservaNueva(r); refrescarPorReservaNueva(r);
+    })
+    .subscribe();
+  pintarBotonSonido();
 }
 
 function mostrarErrorCarga(mensaje){

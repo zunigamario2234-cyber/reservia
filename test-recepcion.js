@@ -115,6 +115,10 @@ async function sesion(rol,signupFalla){
  ok('4-5★ ofrece "Pedir reseña en Google"',wa.hay,wa);
  ok('el mensaje lleva el link de Google',wa.o.length===1&&/g\.page\/r\/abc\/review/.test(wa.o[0][1])&&/Juan/.test(wa.o[0][1]),wa.o);
  ok('link inválido se rechaza, g.page se acepta',await p.evaluate(()=>!normalizarLinkResenas('https://evil.com/x').ok&&normalizarLinkResenas('g.page/r/a/review').ok));
+ const av=await p.evaluate(()=>{ avisarReservaNueva({nombre_cliente:'Pedro',servicio:'Corte clásico',fecha:'2026-11-07',hora:'10:00:00',fuente:'Web propia'}); const e=document.getElementById('aviso-reserva'); return {show:e.classList.contains('show'),txt:e.textContent,boton:!!document.getElementById('btn-sonido-aviso')}; });
+ ok('reserva nueva muestra el aviso con cliente y servicio',av.show&&/Pedro/.test(av.txt)&&/Corte clásico/.test(av.txt)&&av.boton,av);
+ await p.click('#btn-sonido-aviso'); ok('el botón silencia los avisos',(await p.textContent('#btn-sonido-aviso')).trim()==='🔕');
+ await p.click('#btn-sonido-aviso'); ok('y los reactiva',(await p.textContent('#btn-sonido-aviso')).trim()==='🔔');
  ok('sin errores de página (dueño)',errs.length===0,errs);
  await b.close();
 
