@@ -428,6 +428,12 @@ input[readonly]{background:#111;color:#666;cursor:default}
     <div class="tab" data-p="mes" onclick="setDashPeriodo('mes')">Mensual</div>
     <div class="tab" data-p="anio" onclick="setDashPeriodo('anio')">Anual</div>
   </div>
+  <div class="g4" id="d-ventas-periodos">
+    <div class="mc"><div class="mc-label">Ventas de hoy</div><div class="mc-val gold" id="vp-hoy">—</div><div class="mc-sub" id="vp-hoy-sub">—</div></div>
+    <div class="mc"><div class="mc-label">Ventas de la semana</div><div class="mc-val gold" id="vp-semana">—</div><div class="mc-sub" id="vp-semana-sub">—</div></div>
+    <div class="mc"><div class="mc-label">Ventas del mes</div><div class="mc-val gold" id="vp-mes">—</div><div class="mc-sub" id="vp-mes-sub">—</div></div>
+    <div class="mc"><div class="mc-label">Ventas del año</div><div class="mc-val gold" id="vp-anio">—</div><div class="mc-sub" id="vp-anio-sub">—</div></div>
+  </div>
   <div class="g4 g4-vip">
     <div class="mc"><div class="mc-label">Clientes totales</div><div class="mc-val" id="d-clientes">—</div><div class="mc-sub" id="d-clientes-sub">Base activa</div></div>
     <div class="mc"><div class="mc-label" id="d-citas-label">Citas</div><div class="mc-val" id="d-citas">—</div><div class="mc-sub" id="d-citas-sub">—</div></div>
@@ -873,15 +879,30 @@ input[readonly]{background:#111;color:#666;cursor:default}
   <!-- RESUMEN GENERAL -->
   <div id="rep-resumen">
     <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-      <input type="month" id="rep-mes-ini" style="max-width:160px">
-      <span style="color:var(--text3);font-size:13px">hasta</span>
-      <input type="month" id="rep-mes-fin" style="max-width:160px">
-      <button class="btn btn-primary" onclick="renderReporteResumen()">Aplicar filtro</button>
+      <div class="tabs" id="rep-presets" style="margin:0">
+        <div class="tab" data-r="hoy" onclick="setRepPreset('hoy')">Hoy</div>
+        <div class="tab" data-r="semana" onclick="setRepPreset('semana')">Esta semana</div>
+        <div class="tab active" data-r="mes" onclick="setRepPreset('mes')">Este mes</div>
+        <div class="tab" data-r="anio" onclick="setRepPreset('anio')">Este año</div>
+        <div class="tab" data-r="todo" onclick="setRepPreset('todo')">Todo</div>
+        <div class="tab" data-r="custom" onclick="setRepPreset('custom')">Personalizado</div>
+      </div>
+      <span id="rep-custom" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="date" id="rep-desde" style="max-width:150px" onchange="renderReporteResumen()">
+        <span style="color:var(--text3);font-size:13px">hasta</span>
+        <input type="date" id="rep-hasta" style="max-width:150px" onchange="renderReporteResumen()">
+      </span>
+      <select id="rep-agrupar" style="max-width:150px" onchange="renderReporteResumen()">
+        <option value="auto">Agrupar: automático</option>
+        <option value="dia">Agrupar por día</option>
+        <option value="mes">Agrupar por mes</option>
+      </select>
       <button class="btn btn-ghost" onclick="exportarExcel('resumen')">📥 Exportar Excel</button>
     </div>
+    <div id="rep-rango-txt" style="font-size:12px;color:var(--text3);margin:-8px 0 14px"></div>
     <div class="g4" id="rep-metrics"></div>
     <div class="g2">
-      <div class="card"><div class="card-hdr"><span class="card-title">Evolución mensual de ventas</span></div><div id="rep-evolucion"></div></div>
+      <div class="card"><div class="card-hdr"><span class="card-title" id="rep-evol-titulo">Evolución de ventas</span></div><div id="rep-evolucion"></div></div>
       <div class="card"><div class="card-hdr"><span class="card-title">Ventas por servicio</span></div><div id="rep-por-servicio"></div></div>
     </div>
     <div class="card"><div class="card-hdr"><span class="card-title">Detalle de citas</span><button class="btn btn-ghost btn-sm" onclick="exportarExcel('citas')">📥 Excel</button></div>
@@ -1623,7 +1644,20 @@ async function loadClientes(){ const {data}=await sb.from('clientes').select('*'
 // recarga puntual —después de un cobro, de editar una cita— lo deja
 // sincronizado sin que haya que acordarse en cada punto de llamada, que es
 // justo la clase de olvido que dejaría el IVA subdeclarado en silencio.
-async function loadVisitas(){ const {data}=await sb.from('visitas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.visitas=data||[]; construirVentas(); }
+// Supabase corta cualquier consulta en 1000 filas sin avisar. Si las ventas se
+// calculan sobre una lista cortada, los totales salen bajos y nadie lo nota:
+// por eso se pide por tandas hasta agotar las filas.
+async function traerTodo(tabla){
+  const out=[]; const TANDA=1000;
+  for(let desde=0;;desde+=TANDA){
+    const {data,error}=await sb.from(tabla).select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}).order('id',{ascending:true}).range(desde,desde+TANDA-1);
+    if(error)throw error;
+    out.push(...(data||[]));
+    if(!data||data.length<TANDA)break;
+  }
+  return out;
+}
+async function loadVisitas(){ S.visitas=await traerTodo('visitas'); construirVentas(); }
 async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
 // ═══ ORDEN MANUAL DE SERVICIOS ═══
 // Sube o baja un servicio un lugar. El orden que se guarda es el de la lista
@@ -1664,7 +1698,7 @@ async function loadBarberos(){ const {data}=await sb.from('barberos').select('*'
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
-async function loadCobroProductos(){ const {data}=await sb.from('cobro_productos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.cobroProductos=data||[]; construirVentas(); }
+async function loadCobroProductos(){ S.cobroProductos=await traerTodo('cobro_productos'); construirVentas(); }
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
 // Join embebido de PostgREST (alianza_canjes_select_own ya lo permite, scoped
@@ -4177,6 +4211,43 @@ function fmtDateLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padS
 function addDias(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 function enRango(fecha,from,to){ return !!fecha&&fecha>=from&&fecha<=to; }
 
+// ─── PERIODOS DE VENTAS (hoy / semana / mes / año / personalizado) ───
+// Todo con strings 'YYYY-MM-DD' y aritmética en UTC: no depende de la zona
+// horaria del computador. "Hoy" viene de ahoraEnChile(), no del reloj local.
+// Cada rango trae su comparación EQUIVALENTE (mismo largo, mismo punto del
+// período anterior): el 6 de noviembre se compara con el 1–6 de octubre, no con
+// todo octubre, que haría ver cualquier mes en curso como una caída.
+function fAdd(f,n){ const [y,m,d]=f.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); }
+function fDiasMes(y,m){ return new Date(Date.UTC(y,m,0)).getUTCDate(); }
+function fArmar(y,m,d){ const dm=fDiasMes(y,m); return y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(d,dm)).padStart(2,'0'); }
+function fDiff(a,b){ const p=x=>{const [y,m,d]=x.split('-').map(Number);return Date.UTC(y,m-1,d);}; return Math.round((p(b)-p(a))/86400000); }
+function rangoVentas(tipo,hoy,desde,hasta){
+  const [y,m,d]=hoy.split('-').map(Number);
+  if(tipo==='hoy')return {desde:hoy,hasta:hoy,prevDesde:fAdd(hoy,-1),prevHasta:fAdd(hoy,-1),nombre:'hoy',nombrePrev:'ayer'};
+  if(tipo==='semana'){
+    const dow=(new Date(Date.UTC(y,m-1,d)).getUTCDay()+6)%7; // lunes=0
+    const lun=fAdd(hoy,-dow);
+    return {desde:lun,hasta:hoy,prevDesde:fAdd(lun,-7),prevHasta:fAdd(hoy,-7),nombre:'esta semana',nombrePrev:'la semana pasada'};
+  }
+  if(tipo==='mes'){
+    const pm=m===1?12:m-1, py=m===1?y-1:y;
+    return {desde:fArmar(y,m,1),hasta:hoy,prevDesde:fArmar(py,pm,1),prevHasta:fArmar(py,pm,d),nombre:'este mes',nombrePrev:'el mes pasado'};
+  }
+  if(tipo==='anio')return {desde:y+'-01-01',hasta:hoy,prevDesde:(y-1)+'-01-01',prevHasta:fArmar(y-1,m,d),nombre:'este año',nombrePrev:'el año pasado'};
+  if(tipo==='todo')return {desde:'',hasta:'',prevDesde:null,prevHasta:null,nombre:'todo el historial',nombrePrev:''};
+  // personalizado: si vienen al revés se ordenan; la comparación es el tramo anterior del mismo largo
+  let a=desde||hasta||hoy, b=hasta||desde||hoy;
+  if(a>b){const t=a;a=b;b=t;}
+  const n=fDiff(a,b)+1;
+  return {desde:a,hasta:b,prevDesde:fAdd(a,-n),prevHasta:fAdd(a,-1),nombre:n===1?'ese día':'ese período',nombrePrev:'el período anterior'};
+}
+// Suma la plata de un rango. Devuelve también cuántos cobros la componen.
+function totalVentas(ventas,desde,hasta){
+  let total=0,n=0;
+  for(const v of ventas||[]){ if((!desde||v.fecha>=desde)&&(!hasta||v.fecha<=hasta)){ total+=(v.valor||0); n++; } }
+  return {total,n};
+}
+
 function setDashPeriodo(p){
   DASH_PERIODO=p;
   document.querySelectorAll('#d-periodo-tabs .tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
@@ -4338,7 +4409,21 @@ function renderChartNuevos(range){
   });
 }
 
+// Las cuatro tarjetas de ventas se ven siempre, a la vez, y no dependen de la
+// pestaña Diario/Semanal/Mensual/Anual de más abajo.
+function renderVentasPeriodos(){
+  const hoy=ahoraEnChile().fecha;
+  [['hoy','vp-hoy'],['semana','vp-semana'],['mes','vp-mes'],['anio','vp-anio']].forEach(([t,id])=>{
+    const r=rangoVentas(t,hoy);
+    const cur=totalVentas(S.ventas,r.desde,r.hasta);
+    const prev=totalVentas(S.ventas,r.prevDesde,r.prevHasta);
+    document.getElementById(id).textContent=fmt(cur.total);
+    document.getElementById(id+'-sub').innerHTML=`${cur.n} ${cur.n===1?'cobro':'cobros'} · ${deltaHtml(cur.total,prev.total,r.nombrePrev)}`;
+  });
+}
+
 function renderDashboard(){
+  renderVentasPeriodos();
   const range=getPeriodoRange(DASH_PERIODO);
   // vCur/vPrev CUENTAN citas; wCur/wPrev SUMAN plata. Son arrays distintos a
   // propósito: si el conteo saliera de S.ventas, cada producto vendido contaría
@@ -5966,33 +6051,73 @@ function repProfRango(tipo){
   renderReporteProfesional();
 }
 
+let REP_PRESET='mes';
+const MESES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function fFechaLinda(f){ if(!f)return ''; const [y,m,d]=f.split('-').map(Number); return d+' '+MESES_CORTO[m-1]+' '+y; }
+function setRepPreset(p){
+  REP_PRESET=p;
+  document.querySelectorAll('#rep-presets .tab').forEach(t=>t.classList.toggle('active',t.dataset.r===p));
+  const c=document.getElementById('rep-custom');
+  c.style.display=p==='custom'?'flex':'none';
+  if(p==='custom'){
+    const d=document.getElementById('rep-desde'), h=document.getElementById('rep-hasta');
+    const hoy=ahoraEnChile().fecha;
+    if(!d.value)d.value=fAdd(hoy,-2); // por defecto los últimos 3 días
+    if(!h.value)h.value=hoy;
+  }
+  renderReporteResumen();
+}
+// Rango activo del Resumen (lo usan la pantalla y el Excel, para que coincidan).
+function repRangoResumen(){
+  return rangoVentas(REP_PRESET,ahoraEnChile().fecha,document.getElementById('rep-desde')?.value||'',document.getElementById('rep-hasta')?.value||'');
+}
+// Lista de buckets (días o meses) del rango, incluidos los de $0, para que un
+// día sin ventas se vea como un hueco y no desaparezca.
+function bucketsVentas(desde,hasta,modo){
+  const out=[];
+  if(modo==='dia'){ for(let f=desde;f<=hasta;f=fAdd(f,1))out.push(f); }
+  else{
+    let [y,m]=desde.slice(0,7).split('-').map(Number); const fin=hasta.slice(0,7);
+    for(;;){ const k=y+'-'+String(m).padStart(2,'0'); if(k>fin)break; out.push(k); m++; if(m>12){m=1;y++;} }
+  }
+  return out;
+}
+
 function renderReporteResumen(){
-  const mesIni=document.getElementById('rep-mes-ini').value;
-  const mesFin=document.getElementById('rep-mes-fin').value;
-  const citas=getRepCitas(mesIni,mesFin);
+  const r=repRangoResumen();
+  const hoy=ahoraEnChile().fecha;
+  const citas=getRepCitasRango(r.desde,r.hasta);
+  const listaVentas=getRepVentasRango(r.desde,r.hasta);
   // Ventas e IVA sobre TODO lo que entró; citas, ticket y clientes únicos solo
   // sobre las visitas. Un producto no es una cita ni tiene cliente propio.
-  const ventas=getRepVentas(mesIni,mesFin).reduce((s,v)=>s+(v.valor||0),0);
+  const ventas=listaVentas.reduce((s,v)=>s+(v.valor||0),0);
   const iva=ivaDe(ventas);
   const ticket=citas.length?Math.round(citas.reduce((s,v)=>s+(v.valor||0),0)/citas.length):0;
-  const clientes=new Set(citas.map(v=>v.cliente_id)).size;
+  const prev=r.prevDesde?totalVentas(S.ventas,r.prevDesde,r.prevHasta).total:null;
+  document.getElementById('rep-rango-txt').textContent=r.desde?(r.desde===r.hasta?fFechaLinda(r.desde):fFechaLinda(r.desde)+' al '+fFechaLinda(r.hasta)):'Todo el historial';
 
   document.getElementById('rep-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Total citas</div><div class="mc-val">${citas.length}</div></div>
-    <div class="mc"><div class="mc-label">Ventas cobradas</div><div class="mc-val">${fmt(ventas)}</div></div>
-    <div class="mc"><div class="mc-label">IVA incluido</div><div class="mc-val gold">${fmt(iva)}</div></div>
+    <div class="mc"><div class="mc-label">Ventas cobradas</div><div class="mc-val">${fmt(ventas)}</div>${prev===null?'':`<div class="mc-sub">${deltaHtml(ventas,prev,r.nombrePrev)}</div>`}</div>
+    <div class="mc"><div class="mc-label">IVA incluido</div><div class="mc-val gold">${fmt(iva)}</div><div class="mc-sub">Neto ${fmt(ventas-iva)}</div></div>
     <div class="mc"><div class="mc-label">Ticket promedio</div><div class="mc-val">${fmt(ticket)}</div></div>`;
 
-  // Evolución mensual
-  const byMes={};
-  citas.forEach(v=>{const m=v.fecha?.slice(0,7)||'?';byMes[m]=(byMes[m]||0)+(v.valor||0);});
-  const meses=Object.keys(byMes).sort();
-  const maxVal=Math.max(...Object.values(byMes),1);
-  document.getElementById('rep-evolucion').innerHTML=meses.length?meses.map(m=>`
+  // Evolución de ventas (plata, incluye productos), por día o por mes.
+  let desde=r.desde, hasta=r.hasta;
+  if(!desde){ const fs=S.ventas.map(v=>v.fecha).filter(Boolean).sort(); desde=fs[0]||hoy; hasta=hoy; }
+  const sel=document.getElementById('rep-agrupar').value;
+  const modo=sel==='auto'?(fDiff(desde,hasta)<=45?'dia':'mes'):sel;
+  const byB={};
+  listaVentas.forEach(v=>{ if(!v.fecha)return; const k=modo==='dia'?v.fecha:v.fecha.slice(0,7); byB[k]=(byB[k]||0)+(v.valor||0); });
+  const claves=(desde&&hasta&&desde<=hasta&&fDiff(desde,hasta)<=3700)?bucketsVentas(desde,hasta,modo):Object.keys(byB).sort();
+  document.getElementById('rep-evol-titulo').textContent=modo==='dia'?'Ventas por día':'Ventas por mes';
+  const maxVal=Math.max(...claves.map(k=>byB[k]||0),1);
+  const etiqueta=k=>modo==='dia'?fFechaLinda(k).replace(/ \d{4}$/,''):MESES_CORTO[Number(k.slice(5,7))-1]+' '+k.slice(0,4);
+  document.getElementById('rep-evolucion').innerHTML=claves.length?claves.map(k=>`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px">
-      <span style="min-width:60px;color:var(--text2)">${m}</span>
-      <div style="flex:1"><div class="bar-h"><div class="bar-fill" style="width:${(byMes[m]/maxVal*100).toFixed(0)}%"></div></div></div>
-      <span class="gold" style="min-width:70px;text-align:right">${fmt(byMes[m])}</span>
+      <span style="min-width:60px;color:var(--text2)">${etiqueta(k)}</span>
+      <div style="flex:1"><div class="bar-h"><div class="bar-fill" style="width:${((byB[k]||0)/maxVal*100).toFixed(0)}%"></div></div></div>
+      <span class="gold" style="min-width:70px;text-align:right">${fmt(byB[k]||0)}</span>
     </div>`).join(''):'<div class="empty">Sin datos</div>';
 
   // Por servicio
@@ -6178,9 +6303,8 @@ function slugArchivo(s){
 function exportarExcel(tipo){
   let data=[];let nombre='reporte';
   if(tipo==='resumen'||tipo==='citas'){
-    const mesIni=document.getElementById('rep-mes-ini')?.value||'';
-    const mesFin=document.getElementById('rep-mes-fin')?.value||'';
-    const citas=getRepCitas(mesIni,mesFin);
+    const rg=repRangoResumen();
+    const citas=getRepCitasRango(rg.desde,rg.hasta);
     data=citas.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(v=>{
       const cl=S.clientes.find(c=>c.id===v.cliente_id);
       const iv=ivaDe(v.valor);
