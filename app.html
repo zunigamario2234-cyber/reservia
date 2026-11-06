@@ -838,6 +838,16 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div class="card"><div class="card-hdr"><span class="card-title">IVA gastos (crédito fiscal)</span></div><div id="iva-compras"></div></div>
     </div>
     <div class="card"><div class="card-hdr"><span class="card-title">Resultado IVA mensual</span></div><div id="iva-resultado"></div></div>
+    <div class="card" id="iva-hist-card" style="margin-top:14px">
+      <div class="card-hdr"><span class="card-title">Historial de IVA</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="ivaDescargarPlantilla()">📄 Plantilla Excel</button>
+          <button class="btn btn-primary btn-sm" onclick="document.getElementById('iva-file').click()">📤 Importar mi IVA anterior</button>
+        </div></div>
+      <input type="file" id="iva-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="ivaLeerArchivo(this)">
+      <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px">Si llevabas tu IVA en Excel, súbelo y queda todo en un solo historial, mes a mes, junto al IVA que la plataforma calcula desde ahora.</div>
+      <div id="iva-historial"></div>
+    </div>
   </div>
   <div id="tc-com" style="display:none">
     <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th></tr></thead>
@@ -1607,6 +1617,19 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   </div>
 </div>
 
+<!-- Importar historial de IVA -->
+<div class="overlay" id="m-iva-import">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-hdr"><span class="modal-title">Importar IVA anterior</span><button class="xbtn" onclick="closeM('m-iva-import')">×</button></div>
+    <div id="iva-imp-resumen" style="font-size:12px;line-height:1.6;margin-bottom:10px"></div>
+    <div class="tbl-wrap" style="max-height:300px;overflow:auto"><table><thead><tr><th>Mes</th><th>IVA débito</th><th>IVA crédito</th><th>Remanente</th><th></th></tr></thead><tbody id="iva-imp-tabla"></tbody></table></div>
+    <div class="modal-footer" style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" id="iva-imp-ok" onclick="ivaConfirmarImport()">Importar</button>
+      <button class="btn btn-ghost" onclick="closeM('m-iva-import')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Anticipo a profesional -->
 <div class="overlay" id="m-anticipo">
   <div class="modal">
@@ -1906,7 +1929,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // `barberoServicios` no tiene ese problema hoy —solo se lee en un render, ya
 // terminada la carga— pero queda declarada por la misma razón: la próxima vez
 // que alguien la lea durante loadAll, no debería enterarse por un panel caído.
-let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[], anticipos:[] };
+let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[], anticipos:[], ivaHist:[] };
 // ⚠ `encuestas:[]` DECLARADO ACÁ, no agregado al vuelo. Omitir una clave ya
 // tiró el panel entero en producción una vez: loadAll() carga en paralelo y
 // cualquier render que corra antes encuentra `undefined` y muere en `.filter`
@@ -2145,7 +2168,7 @@ async function loadAll(){
   aplicarTemaPanel();
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards(),loadAnticipos()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards(),loadAnticipos(),loadIvaHistorico()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
   // Después de las dos fuentes, nunca antes: S.ventas es derivado.
@@ -2223,6 +2246,10 @@ async function loadAnticipos(){
   // Solo el dueño tiene permiso (RLS); para los demás roles ni se pregunta.
   if(S.perfil?.rol!=='dueno'){ S.anticipos=[]; return; }
   try{ S.anticipos=await traerTodo('anticipos_profesional'); }catch(e){ S.anticipos=[]; }
+}
+async function loadIvaHistorico(){
+  if(S.perfil?.rol!=='dueno'){ S.ivaHist=[]; return; }
+  try{ S.ivaHist=await traerTodo('iva_historico'); }catch(e){ S.ivaHist=[]; }
 }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadCobroProductos(){
@@ -6455,6 +6482,7 @@ function renderCostos(){
   document.getElementById('iva-ventas').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Ventas cobradas</span><span>${fmt(vBruto)}</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA débito</span><span class="gold">${fmt(ivaV)}</span></div>`;
   document.getElementById('iva-compras').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid #1a1a1a;font-size:12px"><span>Gastos con IVA</span><span>${riva.gastosConIva} items</span></div><div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:7px;margin-top:8px;font-size:13px;font-weight:600"><span>IVA crédito</span><span class="up">${fmt(ivaC)}</span></div>`;
   document.getElementById('iva-resultado').innerHTML=`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Débito fiscal</span><span>${fmt(ivaV)}</span></div><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;border-bottom:0.5px solid #1a1a1a"><span>Crédito fiscal</span><span class="up">-${fmt(ivaC)}</span></div><div style="display:flex;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:7px;margin-top:10px;font-size:16px;font-weight:700"><span>${ivaPagar>=0?'IVA a pagar SII':'IVA a favor'}</span><span style="color:${ivaPagar>=0?'#e05050':'#4caf87'}">${fmt(Math.abs(ivaPagar))}</span></div>`;
+  renderIvaHistorial();
   // Comisiones — mismo mes que el resto de la pantalla, por lo mismo.
   // Sobre S.ventas para que la comisión de productos entre en lo que el
   // negocio le debe al profesional, dividida en su propia columna.
@@ -7242,6 +7270,142 @@ function renderReporteProfesional(){
     const com=Math.round(v.comision_monto??calcularComision(v.valor,bar?.comision_pct||50));
     return`<tr><td data-label="Fecha">${v.fecha}</td><td data-label="Cliente">${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td data-label="Servicio">${resolveServicioInfo(v.servicio).nombre}</td><td data-label="Valor">${fmt(v.valor)}</td><td data-label="Comisión" class="gold">${fmt(com)}</td></tr>`;
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
+}
+
+// ─── HISTORIAL DE IVA (importado desde Excel) ──────────────────────────────
+// Funciones puras primero: se prueban sin pantalla.
+const IVA_MES_PREF={ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,set:9,oct:10,nov:11,dic:12};
+function ivaNorm(t){ return String(t==null?'':t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+function ivaMesPorNombre(n){ return IVA_MES_PREF[String(n).slice(0,3)]||null; }
+// Acepta Date, 2025-03, 2025-03-31, 03/2025, 3-2025, "marzo 2025", "mar-25", o solo "marzo" con el año aparte.
+function ivaParseMes(v,anioDefecto){
+  if(v instanceof Date && !isNaN(v)) return v.getUTCFullYear()+'-'+String(v.getUTCMonth()+1).padStart(2,'0');
+  const t=ivaNorm(v); if(!t) return null;
+  const f=(y,m)=>y+'-'+String(m).padStart(2,'0');
+  let m=t.match(/^(\d{4}) (\d{1,2})(?: \d{1,2})?$/); if(m&&+m[2]>=1&&+m[2]<=12) return f(m[1],+m[2]);
+  m=t.match(/^(?:\d{1,2} )?(\d{1,2}) (\d{4})$/); if(m&&+m[1]>=1&&+m[1]<=12) return f(m[2],+m[1]);
+  m=t.match(/^([a-z]{3,}) (?:de )?(\d{2}|\d{4})$/);
+  if(m){ const n=ivaMesPorNombre(m[1]); if(n) return f(m[2].length===2?'20'+m[2]:m[2],n); }
+  m=t.match(/^([a-z]{3,})$/);
+  if(m&&anioDefecto){ const n=ivaMesPorNombre(m[1]); if(n) return f(anioDefecto,n); }
+  return null;
+}
+// "$1.234.567", "1234567", 1234567.4, "1,234,567" -> número entero de pesos; vacío -> null.
+function ivaParseNum(v){
+  if(typeof v==='number') return isFinite(v)?Math.round(v):null;
+  let t=String(v==null?'':v).replace(/[$\s]/g,''); if(t==='') return null;
+  const neg=/^\(.*\)$/.test(t)||t.startsWith('-'); t=t.replace(/[()\-]/g,'');
+  if(/^\d{1,3}([.,]\d{3})+$/.test(t)) t=t.replace(/[.,]/g,'');
+  else t=t.replace(',','.');
+  const n=parseFloat(t); if(!isFinite(n)) return null;
+  return (neg?-1:1)*Math.round(n);
+}
+function ivaDetectarColumnas(headers){
+  const col={}; const H=headers.map(h=>[h,ivaNorm(h)]);
+  const buscar=(pred)=>{ const x=H.find(([,n])=>pred(n)); return x?x[0]:null; };
+  col.mes=buscar(n=>/^(mes|periodo|fecha|mes y ano|mes ano)$/.test(n))||buscar(n=>/\b(mes|periodo)\b/.test(n));
+  col.anio=buscar(n=>/^(ano|anio|year)$/.test(n));
+  col.debito=buscar(n=>/(debito|iva ventas|iva de ventas|iva cobrado)/.test(n));
+  col.credito=buscar(n=>/(credito|iva compras|iva de compras|iva pagado)/.test(n)&&!/remanente/.test(n));
+  col.remanente=buscar(n=>/remanente/.test(n));
+  col.ventas=buscar(n=>/^(ventas|ventas brutas|ventas totales|total ventas|ventas con iva)$/.test(n));
+  col.nota=buscar(n=>/(nota|observ|coment)/.test(n));
+  return col;
+}
+function ivaMapearFilas(rows){
+  const res={ok:[],errores:[],columnas:null};
+  if(!rows||!rows.length){ res.errores.push('El archivo no tiene filas.'); return res; }
+  const c=ivaDetectarColumnas(Object.keys(rows[0])); res.columnas=c;
+  if(!c.mes) { res.errores.push('No encontré la columna del mes (debe llamarse Mes o Período).'); return res; }
+  if(!c.debito&&!c.credito){ res.errores.push('No encontré las columnas de IVA débito ni IVA crédito.'); return res; }
+  const vistos={};
+  rows.forEach((r,i)=>{
+    const fila=i+2; const crudo=r[c.mes];
+    if(crudo===''||crudo==null) return;
+    let anio=c.anio?String(r[c.anio]).trim():null; if(anio&&!/^\d{4}$/.test(anio)) anio=null;
+    const mes=ivaParseMes(crudo,anio); 
+    if(!mes){ res.errores.push('Fila '+fila+': no entiendo el mes "'+crudo+'".'); return; }
+    const deb=c.debito?ivaParseNum(r[c.debito]):0, cre=c.credito?ivaParseNum(r[c.credito]):0;
+    if((c.debito&&deb===null&&c.credito&&cre===null)){ return; }
+    if((deb||0)<0||(cre||0)<0){ res.errores.push('Fila '+fila+' ('+mes+'): hay un monto negativo.'); return; }
+    if(vistos[mes]){ res.errores.push('Fila '+fila+': el mes '+mes+' está repetido (ya venía en la fila '+vistos[mes]+').'); return; }
+    vistos[mes]=fila;
+    res.ok.push({mes,iva_debito:deb||0,iva_credito:cre||0,remanente:c.remanente?ivaParseNum(r[c.remanente]):null,
+      ventas_brutas:c.ventas?ivaParseNum(r[c.ventas]):null,nota:c.nota?(String(r[c.nota]||'').trim()||null):null});
+  });
+  res.ok.sort((a,b)=>a.mes.localeCompare(b.mes));
+  if(!res.ok.length&&!res.errores.length) res.errores.push('No encontré meses con datos.');
+  return res;
+}
+let IVA_IMP=null;
+async function ivaLeerArchivo(input){
+  const file=input.files[0]; input.value=''; if(!file) return;
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',raw:true,cellDates:true,codepage:65001});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:'',raw:true});
+    IVA_IMP=ivaMapearFilas(rows); ivaPintarImport(file.name);
+  }catch(e){ notify('No pude leer el archivo: '+e.message,'err'); }
+}
+function ivaPintarImport(nombre){
+  const R=IVA_IMP; const existentes=new Set((S.ivaHist||[]).map(x=>x.mes));
+  const pisan=R.ok.filter(x=>existentes.has(x.mes)).length;
+  document.getElementById('iva-imp-resumen').innerHTML=
+    `<strong style="color:var(--text)">${escHtml(nombre||'')}</strong> · ${R.ok.length} mes${R.ok.length===1?'':'es'} listo${R.ok.length===1?'':'s'} para importar`
+    +(pisan?`<br><span style="color:#d4a853">${pisan} ya estaba${pisan===1?'':'n'} importado${pisan===1?'':'s'}: se reemplaza${pisan===1?'':'n'} con lo de este archivo.</span>`:'')
+    +(R.errores.length?`<br><span style="color:#e05050">${R.errores.slice(0,6).map(escHtml).join('<br>')}${R.errores.length>6?'<br>… y '+(R.errores.length-6)+' más':''}</span>`:'');
+  document.getElementById('iva-imp-tabla').innerHTML=R.ok.map(x=>`<tr><td>${escHtml(nombreMesLargo(x.mes))}</td><td>${fmt(x.iva_debito)}</td><td>${fmt(x.iva_credito)}</td><td>${x.remanente==null?'—':fmt(x.remanente)}</td><td>${existentes.has(x.mes)?'<span class="badge b-gold">reemplaza</span>':''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">Nada para importar</td></tr>';
+  document.getElementById('iva-imp-ok').disabled=!R.ok.length;
+  openM('m-iva-import');
+}
+async function ivaConfirmarImport(){
+  const R=IVA_IMP; if(!R||!R.ok.length) return;
+  const filas=R.ok.map(x=>({...x,barberia_id:S.barberia.id,origen:'importado'}));
+  const {error}=await sb.from('iva_historico').upsert(filas,{onConflict:'barberia_id,mes'});
+  if(error){ notify(error.message,'err'); return; }
+  closeM('m-iva-import'); IVA_IMP=null;
+  notify(filas.length+' mes'+(filas.length===1?'':'es')+' de IVA importado'+(filas.length===1?'':'s')+' ✓');
+  await loadIvaHistorico(); renderIvaHistorial();
+}
+async function ivaBorrarMes(mes){
+  if(!confirm('¿Quitar el IVA importado de '+nombreMesLargo(mes)+'?')) return;
+  const {error}=await sb.from('iva_historico').delete().eq('barberia_id',S.barberia.id).eq('mes',mes);
+  if(error){ notify(error.message,'err'); return; }
+  await loadIvaHistorico(); renderIvaHistorial();
+}
+function ivaDescargarPlantilla(){
+  const aoa=[['Mes','IVA débito','IVA crédito','Remanente de crédito','Ventas (con IVA)','Nota'],
+    ['2025-01',420000,180000,0,2210000,''],['2025-02',385000,210000,0,2026000,'ejemplo: borra estas filas y pon las tuyas']];
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:10},{wch:12},{wch:12},{wch:20},{wch:16},{wch:36}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'IVA'); XLSX.writeFile(wb,'plantilla_iva_historico.xlsx');
+}
+// Un mes con ventas o gastos en la plataforma manda la plataforma; si no, lo importado.
+function ivaFilasHistorial(){
+  const meses=new Set((S.ivaHist||[]).map(x=>x.mes));
+  (S.ventas||[]).forEach(v=>{ if(v.fecha) meses.add(v.fecha.slice(0,7)); });
+  (S.costos||[]).forEach(c=>{ if(c.fecha) meses.add(c.fecha.slice(0,7)); });
+  return [...meses].sort().reverse().map(mes=>{
+    const imp=(S.ivaHist||[]).find(x=>x.mes===mes);
+    const r=resumenIvaMes(mes);
+    const hayPlat=r.vBruto>0||r.ivaC>0;
+    if(hayPlat) return {mes,fuente:'plataforma',debito:r.ivaV,credito:r.ivaC,remanente:imp?imp.remanente:null,imp};
+    return {mes,fuente:'importado',debito:+imp.iva_debito||0,credito:+imp.iva_credito||0,remanente:imp.remanente,imp};
+  });
+}
+function renderIvaHistorial(){
+  const el=document.getElementById('iva-historial'); if(!el) return;
+  if(S.perfil?.rol!=='dueno'){ document.getElementById('iva-hist-card').style.display='none'; return; }
+  const filas=ivaFilasHistorial();
+  if(!filas.length){ el.innerHTML='<div class="empty">Aún no hay meses. Importa tu Excel o empieza a cobrar: el historial se arma solo.</div>'; return; }
+  const tot=filas.reduce((a,f)=>{ a.d+=f.debito; a.c+=f.credito; return a; },{d:0,c:0});
+  el.innerHTML=`<div class="tbl-wrap tbl-cards"><table><thead><tr><th>Mes</th><th>IVA débito</th><th>IVA crédito</th><th>IVA a pagar</th><th>Remanente</th><th>Origen</th><th></th></tr></thead><tbody>`
+    +filas.map(f=>{ const pagar=f.debito-f.credito;
+      return `<tr><td data-label="Mes">${escHtml(nombreMesLargo(f.mes))}</td><td data-label="IVA débito">${fmt(f.debito)}</td><td data-label="IVA crédito">${fmt(f.credito)}</td>
+      <td data-label="IVA a pagar" style="font-weight:600">${pagar<0?'<span class="up">a favor '+fmt(-pagar)+'</span>':fmt(pagar)}</td>
+      <td data-label="Remanente">${f.remanente==null?'—':fmt(f.remanente)}</td>
+      <td data-label="Origen"><span class="badge ${f.fuente==='plataforma'?'b-green':'b-blue'}">${f.fuente==='plataforma'?'Plataforma':'Importado'}</span></td>
+      <td>${f.imp?`<button class="btn btn-danger btn-sm" title="Quitar lo importado" onclick="ivaBorrarMes('${f.mes}')">×</button>`:''}</td></tr>`; }).join('')
+    +`</tbody></table></div><div style="font-size:12px;color:var(--text2);margin-top:8px">Total del historial: débito <strong style="color:var(--text)">${fmt(tot.d)}</strong> · crédito <strong style="color:var(--text)">${fmt(tot.c)}</strong> · a pagar <strong style="color:var(--text)">${fmt(tot.d-tot.c)}</strong></div>`;
 }
 
 // ─── ANTICIPOS A PROFESIONALES ─────────────────────────────────────────────
