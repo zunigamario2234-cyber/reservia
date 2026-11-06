@@ -1088,6 +1088,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="tab" id="rep-tab-profesional" onclick="switchTab(this,'rep-profesional');renderReporteProfesional()">👤 Por profesional</div>
     <div class="tab" onclick="switchTab(this,'rep-cliente')">🙋 Por cliente</div>
     <div class="tab" onclick="switchTab(this,'rep-servicios')">✂ Por servicio</div>
+    <div class="tab" id="rep-tab-producto" onclick="switchTab(this,'rep-producto');renderReporteProductos()">📦 Por producto</div>
   </div>
 
   <!-- RESUMEN GENERAL -->
@@ -1183,6 +1184,18 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Valor</th><th>Pago</th></tr></thead>
       <tbody id="rep-cl-hist"></tbody></table></div></div>
     </div></div>
+  </div>
+
+  <!-- POR PRODUCTO -->
+  <div id="rep-producto" style="display:none">
+    <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <input type="month" id="rep-mes-prod" style="max-width:160px" onchange="renderReporteProductos()">
+    </div>
+    <div class="g3" id="rep-prod-cards" style="margin-bottom:14px"></div>
+    <div class="card"><div class="tbl-wrap tbl-cards">
+      <table><thead><tr><th>Producto</th><th>Unidades</th><th>Vendido (con IVA)</th><th>IVA</th><th>Comisión</th><th>Costo</th><th>Utilidad</th><th>Margen</th></tr></thead>
+      <tbody id="rep-prod-tabla"></tbody></table></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">Utilidad = vendido − IVA − comisión del profesional − costo del producto. El costo queda guardado al momento de cada venta; en las ventas anteriores a esta función es el costo actual del producto.</div></div>
   </div>
 
   <!-- POR SERVICIO -->
@@ -2133,7 +2146,14 @@ async function loadGiftCards(){
 // Recepción lee la vista inventario_recepcion (sin costo ni proveedor).
 async function loadInventario(){ const {data}=await sb.from(esRecepcion()?'inventario_recepcion':'inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
-async function loadCobroProductos(){ S.cobroProductos=await traerTodo('cobro_productos'); construirVentas(); }
+async function loadCobroProductos(){
+  S.cobroProductos=await traerTodo('cobro_productos');
+  // El costo de cada venta vive en una tabla que solo lee el dueño; para
+  // recepción llega vacía y no se muestra nada de costos.
+  S.costoVentaProd={};
+  try{ (await traerTodo('cobro_productos_costo')).forEach(c=>{ S.costoVentaProd[c.cobro_producto_id]=Number(c.costo_unitario)||0; }); }catch(e){}
+  construirVentas();
+}
 async function loadVIP(){ const {data}=await sb.from('vip_historial').select('*,clientes(nombre,apellido)').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.vipHist=data||[]; }
 async function loadAlianzas(){ const {data}=await sb.from('alianzas').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.alianzas=data||[]; }
 // Join embebido de PostgREST (alianza_canjes_select_own ya lo permite, scoped
@@ -7156,6 +7176,48 @@ function renderHonorarios(citas,byP){
       ${L('Total que desembolsa la barbería',fmt((T.pagar||0)+(T.ret||0)),{fuerte:true,borde:false})}
     </div>`:''}
   </div>`;
+}
+
+// ─── UTILIDAD POR PRODUCTO ────────────────────────────────────────────────
+// Por producto y mes: lo vendido (con IVA) menos el IVA, menos la comisión del
+// profesional que lo vendió, menos el costo de lo vendido = utilidad.
+// Función pura sobre las líneas para poder probarla sin pantalla.
+function utilidadPorProducto(lineas,costoPorLinea,nombreDe,ivaPct){
+  const by={};
+  (lineas||[]).forEach(l=>{
+    const k=l.producto_id||'?';
+    const d=by[k]||(by[k]={nombre:nombreDe(k),unidades:0,vendido:0,iva:0,comision:0,costo:0});
+    const v=l.valor||0;
+    d.unidades+=l.cantidad||0; d.vendido+=v;
+    d.iva+=Math.round(v*ivaPct/(100+ivaPct));
+    d.comision+=l.comision_monto||0;
+    d.costo+=(costoPorLinea(l)||0)*(l.cantidad||0);
+  });
+  Object.values(by).forEach(d=>{ d.utilidad=d.vendido-d.iva-d.comision-d.costo; d.neto=d.vendido-d.iva; d.margen=d.neto>0?d.utilidad/d.neto*100:0; });
+  return by;
+}
+function renderReporteProductos(){
+  const inp=document.getElementById('rep-mes-prod'); if(!inp) return;
+  if(!inp.value) inp.value=mesActual();
+  const mes=inp.value;
+  const lineas=(S.cobroProductos||[]).filter(l=>l.fecha?.startsWith(mes));
+  const nombreDe=id=>(S.inventario.find(p=>p.id===id)||{}).nombre||'Producto eliminado';
+  const costoDe=l=>(S.costoVentaProd&&S.costoVentaProd[l.id]!=null)?S.costoVentaProd[l.id]:((S.inventario.find(p=>p.id===l.producto_id)||{}).costo_unitario||0);
+  const by=utilidadPorProducto(lineas,costoDe,nombreDe,ivaPctNegocio());
+  const filas=Object.values(by).sort((a,b)=>b.utilidad-a.utilidad);
+  const T=filas.reduce((a,d)=>{ ['unidades','vendido','iva','comision','costo','utilidad'].forEach(k=>a[k]=(a[k]||0)+d[k]); return a; },{});
+  const neto=(T.vendido||0)-(T.iva||0);
+  document.getElementById('rep-prod-cards').innerHTML=`
+    <div class="mc"><div class="mc-label">Vendido (con IVA)</div><div class="mc-val">${fmt(T.vendido||0)}</div></div>
+    <div class="mc"><div class="mc-label">Costo + comisiones</div><div class="mc-val">${fmt((T.costo||0)+(T.comision||0))}</div></div>
+    <div class="mc"><div class="mc-label">Utilidad</div><div class="mc-val">${fmt(T.utilidad||0)}</div><div style="font-size:11px;color:var(--text3)">${neto>0?String(Math.round((T.utilidad||0)/neto*1000)/10).replace('.',',')+'% del neto':''}</div></div>`;
+  document.getElementById('rep-prod-tabla').innerHTML=filas.map(d=>`<tr>
+    <td data-label="Producto"><strong style="color:var(--text)">${escHtml(d.nombre)}</strong></td><td data-label="Unidades">${d.unidades}</td>
+    <td data-label="Vendido (con IVA)">${fmt(d.vendido)}</td><td data-label="IVA">− ${fmt(d.iva)}</td>
+    <td data-label="Comisión">− ${fmt(d.comision)}</td><td data-label="Costo">− ${fmt(d.costo)}</td>
+    <td data-label="Utilidad" class="gold" style="font-weight:600;${d.utilidad<0?'color:#e05050':''}">${fmt(d.utilidad)}</td>
+    <td data-label="Margen">${String(Math.round(d.margen*10)/10).replace('.',',')}%</td></tr>`).join('')
+    ||'<tr><td colspan="8" class="empty">Sin ventas de productos en este mes</td></tr>';
 }
 
 // ─── IMPUESTOS: F29 mensual y proyección de la renta anual ────────────────

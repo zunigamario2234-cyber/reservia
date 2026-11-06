@@ -55,7 +55,7 @@ function datosHon(){ const D=datos('dueno');
  const mk=(id,fecha,valor,com,ret,rp)=>({id,barberia_id:BID,fecha,hora:'10:00',cliente_id:'c1',barbero_nombre:'Mario',servicio:'Corte clásico',valor,propina:0,metodo_pago:'Efectivo',estado:'Atendida',comision_monto:com,iva_monto:Math.round(valor*19/119),retencion_pct:15.25,retencion_total:ret,retencion_profesional:rp,retencion_negocio:ret-rp,liquido_profesional:com-rp});
  D.visitas=[{...mk('h1',hoy,20000,8403,1281,641),propina:1000},mk('h2',hoy,20000,8403,1281,641),
    {id:'h3',barberia_id:BID,fecha:hoy,hora:'12:00',cliente_id:'c1',barbero_nombre:'Mario',servicio:'Corte clásico',valor:15000,propina:0,metodo_pago:'Efectivo',estado:'Atendida',comision_monto:7500}];
- D.cobro_productos=[{id:'p1',cobro_id:'k1',barberia_id:BID,producto_id:'i1',barbero_nombre:'Mario',cantidad:1,valor:9000,comision_monto:900,fecha:hoy,created_at:new Date().toISOString()}]; return D; }
+ D.cobro_productos_costo=[{cobro_producto_id:'p1',barberia_id:BID,costo_unitario:3000}]; D.cobro_productos=[{id:'p1',cobro_id:'k1',barberia_id:BID,producto_id:'i1',barbero_nombre:'Mario',cantidad:1,valor:9000,comision_monto:900,fecha:hoy,created_at:new Date().toISOString()}]; return D; }
 (async()=>{
  const T=datosHon();
  const b=await chromium.launch(); const p=await b.newPage({viewport:{width:1360,height:900}});
@@ -126,6 +126,15 @@ function datosHon(){ const D=datos('dueno');
  ok('guarda el régimen elegido',patches.some(x=>x.regimen_tributario==='pro_pyme'),patches);
  ok('la proyección dice cuánto apartar al mes',/aparta/.test(await p.textContent('#imp-renta-detalle')));
  await p.screenshot({path:'/tmp/impuestos.png'});
+ // Utilidad por producto
+ await p.evaluate(()=>{ nav('reportes'); const t=document.getElementById('rep-tab-producto'); switchTab(t,'rep-producto'); renderReporteProductos(); });
+ await p.waitForTimeout(300);
+ const prod=(await p.textContent('#rep-producto')).replace(/\s+/g,' ');
+ ok('producto: vendido 9.000, IVA 1.437, comisión 900, costo 3.000',/Shampoo\s*1\s*\$9\.000\s*−\s*\$1\.437\s*−\s*\$900\s*−\s*\$3\.000/.test(prod),prod.slice(0,500));
+ ok('producto: utilidad 3.663 y margen 48,4%',/\$3\.663 48,4%/.test(prod),prod.slice(0,500));
+ const up=await p.evaluate(()=>{ const r=utilidadPorProducto([{producto_id:'a',cantidad:2,valor:23800,comision_monto:1000},{producto_id:'a',cantidad:1,valor:11900,comision_monto:500}],()=>5000,()=>'A',19)['a']; return r; });
+ ok('utilidad con varias líneas: 35.700 − 5.700 IVA − 1.500 − 15.000 = 13.500',up.utilidad===13500&&up.unidades===3&&up.iva===5700,up);
+ await (await p.$('#rep-producto')).screenshot({path:'/tmp/producto.png'});
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length+' fallos de '+res.length);
  await b.close();
