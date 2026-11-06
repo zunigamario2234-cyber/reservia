@@ -68,7 +68,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);colo
 .profesional-card{border:0.5px solid var(--borde-2);border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s;text-align:center}
 .profesional-card:hover{border-color:var(--borde-fuerte);background:var(--superficie-2)}
 .profesional-card.selected{border-color:var(--acento);background:var(--seleccion-fondo)}
-.profesional-avatar{width:44px;height:44px;border-radius:50%;background:var(--seleccion-fondo);border:1px solid var(--borde-2);display:flex;align-items:center;justify-content:center;font-size:18px;margin:0 auto 8px}
+.profesional-avatar{width:64px;height:64px;border-radius:50%;background:var(--seleccion-fondo);border:1px solid var(--borde-2);display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 8px;overflow:hidden}
 .profesional-nombre{font-size:12px;font-weight:600;color:var(--texto)}
 .perfil-profesional{display:flex;gap:14px;align-items:center;margin-top:16px;padding-top:16px;border-top:0.5px solid var(--borde)}
 .perfil-prof-foto{width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0}
@@ -752,7 +752,7 @@ function renderProfesionals(){
   }
   cont.innerHTML = items.map(b=>`
     <div class="profesional-card" onclick="selProfesional('${b.id}')" id="ba-${b.id}">
-      <div class="profesional-avatar">${b.foto_url?`<img src="${b.foto_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`:'✂'}</div>
+      <div class="profesional-avatar">${b.foto_url?`<img src="${encodeURI(b.foto_url)}" alt="" onerror="this.replaceWith(document.createTextNode('✂'))" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">`:(b.emoji||'✂')}</div>
       <div class="profesional-nombre">${b.nombre}</div>
     </div>`).join('');
   // Re-pintar la grilla borra la clase 'selected' del DOM, así que la selección

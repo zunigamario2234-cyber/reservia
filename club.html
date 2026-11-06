@@ -102,7 +102,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);colo
 .profesional-card{border:0.5px solid var(--borde-2);border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s;text-align:center}
 .profesional-card:hover{border-color:var(--borde-fuerte);background:var(--superficie-2)}
 .profesional-card.selected{border-color:var(--acento);background:var(--seleccion-fondo)}
-.profesional-avatar{width:44px;height:44px;border-radius:50%;background:var(--seleccion-fondo);border:1px solid var(--borde-2);display:flex;align-items:center;justify-content:center;font-size:18px;margin:0 auto 8px}
+.profesional-avatar{width:64px;height:64px;border-radius:50%;background:var(--seleccion-fondo);border:1px solid var(--borde-2);display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 8px;overflow:hidden}
 .profesional-nombre{font-size:12px;font-weight:600;color:var(--texto)}
 .calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:16px}
 .cal-header{text-align:center;font-size:10px;color:var(--texto-tenue);padding:4px 0;font-weight:500;text-transform:uppercase}
@@ -551,7 +551,7 @@ function rRenderProfesionales(){
   }
   cont.innerHTML = items.map(b=>`
     <div class="profesional-card" onclick="rSelProfesional('${b.id}')" id="r-ba-${b.id}">
-      <div class="profesional-avatar">${b.emoji||'✂'}</div>
+      <div class="profesional-avatar">${b.foto_url?`<img src="${encodeURI(b.foto_url)}" alt="" onerror="this.replaceWith(document.createTextNode('✂'))" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">`:(b.emoji||'✂')}</div>
       <div class="profesional-nombre">${b.nombre}</div>
     </div>`).join('');
   if(items.length===1) rSelProfesional(items[0].id);
