@@ -261,7 +261,7 @@ function correr(src){
     // 3. Aislamiento entre negocios: toda lectura va scopeada. barberias es la
     //    excepción legítima, se busca por su propio id.
     var sinScope = lecturasDeTabla(js).filter(function(l){
-      return !/\.eq\('barberia_id'/.test(l.resto) && !/\.eq\('id',\s*BARBERIA_ID\)/.test(l.resto);
+      return !/\.eq\('barberia_id'/.test(l.resto) && !/\.eq\('id',\s*BARBERIA_ID\)/.test(l.resto) && !/\.eq\('slug',\s*RUTA_NEGOCIO\)/.test(l.resto);
     }).map(function(l){ return l.tabla; });
     check('toda lectura de tabla va scopeada por negocio' +
           (sinScope.length ? ' — sueltas: ' + sinScope.join(', ') : ''), sinScope.length, 0);

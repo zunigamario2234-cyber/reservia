@@ -523,6 +523,8 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 <div class="topbar">
   <h2 id="page-title">Dashboard</h2>
   <div class="topbar-right">
+    <select id="suc-switch" onchange="cambiarSucursal(this.value)" title="Sucursal" style="display:none;max-width:210px"></select>
+    <span id="suc-etiqueta" style="display:none;font-size:12px;color:var(--text2);white-space:nowrap"></span>
     <button class="btn btn-ghost btn-sm" onclick="openM('m-reserva')">+ Reserva</button>
     <button class="btn btn-primary btn-sm" onclick="openM('m-cita')">+ Cita</button>
   </div>
@@ -879,6 +881,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
     <div class="tab" onclick="switchTab(this,'cfg-blq')">Bloqueos</div>
     <div class="tab" onclick="switchTab(this,'cfg-abono')">Abono</div>
+    <div class="tab" onclick="switchTab(this,'cfg-suc')">Sucursales</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-alz')">Alianzas</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-vip')">Club VIP</div>
     <div class="tab" onclick="switchTab(this,'cfg-int')" style="display:none">Integraciones</div>
@@ -1043,6 +1046,12 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-bloqueo')">+ Bloqueo</button></div>
     <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Tipo</th><th>Detalle</th><th>Motivo</th><th>Activo</th><th></th></tr></thead>
     <tbody id="t-bloqueos"></tbody></table></div></div>
+  </div>
+  <div id="cfg-suc" style="display:none">
+    <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:14px">Si tu negocio tiene más de un local, agrégalos aquí. Los clientes, servicios, inventario y gastos son de todo el negocio; cada profesional, reserva y venta pertenece a una sucursal. Tú ves todo y puedes filtrar arriba por sucursal. Recepción y profesionales ven solo la suya.</p>
+    <div id="suc-lista"></div>
+    <div style="margin:10px 0 16px"><button class="btn btn-primary" onclick="abrirSucursal()">+ Agregar sucursal</button></div>
+    <div id="suc-general" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
   </div>
   <div id="cfg-abono" style="display:none">
     <div class="card" style="margin-bottom:14px">
@@ -1617,6 +1626,19 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   </div>
 </div>
 
+<!-- Sucursal -->
+<div class="overlay" id="m-sucursal">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title" id="su-titulo">Agregar sucursal</span><button class="xbtn" onclick="closeM('m-sucursal')">×</button></div>
+    <input type="hidden" id="su-id">
+    <div class="fg"><label>Nombre *</label><input id="su-nombre" type="text" placeholder="Ej: Talagante Centro"></div>
+    <div class="fg"><label>Dirección</label><input id="su-dir" type="text"></div>
+    <div class="fg"><label>Teléfono</label><input id="su-tel" type="text"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin:6px 0 14px"><input type="checkbox" id="su-activa" style="width:auto"> Sucursal activa (recibe reservas)</label>
+    <div class="modal-footer" style="display:flex;gap:8px"><button class="btn btn-primary" onclick="guardarSucursal()">Guardar</button><button class="btn btn-ghost" onclick="closeM('m-sucursal')">Cancelar</button></div>
+  </div>
+</div>
+
 <!-- Importar historial de IVA -->
 <div class="overlay" id="m-iva-import">
   <div class="modal" style="max-width:640px">
@@ -1697,6 +1719,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <!-- Dos comisiones distintas y etiquetadas como tales: son dos
          porcentajes sobre cosas distintas, y confundirlos configura mal la
          plata de otro. El de productos arranca en 0 a propósito. -->
+    <div class="fg" id="ba-suc-fg" style="display:none"><label>Sucursal</label><select id="ba-suc"></select></div>
     <div class="fr"><div class="fg"><label>% Comisión servicios</label><input id="ba-com" type="number" value="50" min="0" max="100"></div><div class="fg"><label>Meta citas/mes</label><input id="ba-meta" type="number" value="80" min="0"></div></div>
     <div class="fg"><label>% Comisión productos</label><input id="ba-com-prod" type="number" value="0" min="0" max="100">
       <div style="font-size:10px;color:var(--text3);margin-top:4px">En 0 no se paga comisión por vender productos. Es otro porcentaje que el de servicios.</div>
@@ -1726,6 +1749,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Crea un acceso propio para quien atiende el mostrador. Entra desde la página de ingreso de siempre y solo ve lo necesario para atender y cuadrar la caja.</p>
       <div class="fg"><label>Nombre *</label><input id="rec-nombre" type="text" placeholder="María"></div>
       <div class="fg"><label>Correo *</label><input id="rec-email" type="email" placeholder="recepcion@correo.com" autocomplete="off"></div>
+      <div class="fg" id="rec-suc-fg" style="display:none"><label>Sucursal *</label><select id="rec-suc"></select></div>
       <div class="fg"><label>Contraseña inicial *</label><input id="rec-pass" type="text" placeholder="Mínimo 6 caracteres"></div>
       <div id="rec-alert" style="display:none;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;background:#1f0000;border:0.5px solid #e05050;color:#e05050"></div>
       <div style="display:flex;gap:8px;margin-top:8px">
@@ -1929,7 +1953,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // `barberoServicios` no tiene ese problema hoy —solo se lee en un render, ya
 // terminada la carga— pero queda declarada por la misma razón: la próxima vez
 // que alguien la lea durante loadAll, no debería enterarse por un panel caído.
-let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[], anticipos:[], ivaHist:[] };
+let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[], anticipos:[], ivaHist:[], sucursales:[], sucFiltro:null };
 // ⚠ `encuestas:[]` DECLARADO ACÁ, no agregado al vuelo. Omitir una clave ya
 // tiró el panel entero en producción una vez: loadAll() carga en paralelo y
 // cualquier render que corra antes encuentra `undefined` y muere en `.filter`
@@ -2165,6 +2189,7 @@ async function loadAll(){
   const {data:b,error:eb} = await sb.from('barberias').select('*').eq('id',p.barberia_id).single();
   if(eb||!b) throw new Error('No encontramos el negocio asociado a tu cuenta. Contacta al soporte.');
   S.barberia = b;
+  await loadSucursales();
   aplicarTemaPanel();
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
@@ -2173,6 +2198,7 @@ async function loadAll(){
   await Promise.all(cargas);
   // Después de las dos fuentes, nunca antes: S.ventas es derivado.
   construirVentas();
+  pintarSucursalSwitch();
 }
 
 async function loadClientes(){ const {data}=await sb.from('clientes').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}); S.clientes=data||[]; }
@@ -2186,7 +2212,9 @@ async function loadClientes(){ const {data}=await sb.from('clientes').select('*'
 async function traerTodo(tabla){
   const out=[]; const TANDA=1000;
   for(let desde=0;;desde+=TANDA){
-    const {data,error}=await sb.from(tabla).select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}).order('id',{ascending:true}).range(desde,desde+TANDA-1);
+    let q=sb.from(tabla).select('*').eq('barberia_id',S.barberia.id);
+    if(S.sucFiltro&&(tabla==='visitas'||tabla==='cobro_productos')) q=q.eq('sucursal_id',S.sucFiltro);
+    const {data,error}=await q.order('fecha',{ascending:false}).order('id',{ascending:true}).range(desde,desde+TANDA-1);
     if(error)throw error;
     out.push(...(data||[]));
     if(!data||data.length<TANDA)break;
@@ -2194,7 +2222,7 @@ async function traerTodo(tabla){
   return out;
 }
 async function loadVisitas(){ S.visitas=await traerTodo('visitas'); construirVentas(); }
-async function loadReservas(){ const {data}=await sb.from('reservas').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.reservas=data||[]; }
+async function loadReservas(){ let q=sb.from('reservas').select('*').eq('barberia_id',S.barberia.id); if(S.sucFiltro) q=q.eq('sucursal_id',S.sucFiltro); const {data}=await q.order('fecha',{ascending:false}); S.reservas=data||[]; }
 // ═══ ORDEN MANUAL DE SERVICIOS ═══
 // Sube o baja un servicio un lugar. El orden que se guarda es el de la lista
 // completa, no un swap de dos filas: así cualquier hueco, empate o null que
@@ -2230,7 +2258,7 @@ async function moverServicio(id,dir){
 // El precio queda de desempate y los nulls al final, para que una fila que se
 // cuele sin orden se vaya al fondo en vez de desordenar la lista entera.
 async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('orden',{nullsFirst:false}).order('precio'); S.servicios=data||[]; }
-async function loadBarberos(){ const {data}=await sb.from('barberos').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.barberos=data||[]; }
+async function loadBarberos(){ let q=sb.from('barberos').select('*').eq('barberia_id',S.barberia.id); if(S.sucFiltro) q=q.eq('sucursal_id',S.sucFiltro); const {data}=await q.order('nombre'); S.barberos=data||[]; }
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 // Si la tabla no se puede leer (por ejemplo un profesional con la sesión) la
 // pantalla queda vacía; no debe tumbar la carga del panel entero.
@@ -2330,7 +2358,17 @@ async function copiarAlPortapapeles(texto){
   }
 }
 function copiarLinkReservas(){ copiarAlPortapapeles(document.getElementById('cfg-link-reservas').value); }
-function copiarLinkProfesional(id){ copiarAlPortapapeles(location.origin+'/reservar.html?id='+S.barberia.id+'&profesional='+id); }
+// Link corto de reserva: /reservar/<negocio>[/<profesional>][?sucursal=<slug>].
+// Si por algo falta un slug, cae al link largo de siempre.
+function linkReserva(opt){
+  opt=opt||{}; const neg=S.barberia, prof=opt.profId?S.barberos.find(b=>b.id===opt.profId):null;
+  const suc=opt.sucId?(S.sucursales||[]).find(x=>x.id===opt.sucId):null;
+  if(!neg?.slug||(opt.profId&&!prof?.slug)||(opt.sucId&&!suc?.slug)){
+    return location.origin+'/reservar.html?id='+neg.id+(opt.profId?'&profesional='+opt.profId:'')+(opt.sucId?'&sucursal='+opt.sucId:'');
+  }
+  return location.origin+'/reservar/'+neg.slug+(prof?'/'+prof.slug:'')+(suc?'?sucursal='+suc.slug:'');
+}
+function copiarLinkProfesional(id){ copiarAlPortapapeles(linkReserva({profId:id})); }
 // ═══ LINK DEL QR PARA UNIRSE AL CLUB VIP ═══
 // El token NO sale de S.barberia: vive en club_tokens, una tabla aparte con RLS
 // cerrada, justamente porque barberias tiene select público (using(true)) y RLS
@@ -2654,7 +2692,7 @@ function buildMsg(evento, vars={}){
   const t=S.plantillas.find(p=>p.evento===evento&&p.activo);
   if(!t)return null;
   let m=t.mensaje;
-  const linkReservas=S.barberia?.id?(location.origin+'/reservar.html?id='+S.barberia.id):'';
+  const linkReservas=S.barberia?.id?linkReserva():'';
   // "negocio" y "link" son alias de "barberia"/"link_reservas": las plantillas
   // seed de Bienvenida/Recuperar inactivo usaban esos nombres pero nunca se
   // reemplazaban (bug real, mensajes reales le llegaban al cliente con el
@@ -2813,7 +2851,7 @@ function initModal(id){
     coAvisoMes();
     coPintarSugerencias();
   }
-  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);}
+  if(id==='m-profesional'){document.getElementById('ba-id').value='';document.getElementById('m-prof-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email','ba-especialidad','ba-bio'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-com-prod').value=0;document.getElementById('ba-meta').value=80;document.getElementById('ba-puede-pagos').checked=false;document.getElementById('ba-foto-preview').innerHTML='👤';const fi=document.getElementById('ba-foto');if(fi)fi.value='';FOTO_PROF_CROPPED_BLOB=null;renderChecklistServiciosBarbero(null);pintarSelectSucursal('ba-suc',S.sucFiltro,'ba-suc-fg');}
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre})));
   if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-abono-tipo').value='';document.getElementById('sv-abono-valor').value='';svAbonoCambio();document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;}
@@ -3480,6 +3518,7 @@ function editarProfesional(id){
   openM('m-profesional');
   document.getElementById('m-prof-title').textContent='Editar profesional';
   document.getElementById('ba-id').value=b.id;
+  pintarSelectSucursal('ba-suc',b.sucursal_id,'ba-suc-fg');
   document.getElementById('ba-nombre').value=b.nombre||'';
   document.getElementById('ba-wsp').value=b.whatsapp||'';
   document.getElementById('ba-email').value=b.email||'';
@@ -3603,6 +3642,7 @@ async function guardarProfesional(){
     comision_producto_pct:parseFloat(document.getElementById('ba-com-prod').value)||0,
     meta_citas:parseInt(document.getElementById('ba-meta').value)||80,
     puede_procesar_pagos:document.getElementById('ba-puede-pagos').checked,
+    ...(document.getElementById('ba-suc')?.value&&{sucursal_id:document.getElementById('ba-suc').value}),
     ...(foto_url&&{foto_url})
   };
   let error,barberoId=id||null;
@@ -4736,6 +4776,94 @@ function cajaCopiarResumen(){
   copiarAlPortapapeles(lineas.join('\n'));
 }
 
+// ─── SUCURSALES ────────────────────────────────────────────────────────────
+// El dueño ve todo y filtra; recepción y profesionales quedan atados a la suya
+// (eso lo garantizan las políticas de la base, no esta pantalla).
+async function loadSucursales(){
+  let data=[];
+  try{ ({data}=await sb.from('sucursales').select('*').eq('barberia_id',S.barberia.id).order('orden').order('created_at')); }catch(e){}
+  S.sucursales=data||[];
+  let f=null;
+  if(S.perfil?.rol==='dueno'){ try{ f=localStorage.getItem('suc-'+S.barberia.id); }catch(e){} }
+  S.sucFiltro=(f&&S.sucursales.some(x=>x.id===f&&x.activa))?f:null;
+}
+function sucActivas(){ return (S.sucursales||[]).filter(x=>x.activa); }
+function sucNombre(id){ const x=(S.sucursales||[]).find(y=>y.id===id); return x?x.nombre:''; }
+function pintarSucursalSwitch(){
+  const sel=document.getElementById('suc-switch'), et=document.getElementById('suc-etiqueta'); if(!sel||!et) return;
+  const act=sucActivas();
+  if(S.perfil?.rol==='dueno'&&act.length>1){
+    sel.innerHTML='<option value="">Todas las sucursales</option>'+act.map(x=>`<option value="${x.id}">${escHtml(x.nombre)}</option>`).join('');
+    sel.value=S.sucFiltro||''; sel.style.display=''; et.style.display='none';
+  } else {
+    sel.style.display='none';
+    const mi=S.perfil?.sucursal_id;
+    if(S.perfil?.rol==='recepcion'&&act.length>1&&mi){ et.textContent='📍 '+sucNombre(mi); et.style.display=''; } else et.style.display='none';
+  }
+}
+async function cambiarSucursal(v){
+  S.sucFiltro=v||null;
+  try{ if(v) localStorage.setItem('suc-'+S.barberia.id,v); else localStorage.removeItem('suc-'+S.barberia.id); }catch(e){}
+  document.body.style.cursor='progress';
+  try{ await Promise.all([loadVisitas(),loadReservas(),loadBarberos(),loadCobroProductos()]); construirVentas(); }
+  catch(e){ notify('No se pudo cambiar de sucursal: '+e.message,'err'); }
+  document.body.style.cursor='';
+  const pg=document.querySelector('.page.active');
+  nav(pg?pg.id.replace('p-',''):'dashboard');
+}
+// Selector de sucursal dentro de un formulario; solo aparece si hay más de una activa.
+function pintarSelectSucursal(selId,valor,fgId){
+  const sel=document.getElementById(selId), fg=document.getElementById(fgId); if(!sel) return;
+  const act=sucActivas();
+  const lista=[...act]; if(valor&&!lista.some(x=>x.id===valor)){ const x=S.sucursales.find(y=>y.id===valor); if(x) lista.push(x); }
+  sel.innerHTML=lista.map(x=>`<option value="${x.id}">${escHtml(x.nombre)}${x.activa?'':' (inactiva)'}</option>`).join('');
+  if(valor&&lista.some(x=>x.id===valor)) sel.value=valor; else if(act[0]) sel.value=act[0].id;
+  if(fg) fg.style.display=(S.perfil?.rol==='dueno'&&act.length>1)?'':'none';
+}
+function renderSucursales(){
+  const el=document.getElementById('suc-lista'); if(!el) return;
+  if(S.perfil?.rol!=='dueno'){ el.innerHTML=''; return; }
+  const multi=sucActivas().length>1;
+  el.innerHTML=S.sucursales.map(x=>{
+    const link=linkReserva({sucId:x.id});
+    return `<div class="card" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:200px"><strong style="color:var(--text);font-size:14px">${escHtml(x.nombre)}</strong>${x.activa?'':' <span class="badge b-red">inactiva</span>'}<br>
+          <span style="font-size:12px;color:var(--text3)">${escHtml(x.direccion||'Sin dirección')}${x.telefono?' · '+escHtml(x.telefono):''}</span></div>
+        <button class="btn btn-ghost btn-sm" onclick="abrirSucursal('${x.id}')">Editar</button></div>
+      ${multi&&x.activa?`<div style="font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all">Link para reservar solo en esta sucursal:<br><span style="color:var(--text2)">${escHtml(link)}</span> <button class="btn btn-ghost btn-sm" onclick="copiarAlPortapapeles('${link}');notify('Link copiado ✓')">Copiar</button></div>`:''}
+    </div>`; }).join('')||'<div class="empty">Sin sucursales</div>';
+  const gen=linkReserva();
+  const g=document.getElementById('suc-general'); if(g) g.innerHTML=multi?`Link general (el cliente elige la sucursal):<br><span style="color:var(--text2);word-break:break-all">${escHtml(gen)}</span> <button class="btn btn-ghost btn-sm" onclick="copiarAlPortapapeles('${gen}');notify('Link copiado ✓')">Copiar</button>`:'Con más de una sucursal activa, aquí verás el link general y el de cada sucursal.';
+}
+function abrirSucursal(id){
+  const x=id?S.sucursales.find(y=>y.id===id):null; const g=i=>document.getElementById(i);
+  g('su-id').value=x?x.id:''; g('su-titulo').textContent=x?'Editar sucursal':'Agregar sucursal';
+  g('su-nombre').value=x?x.nombre:''; g('su-dir').value=x?(x.direccion||''):''; g('su-tel').value=x?(x.telefono||''):'';
+  g('su-activa').checked=x?!!x.activa:true;
+  openM('m-sucursal');
+}
+async function guardarSucursal(){
+  const g=i=>document.getElementById(i);
+  const id=g('su-id').value, nombre=g('su-nombre').value.trim(), activa=g('su-activa').checked;
+  if(!nombre){ notify('Ponle un nombre a la sucursal','warn'); return; }
+  if(!activa&&sucActivas().filter(x=>x.id!==id).length===0){ notify('Tiene que quedar al menos una sucursal activa','warn'); return; }
+  const o={nombre,direccion:g('su-dir').value.trim()||null,telefono:g('su-tel').value.trim()||null,activa};
+  const q=id?sb.from('sucursales').update(o).eq('id',id).eq('barberia_id',S.barberia.id)
+            :sb.from('sucursales').insert({...o,barberia_id:S.barberia.id,orden:(S.sucursales.length)});
+  const {error}=await q;
+  if(error){ notify(/duplicate|unique/i.test(error.message)?'Ya existe una sucursal con ese nombre':error.message,'err'); return; }
+  closeM('m-sucursal'); notify(id?'Sucursal actualizada ✓':'Sucursal creada ✓');
+  await loadSucursales();
+  if(S.sucFiltro&&!sucActivas().some(x=>x.id===S.sucFiltro)) S.sucFiltro=null;
+  pintarSucursalSwitch(); renderSucursales(); cargarRecepcion();
+}
+async function asignarSucursalRecepcion(id,suc){
+  const {error}=await sb.rpc('asignar_sucursal_recepcion',{p_id:id,p_sucursal_id:suc});
+  if(error){ notify(error.message,'err'); return; }
+  notify('Sucursal de Recepción actualizada ✓'); cargarRecepcion();
+}
+
 // ─── Cuentas de Recepción (solo las gestiona el dueño) ──────────────────────
 async function cargarRecepcion(){
   const cont=document.getElementById('l-recepcion'); if(!cont)return;
@@ -4745,12 +4873,15 @@ async function cargarRecepcion(){
   const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
   cont.innerHTML=(data&&data.length)?data.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:0.5px solid var(--border)">
       <div><strong>${esc(r.nombre)}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.email)}</span></div>
-      <button class="btn btn-danger btn-sm" onclick="quitarRecepcion('${r.id}','${esc(r.nombre)}')">Quitar acceso</button></div>`).join('')
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${sucActivas().length>1?`<select style="max-width:170px" onchange="asignarSucursalRecepcion('${r.id}',this.value)" title="Sucursal">${S.sucursales.filter(x=>x.activa||x.id===r.sucursal_id).map(x=>`<option value="${x.id}"${x.id===r.sucursal_id?' selected':''}>${esc(x.nombre)}</option>`).join('')}</select>`:''}
+        <button class="btn btn-danger btn-sm" onclick="quitarRecepcion('${r.id}','${esc(r.nombre)}')">Quitar acceso</button></div></div>`).join('')
     :'<div class="empty">Aún no hay cuentas de Recepción.</div>';
 }
 function abrirCrearRecepcion(){
   ['rec-nombre','rec-email'].forEach(i=>{document.getElementById(i).value='';});
   document.getElementById('rec-pass').value=generarPasswordSimple();
+  pintarSelectSucursal('rec-suc',S.sucFiltro,'rec-suc-fg');
   document.getElementById('rec-alert').style.display='none';
   document.getElementById('rec-form').style.display='';
   document.getElementById('rec-listo').style.display='none';
@@ -4768,7 +4899,7 @@ async function crearCuentaRecepcion(){
   const btn=document.getElementById('rec-btn'); btn.disabled=true; btn.textContent='Creando...';
   al.style.display='none';
   // 1) El dueño registra la invitación (la base verifica que lo sea).
-  const {error:e0}=await sb.rpc('invitar_recepcion',{p_email:email,p_nombre:nombre});
+  const {error:e0}=await sb.rpc('invitar_recepcion',{p_email:email,p_nombre:nombre,p_sucursal_id:(document.getElementById('rec-suc')?.value||null)});
   if(e0){ fallo(e0.message); btn.disabled=false; btn.textContent='Crear cuenta'; return; }
   // 2) Cliente aislado para no cerrar la sesión del dueño (igual que Mi Agenda).
   const sbInvite=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{storageKey:'sb-invite-temp'}});
@@ -6546,6 +6677,7 @@ function renderProfesionals(){
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Comisión</span><span class="gold">${fmt(com)}</span></div>
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
         ${b.whatsapp&&wspLink(b.whatsapp)?`<a class="btn-wa" href="${wspLink(b.whatsapp)}" target="_blank">📱 WhatsApp</a>`:''}
+        ${sucActivas().length>1&&b.sucursal_id?`<span class="badge b-blue" title="Sucursal">${escHtml(sucNombre(b.sucursal_id))}</span>`:''}
         <button class="btn btn-ghost btn-sm" onclick="copiarLinkProfesional('${b.id}')" title="Copiar link de reserva individual">🔗 Link individual</button>
         <label class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer" title="Si lo das de baja deja de aparecer en la página de reservas y no puede entrar a Mi Agenda. Sus citas y comisiones se conservan.">
           <input type="checkbox" ${b.activo?'checked':''} onchange="toggleProfesionalActivo('${b.id}',this.checked)" style="width:auto"> Activo
@@ -6585,13 +6717,14 @@ function renderConfig(){
     // guardar, y adentro el valor elegido se perdería.
     document.getElementById('cfg-intervalo').value=String(S.barberia.intervalo_min||30);
     actualizarEjemploComision();
-    document.getElementById('cfg-link-reservas').value=location.origin+'/reservar.html?id='+S.barberia.id;
+    document.getElementById('cfg-link-reservas').value=linkReserva();
     // Sin await a propósito: pide el token por RPC y rellena el campo cuando
     // llega. Esperarlo dejaría el resto de la configuración en blanco mientras
     // tanto, y el link del QR no es lo primero que se viene a mirar acá.
     cargarLinkClubQR();
   }
   cargarAbonoConfig();
+  renderSucursales();
   renderHorarioNegocio();
   renderBloqueos();
   renderNivelesVipConfig();

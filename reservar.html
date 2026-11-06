@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<!-- Los links cortos viven en /reservar/<negocio>/<profesional>: sin esto, los
+     archivos relativos (supabase-config.js, tema.js…) se buscarían dentro de esa ruta. -->
+<base href="/">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reservar hora</title>
 <!-- Ícono real al "Agregar a inicio": manifest y apple-touch-icon se
@@ -164,6 +167,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--acento)}
   <!-- PASO 1: Servicio -->
   <div class="step-content active" id="sc-1">
     <div class="card">
+      <div id="suc-picker" style="display:none;margin-bottom:16px"></div>
       <div class="card-title">¿Qué servicio necesitas?</div>
       <div class="servicio-grid" id="lista-servicios"></div>
     </div>
@@ -297,10 +301,16 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Obtener slug de la URL: barbercrm.app/reservar.html?barberia=essential-studio
 const params = new URLSearchParams(window.location.search);
-const BARBERIA_ID = params.get('barberia') || params.get('id');
+let BARBERIA_ID = params.get('barberia') || params.get('id');
+// Link corto: /reservar/<negocio>[/<profesional>] (ver vercel.json). Los links largos con ?id= siguen valiendo.
+const RUTA_CORTA = (location.pathname.match(/^\/reservar\/([^\/]+)(?:\/([^\/]+))?\/?$/)||[]).slice(1).map(x=>x?decodeURIComponent(x).toLowerCase():null);
+const RUTA_NEGOCIO = RUTA_CORTA[0]||null, RUTA_PROF = RUTA_CORTA[1]||null;
+function profParamId(){
+  return params.get('profesional') || (RUTA_PROF && ((B.profesionals||[]).find(b=>b.slug===RUTA_PROF)||{}).id) || null;
+}
 
 let B = { barberia:null, servicios:[], profesionals:[], reservasOcupadas:[], horario:{}, bloqueos:[] };
-let SEL = { servicio:null, profesional:null, fecha:null, hora:null };
+let SEL = { servicio:null, profesional:null, fecha:null, hora:null, sucursal:null };
 let calMes = new Date();
 let ULTIMO_NOMBRE = '';
 let SALTAR_PROFESIONAL = false;
@@ -584,6 +594,10 @@ function renderHeaderNegocio(barb){
 }
 
 async function init(){
+  if(!BARBERIA_ID && RUTA_NEGOCIO){
+    const {data:nb}=await sb.from('barberias').select('id').eq('slug',RUTA_NEGOCIO).maybeSingle();
+    if(nb) BARBERIA_ID=nb.id;
+  }
   if(!BARBERIA_ID){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:var(--texto-debil)">URL inválida. Falta el ID de la negocio.</div>'; return; }
   const {data:barb} = await sb.from('barberias').select('*').eq('id',BARBERIA_ID).single();
   if(!barb){ document.body.innerHTML='<div style="text-align:center;padding:60px;color:var(--texto-debil)">Negocio no encontrada.</div>'; return; }
@@ -606,6 +620,10 @@ async function init(){
     sb.from('barbero_servicios').select('*').eq('barberia_id',BARBERIA_ID).eq('activo',true)
   ]);
   B.servicios = sv||[]; B.profesionals = ba||[];
+  try{
+    const {data:sc}=await sb.from('sucursales').select('*').eq('barberia_id',BARBERIA_ID).eq('activa',true).order('orden').order('created_at');
+    B.sucursales = sc||[];
+  }catch(e){ B.sucursales = []; }
   B.horario = {}; (hn||[]).forEach(h=>{ B.horario[h.dia_semana]=h; });
   B.bloqueos = blq||[];
   B.barberoServicios = bs||[];
@@ -615,8 +633,9 @@ async function init(){
   if(typeof montarAccesoUbicacion==='function'){
     montarAccesoUbicacion({negocio:B.barberia, horario:B.horario, contenedor:document.getElementById('header-meta')});
   }
+  initSucursales();
   renderServicios(); renderProfesionals(); renderCalendario();
-  const profParam = params.get('profesional');
+  const profParam = profParamId();
   const profPreseleccionado = profParam && B.profesionals.find(b=>b.id===profParam);
   if(profPreseleccionado){
     // El paso 2 (sc-2) queda oculto en este flujo — SALTAR_PROFESIONAL salta
@@ -638,8 +657,54 @@ async function init(){
   }
 }
 
+// ── Sucursales ──────────────────────────────────────────────────────────
+// Con más de una sucursal activa el cliente elige dónde se atiende (o entra por
+// un link que ya la trae: ?sucursal= o ?profesional=). Con una sola no se ve nada.
+function initSucursales(){
+  B.multiSuc = (B.sucursales||[]).length > 1;
+  if(!B.multiSuc){ SEL.sucursal = (B.sucursales&&B.sucursales[0])?B.sucursales[0].id:null; return; }
+  const pSuc = (params.get('sucursal')||'').toLowerCase(), pProf = profParamId();
+  const prof = pProf && B.profesionals.find(b=>b.id===pProf);
+  const porParam = pSuc && B.sucursales.find(x=>x.id===pSuc || x.slug===pSuc);
+  const id = (prof&&prof.sucursal_id) || (porParam?porParam.id:null);
+  SEL.sucursal = id; B.sucLocked = !!id;
+  renderSucPicker();
+}
+function sucElegida(){ return (B.sucursales||[]).find(x=>x.id===SEL.sucursal)||null; }
+function renderSucPicker(){
+  const el = document.getElementById('suc-picker'); if(!el||!B.multiSuc) return;
+  el.style.display = '';
+  const x = sucElegida();
+  if(B.sucLocked && x){
+    el.innerHTML = `<div style="font-size:13px;color:var(--texto-suave)">📍 <b style="color:var(--texto)">${escapeHtml(x.nombre)}</b>${x.direccion?' · '+escapeHtml(x.direccion):''}</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="card-title">¿En qué sucursal?</div>
+    <div style="display:grid;gap:8px">${B.sucursales.map(s=>`
+      <div class="servicio-card${s.id===SEL.sucursal?' selected':''}" style="text-align:left" onclick="selSucursal('${s.id}')">
+        <div class="servicio-nombre">${escapeHtml(s.nombre)}</div>
+        ${s.direccion?`<div class="servicio-dur">${escapeHtml(s.direccion)}</div>`:''}
+      </div>`).join('')}</div>`;
+}
+function selSucursal(id){
+  SEL.sucursal = id;
+  if(SEL.profesional && SEL.profesional.sucursal_id !== id){ SEL.profesional = null; const b=document.getElementById('btn-s2'); if(b) b.disabled = true; }
+  if(SEL.servicio && !serviciosVisibles().some(s=>s.id===SEL.servicio.id)) SEL.servicio = null;
+  renderSucPicker(); renderServicios(); renderProfesionals();
+}
+function profesionalesDeSucursal(){
+  return B.profesionals.filter(b=>!SEL.sucursal || b.sucursal_id===SEL.sucursal);
+}
+function serviciosVisibles(){
+  if(!B.multiSuc || !SEL.sucursal) return B.servicios;
+  return B.servicios.filter(s=>profesionalesDeSucursal().some(b=>profesionalCalifica(b,s)));
+}
 function renderServicios(){
-  document.getElementById('lista-servicios').innerHTML = B.servicios.map(s=>`
+  if(B.multiSuc && !SEL.sucursal){
+    document.getElementById('lista-servicios').innerHTML = '<p style="color:var(--texto-debil);font-size:13px">Elige primero la sucursal.</p>';
+    return;
+  }
+  document.getElementById('lista-servicios').innerHTML = serviciosVisibles().map(s=>`
     <div class="servicio-card" onclick="selServicio('${s.id}')" id="sv-${s.id}">
       <div class="servicio-nombre">${s.nombre}</div>
       <div class="servicio-precio">$${s.precio.toLocaleString('es-CL')}</div>
@@ -743,8 +808,8 @@ function selServicio(id){
 // califican están inactivos — init() ya no los trae.
 function renderProfesionals(){
   const items = SEL.servicio
-    ? B.profesionals.filter(b=>profesionalCalifica(b,SEL.servicio))
-    : B.profesionals;
+    ? profesionalesDeSucursal().filter(b=>profesionalCalifica(b,SEL.servicio))
+    : profesionalesDeSucursal();
   const cont = document.getElementById('lista-profesionals');
   if(!items.length){
     cont.innerHTML = '<div class="no-horarios" style="grid-column:1/-1">Este servicio no tiene profesionales disponibles por ahora. Prueba con otro servicio.</div>';
@@ -1009,7 +1074,7 @@ async function confirmarReserva(){
     // Mostrar éxito
     document.querySelectorAll('.step-content').forEach(s=>s.classList.remove('active'));
     document.getElementById('sc-exito').classList.add('active');
-    document.getElementById('success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${SEL.fecha} a las ${SEL.hora} hrs<br>✂️ ${SEL.servicio?.nombre} con ${SEL.profesional.nombre}<br><br>¡Te esperamos en ${B.barberia.nombre}!`;
+    document.getElementById('success-msg').innerHTML=`Tu reserva quedó registrada.<br><br>📅 ${SEL.fecha} a las ${SEL.hora} hrs<br>✂️ ${SEL.servicio?.nombre} con ${SEL.profesional.nombre}<br><br>¡Te esperamos en ${B.barberia.nombre}${B.multiSuc&&sucElegida()?' — '+escapeHtml(sucElegida().nombre)+(sucElegida().direccion?' ('+escapeHtml(sucElegida().direccion)+')':''):''}!`;
     document.getElementById('btn-wa-confirmar').style.display=B.barberia.whatsapp?'':'none';
   }catch(e){
     const al=document.getElementById('alert-confirm');
