@@ -425,6 +425,9 @@ function derivarSuperficies(op) {
     out['--b-gold-fondo'] = bg[0];   out['--b-gold-texto'] = bg[1];
     out['--b-blue-fondo'] = bb[0];   out['--b-blue-texto'] = bb[1];
     out['--b-green-fondo'] = bv[0];  out['--b-green-texto'] = bv[1];
+    out['--texto-bio'] = oscurecerContra('#999999', 4.6, pisoTxt);
+    out['--aviso-fondo'] = '#FFF6E0';
+    out['--aviso-borde'] = oscurecerContra('#D4A853', 3.1, '#FFF6E0');
     out['--nivel-0'] = oscurecerContra('#6B7280', 4.6, pisoTxt);
     out['--nivel-1'] = oscurecerContra('#B8860B', 4.6, pisoTxt);
     out['--nivel-2'] = oscurecerContra('#2B7BB0', 4.6, pisoTxt);
