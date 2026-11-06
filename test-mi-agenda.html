@@ -161,7 +161,7 @@ function domFalso(){
 // Es la única forma de comprobar el escape: mirar el código como texto diría
 // que "menciona escapeHtml", no que lo aplique a cada campo.
 function pintarCitas(js, citas){
-  var necesarias = ['escapeHtml','jsonAttr','fmt','fmtHora','estadoBadge','citaCardHtml','renderCitas'];
+  var necesarias = ['escapeHtml','jsonAttr','fmt','fmtHora','estadoBadge','citaCardHtml','renderCitas','iconoOrigenHtml'];
   var fuentes = [];
   for(var i = 0; i < necesarias.length; i++){
     var f = extraerFuncion(js, necesarias[i]);
@@ -172,6 +172,7 @@ function pintarCitas(js, citas){
   var src = 'var BARBERO = {puede_procesar_pagos:true};\n' +
             'var PAGO_ABIERTO_MIAGENDA = null;\n' +
             'var METODOS_PAGO_MIAGENDA = ["Efectivo"];\n' +
+            'var ORIGENES = {"Web propia":{k:"web",t:"Reservó por la web"}}; var ORIGEN_SVG = {web:"<svg></svg>"};\n' +
             fuentes.join('\n') + '\n' +
             'renderCitas(CITAS);';
   try {

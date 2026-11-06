@@ -287,9 +287,9 @@ async function correr(src){
 
   var rr = extraerFuncion(js, 'renderReporteResumen');
   check('el reporte suma ventas con productos',
-        /getRepVentas\(mesIni,mesFin\)/.test(rr), true);
-  check('  ...pero cuenta citas y clientes sin ellos',
-        /new Set\(citas\.map\(v=>v\.cliente_id\)\)/.test(rr), true);
+        /getRepVentasRango\(r\.desde,r\.hasta\)/.test(rr), true);
+  check('  ...pero cuenta citas y ticket sin ellos',
+        /getRepCitasRango\(r\.desde,r\.hasta\)/.test(rr), true);
 
   // ───────────────────────────────────────────────────────────────
   titulo('S.ventas no se queda viejo');
@@ -297,9 +297,9 @@ async function correr(src){
   // Es derivado: si un loader no lo reconstruye, la pantalla muestra datos de
   // antes del último cobro y el IVA queda corto sin avisar.
   check('loadVisitas reconstruye S.ventas',
-        /S\.visitas=data\|\|\[\]; construirVentas\(\);/.test(js), true);
+        /S\.visitas=await traerTodo\('visitas'\); construirVentas\(\);/.test(js), true);
   check('loadCobroProductos reconstruye S.ventas',
-        /S\.cobroProductos=data\|\|\[\]; construirVentas\(\);/.test(js), true);
+        /S\.cobroProductos=await traerTodo\('cobro_productos'\); construirVentas\(\);/.test(js), true);
   check('S arranca con las dos claves nuevas',
         /cobroProductos:\[\], ventas:\[\]/.test(js), true);
   check('loadAll carga los productos', /loadCobroProductos\(\)/.test(js), true);
@@ -340,13 +340,13 @@ async function correr(src){
   var noop = function(){ return Promise.resolve(); };
   var corrida = await intentar(function(){
     return new Function('document','COBRO_CTX','sb','notify','fmt','confirm',
-      'loadReservas','loadVisitas','loadClientes','loadCobroProductos','loadInventario',
+      'loadReservas','loadVisitas','loadClientes','loadCobroProductos','loadInventario','loadGiftCards',
       'renderReservas','renderDashboard','closeM','renderAgenda','calcularComision',
       fuenteCC + '\nreturn confirmarCobro();')
       (docCC, ctxCC,
        { rpc:function(n,a){ capt={nombre:n,args:a}; return Promise.resolve({error:null}); } },
        function(){}, function(v){ return '$'+v; }, function(){ return true; },
-       noop, noop, noop, noop, noop,
+       noop, noop, noop, noop, noop, noop,
        function(){}, function(){}, function(){}, function(){},
        function(v,p){ return Math.round(v*p/100); });
   });

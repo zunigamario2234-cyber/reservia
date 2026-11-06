@@ -167,6 +167,13 @@ input[readonly]{background:#111;color:#666;cursor:default}
 .loading-overlay{position:fixed;inset:0;background:rgba(10,10,10,0.9);display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:12px}
 .loading-overlay p{color:var(--text3);font-size:13px}
 /* Agenda calendar */
+.ag-origen{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;vertical-align:-3px;margin-right:4px;flex-shrink:0}
+.ag-origen svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ag-leyenda{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text3);margin:-6px 0 12px}
+.ag-leyenda span{display:inline-flex;align-items:center;gap:5px}
+.ag-leyenda .ag-origen{margin:0;color:var(--text2)}
+.rm-origen{display:none;align-items:center;gap:6px;font-size:12px;color:var(--text2);margin-bottom:12px}
+.btn-wa-conf{background:#128c4a;color:#fff;border:0}
 .ag-toolbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
 .ag-nav{display:flex;align-items:center;gap:6px}
 .ag-nav button{background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
@@ -450,6 +457,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
       <span>Inventario</span>
     </div>
+    <div class="nav-item" data-page="gift" onclick="nav('gift')">
+      <svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+      <span>Gift cards</span>
+    </div>
     <div class="nav-item" data-page="costos" onclick="nav('costos')">
       <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       <span>Costos e IVA</span>
@@ -651,6 +662,29 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 </div>
 
 <!-- INVENTARIO -->
+<div id="p-gift" class="page">
+  <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <input type="text" id="q-gift" placeholder="Buscar por código o nombre..." style="max-width:260px" oninput="renderGiftCards()">
+    <select id="f-gift-estado" onchange="renderGiftCards()" style="max-width:160px">
+      <option value="">Todas</option><option>Activa</option><option>Canjeada</option><option>Anulada</option>
+    </select>
+    <button class="btn btn-primary" onclick="abrirNuevaGift()">+ Nueva gift card</button>
+  </div>
+  <div class="g4" style="margin-bottom:14px">
+    <div class="mc"><div class="mc-label">Activas</div><div class="mc-val" id="g-activas">0</div></div>
+    <div class="mc"><div class="mc-label">Canjeadas</div><div class="mc-val" id="g-canjeadas">0</div></div>
+    <div class="mc"><div class="mc-label">Por canjear</div><div class="mc-val" id="g-pendiente">$0</div></div>
+    <div class="mc"><div class="mc-label">Vencen en 30 días</div><div class="mc-val" id="g-vencen">0</div></div>
+  </div>
+  <div class="card">
+    <div id="e-gift" class="empty" style="display:none;padding:18px;color:var(--text3);font-size:13px;line-height:1.6">
+      Aún no hay gift cards. Crea una, elige el servicio y la plataforma te da un código: anótalo en la tarjeta (física o digital). Cuando la persona venga, ingresa el código al cobrar.
+    </div>
+    <div class="tbl-wrap tbl-cards"><table><thead><tr><th>Código</th><th>Servicio</th><th>Para</th><th>De</th><th>Estado</th><th>Vence</th><th>Creada</th><th></th></tr></thead>
+    <tbody id="t-gift"></tbody></table></div>
+  </div>
+</div>
+
 <div id="p-inventario" class="page">
   <div class="filtros-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <input type="text" id="q-inv" placeholder="Buscar producto..." style="max-width:260px" oninput="renderInventario()">
@@ -924,6 +958,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <select id="ag-profesional" onchange="renderAgenda()" style="max-width:180px"><option value="">Todos los profesionales</option></select>
     <button class="btn btn-primary" onclick="openM('m-reserva')" style="margin-left:auto">+ Nueva reserva</button>
   </div>
+  <div class="ag-leyenda" id="ag-leyenda"></div>
   <div class="cal-wrap"><div id="agenda-container"></div></div>
   <div id="agenda-sinhora"></div>
   <div id="ag-ctx-menu" class="ag-ctx-menu" style="display:none"></div>
@@ -1165,12 +1200,13 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <!-- El valor que se escribe arriba es lo que paga el cliente, con IVA
          incluido: estos dos campos lo DESGLOSAN, no le suman nada. -->
     <div class="fr"><div class="fg"><label>IVA incluido</label><input id="v-iva-calc" readonly></div><div class="fg"><label>Neto (sin IVA)</label><input id="v-neto-calc" readonly style="color:#d4a853"></div></div>
-    <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Reserva Web</option><option>WhatsApp</option><option>Instagram</option><option value="Setmore">Setmore (antiguo)</option></select></div></div>
+    <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option><option>Gift card</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Reserva Web</option><option>WhatsApp</option><option>Instagram</option><option value="Setmore">Setmore (antiguo)</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="v-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="v-notas" rows="2"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCita()">Registrar</button>
       <button class="btn btn-ghost" onclick="closeM('m-cita')">Cancelar</button>
+      <button id="v-btn-wa" class="btn btn-wa-conf" style="display:none;margin-left:auto" onclick="enviarConfirmCita(document.getElementById('v-id').value)">📱 Enviar confirmación</button>
     </div>
   </div>
 </div>
@@ -1180,6 +1216,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   <div class="modal">
     <div class="modal-hdr"><span class="modal-title" id="m-reserva-title">Nueva reserva</span><button class="xbtn" onclick="closeM('m-reserva')">x</button></div>
     <input type="hidden" id="r-id">
+    <div class="rm-origen" id="r-origen"></div>
     <div id="rm-tabs" style="display:flex;gap:8px;margin-bottom:14px">
       <button type="button" class="btn btn-sm btn-primary" id="rm-tab-existente" onclick="setModoClienteReserva('existente')">Buscar cliente existente</button>
       <button type="button" class="btn btn-sm btn-ghost" id="rm-tab-nuevo" onclick="setModoClienteReserva('nuevo')">+ Cliente nuevo</button>
@@ -1216,6 +1253,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <!-- Abre m-cobro ENCIMA de este modal. El apilamiento lo resuelve openM
            desde el arreglo del recorte de foto; antes esto habría quedado
            tapado. -->
+      <button id="r-btn-wa" class="btn btn-wa-conf" style="display:none" onclick="enviarConfirm(document.getElementById('r-id').value)">📱 Enviar confirmación</button>
       <button id="r-btn-pagar" class="btn btn-primary" style="display:none;margin-left:auto" onclick="abrirCobro(document.getElementById('r-id').value)">Cobrar</button>
       <button id="r-btn-eliminar" class="btn btn-danger" style="display:none" onclick="eliminarReservaModal(document.getElementById('r-id').value)">Eliminar reserva</button>
     </div>
@@ -1226,6 +1264,33 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 <!-- Cobro con desglose (precio, descuento, propina) — ver abrirCobro().
      Se abre desde la tabla de Reservas y también DESDE m-reserva, o sea un
      modal sobre otro modal: eso funciona gracias a la pila de openM(). -->
+<div class="overlay" id="m-gift">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-hdr"><span class="modal-title">Nueva gift card</span><button class="xbtn" onclick="closeM('m-gift')">×</button></div>
+    <div id="gift-form">
+      <div class="fg"><label>Servicio *</label><select id="gift-servicio"></select></div>
+      <div class="fr"><div class="fg"><label>Para (quien la recibe)</label><input id="gift-para" type="text" placeholder="Opcional"></div><div class="fg"><label>De (quien la compra)</label><input id="gift-de" type="text" placeholder="Opcional"></div></div>
+      <div class="fr"><div class="fg"><label>Vence (opcional)</label><input id="gift-vence" type="date"></div><div class="fg"></div></div>
+      <div class="fg"><label>Notas</label><textarea id="gift-notas" rows="2" placeholder="Opcional"></textarea></div>
+      <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" id="gift-btn" onclick="crearGiftCard()">Generar código</button>
+        <button class="btn btn-ghost" onclick="closeM('m-gift')">Cancelar</button>
+      </div>
+    </div>
+    <div id="gift-listo" style="display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Código de la gift card</div>
+      <div id="gift-codigo" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:26px;font-weight:700;letter-spacing:2px;color:var(--p1);background:var(--bg2);border-radius:10px;padding:14px;text-align:center;user-select:all"></div>
+      <div id="gift-resumen" style="font-size:12px;color:var(--text2);line-height:1.6;margin:10px 0"></div>
+      <div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:12px">Anota este código en la tarjeta, física o digital. Al cobrar, ingrésalo en el cobro y la venta queda registrada como gift card.</div>
+      <div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="copiarGiftCodigo()">Copiar código</button>
+        <button class="btn btn-ghost" onclick="abrirNuevaGift()">Crear otra</button>
+        <button class="btn btn-ghost" onclick="closeM('m-gift')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="m-cobro">
   <div class="modal" style="max-width:520px">
     <div class="modal-hdr"><span class="modal-title">Cobrar</span><button class="xbtn" onclick="closeM('m-cobro')">×</button></div>
@@ -1272,6 +1337,15 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div style="background:var(--bg2);border-radius:10px;padding:12px;margin:14px 0">
       <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700"><span>Total a cobrar</span><span id="cob-total" class="gold">$0</span></div>
       <div id="cob-desglose" style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:6px"></div>
+    </div>
+
+    <div class="fg">
+      <label>Gift card (opcional)</label>
+      <div style="display:flex;gap:8px">
+        <input id="cob-gift-codigo" type="text" placeholder="GC-XXXX-XXXX" autocomplete="off" style="text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();cobroAplicarGift();}">
+        <button type="button" class="btn btn-ghost btn-sm" id="cob-gift-btn" onclick="cobroAplicarGift()">Aplicar</button>
+      </div>
+      <div id="cob-gift-msg" style="font-size:11px;line-height:1.5;margin-top:6px"></div>
     </div>
 
     <div class="fg"><label>Método de pago</label><select id="cob-metodo"></select></div>
@@ -1626,7 +1700,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // `barberoServicios` no tiene ese problema hoy —solo se lee en un render, ya
 // terminada la carga— pero queda declarada por la misma razón: la próxima vez
 // que alguien la lea durante loadAll, no debería enterarse por un panel caído.
-let S = { user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[] };
+let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[], visitas:[], reservas:[], servicios:[], profesionals:[], barberos:[], barberoServicios:[], inventario:[], costos:[], vipHist:[], plantillas:[], alianzas:[], alianzaCanjes:[], horario:[], bloqueos:[], nivelesVip:[], cobroProductos:[], ventas:[], encuestas:[] };
 // ⚠ `encuestas:[]` DECLARADO ACÁ, no agregado al vuelo. Omitir una clave ya
 // tiró el panel entero en producción una vez: loadAll() carga en paralelo y
 // cualquier render que corra antes encuentra `undefined` y muere en `.filter`
@@ -1696,7 +1770,7 @@ async function loadAll(){
   aplicarTemaPanel();
   VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
   // Después de las dos fuentes, nunca antes: S.ventas es derivado.
@@ -1760,6 +1834,14 @@ async function moverServicio(id,dir){
 async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('orden',{nullsFirst:false}).order('precio'); S.servicios=data||[]; }
 async function loadBarberos(){ const {data}=await sb.from('barberos').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.barberos=data||[]; }
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
+// Si la tabla no se puede leer (por ejemplo un profesional con la sesión) la
+// pantalla queda vacía; no debe tumbar la carga del panel entero.
+async function loadGiftCards(){
+  try{
+    const {data,error}=await sb.from('gift_cards').select('*').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false});
+    S.gifts=error?[]:(data||[]);
+  }catch(e){ S.gifts=[]; }
+}
 async function loadInventario(){ const {data}=await sb.from('inventario').select('*').eq('barberia_id',S.barberia.id).order('nombre'); S.inventario=data||[]; }
 async function loadCostos(){ const {data}=await sb.from('costos').select('*').eq('barberia_id',S.barberia.id).order('fecha',{ascending:false}); S.costos=data||[]; }
 async function loadCobroProductos(){ S.cobroProductos=await traerTodo('cobro_productos'); construirVentas(); }
@@ -1887,11 +1969,11 @@ function nav(page){
   document.getElementById('p-'+page).classList.add('active');
   const ni=document.querySelector(`.nav-item[data-page="${page}"]`);
   if(ni)ni.classList.add('active');
-  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
+  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
   document.getElementById('page-title').textContent=titles[page]||page;
   // costos entra por entrarCostos y no por renderCostos: resetea el período al
   // mes en curso cada vez que se abre la pantalla.
-  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
+  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
   if(renders[page])renders[page]();
 }
 function switchTab(el,tid){
@@ -2202,6 +2284,7 @@ function initModal(id){
   if(id==='m-cita'){
     document.getElementById('v-id').value='';
     document.getElementById('m-cita-title').textContent='Registrar cita';
+    document.getElementById('v-btn-wa').style.display='none';
     document.getElementById('v-fecha').value=hoy;
     document.getElementById('v-hora').value='';
     document.getElementById('v-valor').value='';
@@ -2233,6 +2316,8 @@ function initModal(id){
     document.getElementById('rn-cumple').value='';
     document.getElementById('r-btn-eliminar').style.display='none';
     document.getElementById('r-btn-pagar').style.display='none';
+    document.getElementById('r-btn-wa').style.display='none';
+    document.getElementById('r-origen').style.display='none';
     document.getElementById('r-procesado').value='0';
     document.getElementById('rm-footer-normal').style.display='flex';
     document.getElementById('rn-canal').value='Directo';
@@ -4059,8 +4144,133 @@ function cobroMontarModal(resumenHtml){
   document.getElementById('cob-prop-btns').innerHTML=PROPINA_TRAMOS.map(p=>
     `<button type="button" class="btn btn-ghost btn-sm" onclick="cobroPropina(${p})">${p===0?'Sin propina':p+'%'}</button>`).join('');
   sel('cob-metodo',METODOS_PAGO.map(m=>({v:m,t:m})));
+  document.getElementById('cob-metodo').disabled=false;
+  COBRO_CTX.gift=null;
+  document.getElementById('cob-gift-codigo').value='';
+  document.getElementById('cob-gift-codigo').disabled=false;
+  document.getElementById('cob-gift-btn').textContent='Aplicar';
+  document.getElementById('cob-gift-msg').innerHTML='';
   cobroRenderLineas();
   cobroRecalcular();
+}
+
+// ─── Gift cards ─────────────────────────────────────────────────────────────
+// La venta de la tarjeta no se registra como ingreso (el dinero entró fuera de
+// la plataforma). El ingreso cuenta el día del canje, con método 'Gift card'.
+function giftNorm(t){ return String(t==null?'':t).trim().toLowerCase(); }
+function giftEstadoEfectivo(g){
+  if(g.estado!=='Activa') return g.estado;
+  if(g.vence&&g.vence<ahoraEnChile().fecha) return 'Vencida';
+  return 'Activa';
+}
+function renderGiftCards(){
+  const tb=document.getElementById('t-gift'); if(!tb)return;
+  const hoy=ahoraEnChile().fecha;
+  const lim=fmtDateLocal(new Date(Date.now()+30*86400000));
+  const todas=S.gifts||[];
+  const activas=todas.filter(g=>giftEstadoEfectivo(g)==='Activa');
+  document.getElementById('g-activas').textContent=activas.length;
+  document.getElementById('g-canjeadas').textContent=todas.filter(g=>g.estado==='Canjeada').length;
+  document.getElementById('g-pendiente').textContent=fmt(activas.reduce((s,g)=>s+(+g.valor||0),0));
+  document.getElementById('g-vencen').textContent=activas.filter(g=>g.vence&&g.vence>=hoy&&g.vence<=lim).length;
+  const q=giftNorm(document.getElementById('q-gift').value);
+  const fe=document.getElementById('f-gift-estado').value;
+  const lista=todas.filter(g=>{
+    const est=giftEstadoEfectivo(g);
+    if(fe&&est!==fe)return false;
+    if(!q)return true;
+    return giftNorm(g.codigo+' '+(g.para_nombre||'')+' '+(g.de_nombre||'')+' '+g.servicio).includes(q);
+  });
+  document.getElementById('e-gift').style.display=todas.length?'none':'';
+  const badge={Activa:'b-green',Canjeada:'b-blue',Anulada:'b-red',Vencida:'b-red'};
+  tb.innerHTML=lista.map(g=>{
+    const est=giftEstadoEfectivo(g);
+    const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    return `<tr>
+      <td data-label="Código"><strong style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px">${esc(g.codigo)}</strong></td>
+      <td data-label="Servicio">${esc(g.servicio)}<br><span style="font-size:10px;color:var(--text3)">${fmt(g.valor)}</span></td>
+      <td data-label="Para">${esc(g.para_nombre)||'—'}</td>
+      <td data-label="De">${esc(g.de_nombre)||'—'}</td>
+      <td data-label="Estado"><span class="badge ${badge[est]||'b-gold'}">${est}</span></td>
+      <td data-label="Vence">${g.vence||'—'}</td>
+      <td data-label="Creada">${g.created_at?new Date(g.created_at).toLocaleDateString('es-CL',{timeZone:'America/Santiago'}):''}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="copiarAlPortapapeles('${esc(g.codigo)}')">Copiar</button>
+        ${g.estado==='Activa'?`<button class="btn btn-danger btn-sm" onclick="anularGift('${g.id}')">Anular</button>`:''}
+      </td></tr>`;
+  }).join('');
+}
+function abrirNuevaGift(){
+  document.getElementById('gift-form').style.display='';
+  document.getElementById('gift-listo').style.display='none';
+  const svs=(S.servicios||[]);
+  sel('gift-servicio',svs.map(x=>({v:x.nombre,t:x.nombre+' — '+fmt(x.precio)})),true);
+  ['gift-para','gift-de','gift-vence','gift-notas'].forEach(i=>{document.getElementById(i).value='';});
+  openM('m-gift');
+}
+async function crearGiftCard(){
+  const servicio=document.getElementById('gift-servicio').value;
+  if(!servicio){ notify('Elige el servicio de la gift card','warn'); return; }
+  const btn=document.getElementById('gift-btn');
+  btn.disabled=true; btn.textContent='Generando...';
+  const {data,error}=await sb.rpc('crear_gift_card',{
+    p_servicio:servicio,
+    p_para_nombre:document.getElementById('gift-para').value||null,
+    p_de_nombre:document.getElementById('gift-de').value||null,
+    p_notas:document.getElementById('gift-notas').value||null,
+    p_vence:document.getElementById('gift-vence').value||null
+  });
+  btn.disabled=false; btn.textContent='Generar código';
+  if(error||!data){ notify((error&&error.message)||'No se pudo crear la gift card','err'); return; }
+  const g=Array.isArray(data)?data[0]:data;
+  await loadGiftCards(); renderGiftCards();
+  document.getElementById('gift-codigo').textContent=g.codigo;
+  document.getElementById('gift-resumen').innerHTML=
+    `<strong>${g.servicio}</strong> · ${fmt(g.valor)}`+
+    (g.para_nombre?`<br>Para: ${g.para_nombre}`:'')+(g.de_nombre?`<br>De: ${g.de_nombre}`:'')+
+    (g.vence?`<br>Vence: ${g.vence}`:'');
+  document.getElementById('gift-form').style.display='none';
+  document.getElementById('gift-listo').style.display='';
+}
+function copiarGiftCodigo(){ copiarAlPortapapeles(document.getElementById('gift-codigo').textContent); }
+async function anularGift(id){
+  const g=(S.gifts||[]).find(x=>x.id===id); if(!g||g.estado!=='Activa')return;
+  const {error}=await sb.from('gift_cards').update({estado:'Anulada'}).eq('id',id).eq('estado','Activa');
+  if(error){ notify(error.message,'err'); return; }
+  await loadGiftCards(); renderGiftCards(); notify('Gift card anulada');
+}
+// Valida el código contra la base y, si sirve, lo deja listo para el cobro.
+async function cobroAplicarGift(){
+  if(!COBRO_CTX)return;
+  const msg=document.getElementById('cob-gift-msg');
+  if(COBRO_CTX.gift){ // quitar
+    COBRO_CTX.gift=null;
+    document.getElementById('cob-gift-codigo').value='';
+    document.getElementById('cob-gift-codigo').disabled=false;
+    document.getElementById('cob-gift-btn').textContent='Aplicar';
+    document.getElementById('cob-metodo').disabled=false;
+    msg.innerHTML='';
+    sel('cob-metodo',METODOS_PAGO.map(m=>({v:m,t:m})));
+    return;
+  }
+  const codigo=document.getElementById('cob-gift-codigo').value.trim().toUpperCase();
+  const mal=t=>{ msg.innerHTML='<span style="color:#ff8f8f">'+t+'</span>'; };
+  if(!codigo){ mal('Escribe el código de la gift card.'); return; }
+  const {data,error}=await sb.from('gift_cards').select('*').eq('barberia_id',S.barberia.id).eq('codigo',codigo).maybeSingle();
+  if(error){ mal('No se pudo consultar: '+error.message); return; }
+  if(!data){ mal('Ese código no existe en este negocio.'); return; }
+  const est=giftEstadoEfectivo(data);
+  if(est==='Canjeada'){ mal('Esta gift card ya fue canjeada.'); return; }
+  if(est==='Anulada'){ mal('Esta gift card está anulada.'); return; }
+  if(est==='Vencida'){ mal('Esta gift card venció el '+data.vence+'.'); return; }
+  const cubre=COBRO_CTX.lineas.some(l=>giftNorm(l.servicioRaw)===giftNorm(data.servicio)||giftNorm(l.servicio)===giftNorm(data.servicio));
+  if(!cubre){ mal('Esta gift card es para «'+data.servicio+'» y este cobro no incluye ese servicio.'); return; }
+  COBRO_CTX.gift={codigo:data.codigo,servicio:data.servicio};
+  document.getElementById('cob-gift-codigo').disabled=true;
+  document.getElementById('cob-gift-btn').textContent='Quitar';
+  const m=document.getElementById('cob-metodo');
+  m.add(new Option('Gift card','Gift card')); m.value='Gift card'; m.disabled=true;
+  msg.innerHTML='<span style="color:#00e096">✓ Gift card válida: '+data.servicio+'. El cobro completo queda registrado como gift card.</span>';
 }
 
 function cobroDescuento(pct){
@@ -4208,7 +4418,11 @@ async function confirmarCobro(){
     p_metodo_pago:document.getElementById('cob-metodo').value,
     // La RPC compara esto contra la suma de las líneas y rechaza el cobro si no
     // cuadra: un prorrateo mal redondeado no entra a la base en silencio.
-    p_total_declarado:rep.totalCobro
+    p_total_declarado:rep.totalCobro,
+    // Código de gift card ya validado en pantalla. La base lo vuelve a validar y
+    // lo canjea en la misma transacción que el cobro: sin esto un código se
+    // podría usar dos veces desde dos pantallas abiertas.
+    p_gift_codigo:(COBRO_CTX.gift&&COBRO_CTX.gift.codigo)||null
   });
   btn.disabled=false;btn.textContent='Registrar cobro';
   if(error){notify(error.message,'err');return;}
@@ -4228,7 +4442,7 @@ async function confirmarCobro(){
   // loadCobroProductos también: si no, S.ventas queda sin la venta recién
   // hecha y el IVA de esta pantalla muestra menos de lo que entró. Y el
   // inventario, porque la RPC descontó stock.
-  await loadReservas();await loadVisitas();await loadClientes();await loadCobroProductos();await loadInventario();
+  await loadReservas();await loadVisitas();await loadClientes();await loadCobroProductos();await loadInventario();await loadGiftCards();
   renderReservas();renderDashboard();
   // Con UNA reserva el texto es el de siempre, sin paréntesis: decir
   // "(1 reserva)" es información vacía en el flujo que ya estaba en producción
@@ -4964,7 +5178,7 @@ function renderReservas(){
   const tb=document.getElementById('t-reservas');
   document.getElementById('e-reservas').style.display=S.reservas.length?'none':'';
   tb.innerHTML=S.reservas.map(r=>`<tr>
-    <td>${r.fecha} ${fmtHora(r.hora)}</td>
+    <td>${iconoOrigenHtml(r.fuente)}${r.fecha} ${fmtHora(r.hora)}</td>
     <td>${r.nombre_cliente}</td>
     <td><a class="btn-wa" onclick="abrirWA('${r.whatsapp_cliente}','Hola ${r.nombre_cliente}')">${r.whatsapp_cliente}</a></td>
     <td>${r.servicio||'—'}</td><td>${r.barbero_nombre||'—'}</td>
@@ -4977,10 +5191,27 @@ function renderReservas(){
     </td></tr>`).join('');
 }
 
+// Mensaje de confirmación listo para WhatsApp. Usa la plantilla 'Confirmación
+// reserva' del negocio y, si no hay una activa, un texto por defecto: nunca se
+// deja al dueño con el botón apretado y nada que pasar.
+function mensajeConfirmacion(nombre,fecha,hora,servicio,profesional){
+  const v={nombre:nombre||'',fecha:fecha||'',hora:hora||'',servicio:servicio||'',profesional:profesional||''};
+  const msg=buildMsg('Confirmación reserva',v);
+  if(msg)return msg;
+  const neg=S.barberia?.nombre||'';
+  return `¡Hola ${v.nombre}! Tu cita en ${neg} quedó confirmada para el ${v.fecha} a las ${v.hora} hrs`+
+    (v.servicio?`, servicio: ${v.servicio}`:'')+(v.profesional?` con ${v.profesional}`:'')+'. ¡Te esperamos!';
+}
 function enviarConfirm(id){
   const r=S.reservas.find(x=>x.id===id); if(!r)return;
-  const msg=buildMsg('Confirmación reserva',{nombre:r.nombre_cliente,fecha:r.fecha,hora:fmtHora(r.hora),servicio:r.servicio||'',profesional:r.barbero_nombre||''});
-  if(msg)abrirWA(r.whatsapp_cliente,msg);
+  if(!r.whatsapp_cliente){ notify('Esta reserva no tiene WhatsApp','warn'); return; }
+  abrirWA(r.whatsapp_cliente,mensajeConfirmacion(r.nombre_cliente,r.fecha,fmtHora(r.hora),r.servicio,r.barbero_nombre));
+}
+function enviarConfirmCita(id){
+  const v=S.visitas.find(x=>x.id===id); if(!v)return;
+  const c=S.clientes.find(x=>x.id===v.cliente_id);
+  if(!c||!c.whatsapp){ notify('El cliente de esta cita no tiene WhatsApp','warn'); return; }
+  abrirWA(c.whatsapp,mensajeConfirmacion(c.nombre,v.fecha,fmtHora(v.hora),v.servicio,v.barbero_nombre));
 }
 
 function proximaMetaNivel(v){
@@ -5821,7 +6052,36 @@ function agendaBandasHtml(fecha,profId){
     `<div class="cal-banda ${b.tipo}" style="top:${(b.ini-AG_START_HOUR*60)*AG_PX_MIN}px;height:${(b.fin-b.ini)*AG_PX_MIN}px" title="${String(b.texto).replace(/"/g,'&quot;')}"><span>${String(b.texto).replace(/</g,'&lt;')}</span></div>`).join('');
 }
 
+// ─── Origen de la reserva ───────────────────────────────────────────────────
+// reservas.fuente lo escribe cada puerta de entrada: la web pública ('Web
+// propia'), la app del Club ('Club VIP'), el profesional desde su agenda ('Mi
+// Agenda') y el panel ('Manual'; ahí no se distingue dueño de recepción porque
+// ambos usan la misma pantalla).
+const ORIGEN_SVG={
+  web:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/></svg>',
+  app:'<svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/></svg>',
+  profesional:'<svg viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2.6"/><circle cx="6" cy="17.5" r="2.6"/><path d="M8.2 8l11.3 9.5M8.2 16L19.5 6.5"/></svg>',
+  panel:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.8"/><path d="M8 20h8M12 16v4"/></svg>'
+};
+const ORIGENES={
+  'Web propia':{k:'web',t:'Reservó por la web'},
+  'Club VIP':{k:'app',t:'Reservó desde la app del Club'},
+  'Mi Agenda':{k:'profesional',t:'Lo agendó el profesional en su agenda'},
+  'Manual':{k:'panel',t:'Se agendó desde el panel (dueño o recepción)'}
+};
+function origenDe(fuente){ return ORIGENES[fuente]||null; }
+function iconoOrigenHtml(fuente){
+  const o=origenDe(fuente); if(!o)return '';
+  return `<span class="ag-origen" title="${o.t}" aria-label="${o.t}">${ORIGEN_SVG[o.k]}</span>`;
+}
+function renderLeyendaOrigen(){
+  const c=document.getElementById('ag-leyenda'); if(!c)return;
+  c.innerHTML=[['web','Web'],['app','App del Club'],['profesional','Profesional'],['panel','Panel (recepción / dueño)']]
+    .map(([k,t])=>`<span><span class="ag-origen">${ORIGEN_SVG[k]}</span>${t}</span>`).join('');
+}
+
 function renderAgenda(){
+  renderLeyendaOrigen();
   const fecha=document.getElementById('ag-fecha').value||ahoraEnChile().fecha;
   document.getElementById('ag-fecha').value=fecha;
   const bf=document.getElementById('ag-profesional').value;
@@ -5892,7 +6152,7 @@ function renderAgenda(){
       const extraClass=(estado==='En curso'?' estado-curso':'')+(estado==='Cancelada'?' estado-cancelada':'');
       return `<div class="cal-block${extraClass}" data-tipo="${it._tipo}" data-id="${it.id}" style="top:${top}px;height:${height}px;background:${ecolor.bg};border-color:${ecolor.border};color:${ecolor.text}" title="${fmtHora(it.hora)} · ${label} · ${info.nombre} · ${estado}">
         <button class="cb-menu-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();toggleAgendaMenu(event,'${it._tipo}','${it.id}')">⋮</button>
-        <div class="cb-t">${fmtHora(it.hora)} · ${label}</div>
+        <div class="cb-t">${it._tipo==='reserva'?iconoOrigenHtml(it.fuente):''}${fmtHora(it.hora)} · ${label}</div>
         <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
@@ -5923,7 +6183,7 @@ function renderAgenda(){
         const abrir=it._tipo==='reserva'?`abrirEditarReserva('${it.id}')`:`abrirEditarCita('${it.id}')`;
         return `<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:0.5px solid #1a1a1a;cursor:pointer" onclick="${abrir}">
           <span style="width:8px;height:8px;border-radius:50%;background:${ecolor.border};flex-shrink:0"></span>
-          <div style="flex:1"><div style="font-size:12px;font-weight:600">${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.barbero_nombre||'Sin asignar'}</div></div>
+          <div style="flex:1"><div style="font-size:12px;font-weight:600">${it._tipo==='reserva'?iconoOrigenHtml(it.fuente):''}${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.barbero_nombre||'Sin asignar'}</div></div>
         </div>`;
       }).join('')}
     </div>`;
@@ -6007,12 +6267,17 @@ function abrirEditarReserva(id){
   document.getElementById('r-btn-eliminar').style.display='';
   document.getElementById('r-procesado').value=r.procesado?'1':'0';
   document.getElementById('r-btn-pagar').style.display=r.procesado?'none':'';
+  document.getElementById('r-btn-wa').style.display='';
+  const og=origenDe(r.fuente), ogEl=document.getElementById('r-origen');
+  ogEl.innerHTML=og?`${iconoOrigenHtml(r.fuente)}<span>${og.t}</span>`:'';
+  ogEl.style.display=og?'flex':'none';
 }
 
 function abrirEditarCita(id){
   const v=S.visitas.find(x=>x.id===id); if(!v)return;
   openM('m-cita');
   document.getElementById('m-cita-title').textContent='Editar cita';
+  document.getElementById('v-btn-wa').style.display='';
   document.getElementById('v-id').value=v.id;
   document.getElementById('v-fecha').value=v.fecha||'';
   document.getElementById('v-hora').value=v.hora||'';

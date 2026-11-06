@@ -143,6 +143,10 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 .cal-ahora{position:absolute;left:0;right:0;height:1.5px;background:var(--alerta-texto);z-index:4;pointer-events:none}
 .cal-ahora::before{content:'';position:absolute;left:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--alerta-texto)}
 .cal-ayuda{font-size:11px;color:var(--texto-debil);text-align:center;margin:-4px 0 12px}
+.ag-origen{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;vertical-align:-3px;margin-right:4px}
+.ag-origen svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.gift-fila{display:flex;gap:6px;flex-basis:100%;margin-top:4px}
+.gift-fila input{flex:1;min-width:0;text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -600,6 +604,23 @@ function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
 
 function claseEstadoCal(e){ return {'Pendiente':'e-pendiente','Confirmada':'e-confirmada','En curso':'e-curso','Atendida':'e-atendida','Cancelada':'e-cancelada','No asistió':'e-noasistio'}[e]||'e-pendiente'; }
 function duracionCita(c){ const s=SERVICIOS.find(x=>x.id===c.servicio||x.nombre===c.servicio); return (s&&s.duracion_min)||30; }
+// Origen de la reserva (reservas.fuente). Mismo criterio que el panel.
+const ORIGEN_SVG={
+  web:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/></svg>',
+  app:'<svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/></svg>',
+  profesional:'<svg viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2.6"/><circle cx="6" cy="17.5" r="2.6"/><path d="M8.2 8l11.3 9.5M8.2 16L19.5 6.5"/></svg>',
+  panel:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.8"/><path d="M8 20h8M12 16v4"/></svg>'
+};
+const ORIGENES={
+  'Web propia':{k:'web',t:'Reservó por la web'},
+  'Club VIP':{k:'app',t:'Reservó desde la app del Club'},
+  'Mi Agenda':{k:'profesional',t:'Lo agendó el profesional en su agenda'},
+  'Manual':{k:'panel',t:'Se agendó desde el panel (dueño o recepción)'}
+};
+function iconoOrigenHtml(c){
+  const o=c&&c.tipo==='reserva'?ORIGENES[c.fuente]:null; if(!o)return '';
+  return `<span class="ag-origen" title="${o.t}" aria-label="${o.t}">${ORIGEN_SVG[o.k]}</span>`;
+}
 function renderCalendario(lista){
   const cont=document.getElementById('citas-cal');
   const fecha=document.getElementById('ag-fecha').value||hoyStr();
@@ -615,7 +636,7 @@ function renderCalendario(lista){
   const bandas=agendaBandas(fecha,HORARIO_NEGOCIO,BLOQUEOS,BARBERO.id,ini,fin).map(b=>`<div class="cal-banda ${b.tipo}" style="top:${(b.ini-ini)*CAL_PX_MIN}px;height:${(b.fin-b.ini)*CAL_PX_MIN}px"><span>${escapeHtml(b.texto)}</span></div>`).join('');
   const bloques=conHora.map(c=>{
     const top=(hmAMin(c.hora)-ini)*CAL_PX_MIN, h=Math.max(duracionCita(c)*CAL_PX_MIN,26);
-    return `<button type="button" class="cal-cita ${claseEstadoCal(c.estado)}${CITA_SEL===c.id?' sel':''}" style="top:${top}px;height:${h}px" onclick="selCitaCal('${c.id}')"><b>${fmtHora(c.hora)} · ${escapeHtml(c.nombre_cliente)||'Cliente'}</b><span>${escapeHtml(c.servicio)||'—'} · ${escapeHtml(c.estado)}</span></button>`;
+    return `<button type="button" class="cal-cita ${claseEstadoCal(c.estado)}${CITA_SEL===c.id?' sel':''}" style="top:${top}px;height:${h}px" onclick="selCitaCal('${c.id}')"><b>${iconoOrigenHtml(c)}${fmtHora(c.hora)} · ${escapeHtml(c.nombre_cliente)||'Cliente'}</b><span>${escapeHtml(c.servicio)||'—'} · ${escapeHtml(c.estado)}</span></button>`;
   }).join('');
   let ahora='';
   if(fecha===hoyStr()){ const d=new Date(), m=d.getHours()*60+d.getMinutes(); if(m>=ini&&m<=fin) ahora=`<div class="cal-ahora" style="top:${(m-ini)*CAL_PX_MIN}px"></div>`; }
@@ -647,14 +668,14 @@ function citaCardHtml(c){
     const puedePagar=BARBERO?.puede_procesar_pagos&&c.tipo==='reserva'&&c.estado!=='Cancelada';
     const pagoAbierto=PAGO_ABIERTO_MIAGENDA===c.id;
     return `<div class="cita-item">
-      <div class="cita-hora">${fmtHora(c.hora)}</div>
+      <div class="cita-hora">${iconoOrigenHtml(c)}${fmtHora(c.hora)}</div>
       <div class="cita-cliente">${escapeHtml(c.nombre_cliente)||'Cliente'}</div>
       ${c.cliente_notas?`<div class="cita-nota-cliente"><b>Del cliente:</b> ${escapeHtml(c.cliente_notas)}</div>`:''}
       <div class="cita-detalle">${escapeHtml(c.servicio)||'—'} · <span class="badge ${estadoBadge(c.estado)}">${escapeHtml(c.estado)}</span>${c.valor?' · '+fmt(c.valor):''}</div>
       ${c.notas?`<div class="cita-detalle">📝 ${escapeHtml(c.notas)}</div>`:''}
       <div class="cita-acciones">
-        ${c.whatsapp_cliente?`<a class="btn-wa" onclick='enviarWhatsAppCita(${jsonAttr(c)})'>📱 WhatsApp</a>`:''}
-        ${puedePagar&&pagoAbierto?METODOS_PAGO_MIAGENDA.map(m=>`<button class="btn btn-primary btn-sm" onclick="pagarCitaMiAgenda('${c.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Cancelar</button>`:''}
+        ${c.whatsapp_cliente?`<a class="btn-wa" onclick='enviarWhatsAppCita(${jsonAttr(c)})'>📱 ${c.tipo==='reserva'&&c.estado!=='Cancelada'?'Enviar confirmación':'WhatsApp'}</a>`:''}
+        ${puedePagar&&pagoAbierto?METODOS_PAGO_MIAGENDA.map(m=>`<button class="btn btn-primary btn-sm" onclick="pagarCitaMiAgenda('${c.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Cancelar</button>`+`<div class="gift-fila"><input id="gift-${c.id}" type="text" placeholder="Código gift card" autocomplete="off"><button class="btn btn-primary btn-sm" onclick="pagarGiftMiAgenda('${c.id}')">Canjear gift card</button></div>`:''}
         ${puedePagar&&!pagoAbierto?`<button class="btn btn-primary btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Pagar</button>`:''}
         ${!pagoAbierto&&cancelable?`<button class="btn btn-ghost btn-sm" onclick="cancelarCita('${c.id}','${c.tipo}')">Cancelar</button>`:''}
         ${!pagoAbierto&&c.tipo==='reserva'?`<button class="btn btn-danger btn-sm" onclick="borrarCita('${c.id}')">Eliminar</button>`:''}
@@ -669,10 +690,19 @@ function togglePagoMiAgenda(id){
   renderAgendaActual(CITAS_ACTUALES);
 }
 
-async function pagarCitaMiAgenda(id,metodo){
+// Canje de gift card: el código lo valida y lo marca la base de datos en la
+// misma operación que registra el pago.
+function pagarGiftMiAgenda(id){
+  const el=document.getElementById('gift-'+id);
+  const codigo=(el&&el.value||'').trim().toUpperCase();
+  if(!codigo){ alert('Escribe el código de la gift card.'); return; }
+  return pagarCitaMiAgenda(id,'Gift card',codigo);
+}
+
+async function pagarCitaMiAgenda(id,metodo,giftCodigo){
   // `data` es el visita_id que devuelve la RPC. Antes se descartaba; ahora
   // dispara la encuesta de satisfacción de esa visita.
-  const {data:visitaId,error}=await sb.rpc('mi_agenda_procesar_pago',{p_reserva_id:id,p_metodo_pago:metodo});
+  const {data:visitaId,error}=await sb.rpc('mi_agenda_procesar_pago',Object.assign({p_reserva_id:id,p_metodo_pago:metodo},giftCodigo?{p_gift_codigo:giftCodigo}:{}));
   if(error){ alert('Error: '+error.message); return; }
 
   // Sin await y con catch vacío, igual que el correo de confirmación: el pago
