@@ -963,7 +963,22 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         <select id="cfg-modo-comision" onchange="actualizarEjemploComision()">
           <option value="total">Negocio cubre el IVA — comisión sobre el precio completo</option>
           <option value="neto_iva">IVA se descuenta antes de repartir — comisión sobre el neto</option>
+          <option value="honorarios">Boleta de honorarios — comisión sobre el neto, con retención del SII</option>
         </select>
+      </div>
+      <div id="cfg-honorarios-box" style="display:none">
+        <div class="fg">
+          <label>¿Quién paga la retención de la boleta?</label>
+          <select id="cfg-hon-paga" onchange="actualizarEjemploComision()">
+            <option value="profesional">La paga completa el profesional</option>
+            <option value="dividido">Se divide entre el profesional y la barbería</option>
+          </select>
+        </div>
+        <div class="fg" id="cfg-hon-div" style="display:none">
+          <label>% de la retención que paga el profesional (el resto lo paga la barbería, de su mitad)</label>
+          <input id="cfg-hon-pct" type="number" min="0" max="100" step="1" value="50" oninput="actualizarEjemploComision()">
+        </div>
+        <div class="alert al-info" style="font-size:12px;line-height:1.6" id="cfg-hon-tasa"></div>
       </div>
       <div id="cfg-comision-ejemplo" class="alert al-info" style="line-height:1.7"></div>
       <div class="alert al-warn" style="margin-top:10px">⚠️ Este cambio afecta el monto que se paga a los profesionales <strong>desde ahora en adelante</strong>. No se recalculan comisiones de citas ya atendidas.</div>
@@ -1092,6 +1107,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <button class="btn btn-ghost" onclick="exportarExcel('profesional')">📥 Exportar Excel</button>
     </div>
     <div class="g3" id="rep-prof-metrics"></div>
+    <div id="rep-honorarios"></div>
     <div class="card"><div class="card-hdr"><span class="card-title">Comisiones por profesional</span></div>
       <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Citas</th><th>Servicios</th><th>Productos</th><th>% Comisión</th><th>Comisión servicios</th><th>Comisión productos</th><th>Propinas</th><th>Total a pagarle</th><th>Para negocio</th><th>Servicio top</th></tr></thead>
       <tbody id="rep-tabla-prof"></tbody></table></div>
@@ -1820,6 +1836,7 @@ async function init(){
     }
   S.user = session.user;
   await loadAll();
+  try{ const {data:tr}=await sb.from('retencion_honorarios_tasas').select('*'); S.tasasRet=tr||[]; }catch(e){ S.tasasRet=[]; }
   document.getElementById('loading-screen').style.display='none';
   document.getElementById('sb-user').textContent = S.perfil?.nombre || S.user.email;
   document.getElementById('sb-rol').textContent = S.perfil?.rol==='dueno'?'Dueño':(S.perfil?.rol==='recepcion'?'Recepción':'Profesional');
@@ -2281,16 +2298,46 @@ function calcularComision(valor,pct){
   }
   return Math.round(base*p/100);
 }
+// Retención de boletas de honorarios (SII). Por ley sube cada año —2026 15,25%,
+// 2027 16%, 2028 17%— y se aplica según el AÑO de cada visita. Las tasas viven
+// en la tabla retencion_honorarios_tasas; esto es solo para mostrar ejemplos y
+// el respaldo del reporte: lo cobrado queda congelado en cada visita.
+function tasaRetencion(fecha){
+  const anio=parseInt(String(fecha||'').slice(0,4),10)||new Date().getFullYear();
+  const t=(S.tasasRet||[]).filter(x=>x.desde_anio<=anio).sort((a,b)=>b.desde_anio-a.desde_anio)[0];
+  return t?Number(t.pct):15.25;
+}
 function actualizarEjemploComision(){
   const sel=document.getElementById('cfg-modo-comision');
   const el=document.getElementById('cfg-comision-ejemplo');
   if(!sel||!el)return;
+  const hb=document.getElementById('cfg-honorarios-box');
+  if(hb){
+    hb.style.display=sel.value==='honorarios'?'':'none';
+    const dv=document.getElementById('cfg-hon-div'); if(dv) dv.style.display=document.getElementById('cfg-hon-paga')?.value==='dividido'?'':'none';
+    const tt=document.getElementById('cfg-hon-tasa');
+    if(tt){ const y=new Date().getFullYear(); tt.innerHTML='Retención del SII vigente: <strong>'+String(tasaRetencion(y+'-06-01')).replace('.',',')+'%</strong> en '+y+'. Sube por ley cada año (2027: '+String(tasaRetencion('2027-06-01')).replace('.',',')+'%, 2028: '+String(tasaRetencion('2028-06-01')).replace('.',',')+'%) y se aplica sola según la fecha de cada servicio. No hay que editarla.'; }
+  }
   const modo=sel.value;
   const ivaPct=parseFloat(document.getElementById('cfg-iva')?.value)||S.barberia?.iva_pct||19;
   const precio=18600, pct=50;
   const comA=Math.round(precio*pct/100);
   const baseNeta=precio-(precio*ivaPct/(100+ivaPct));
   const comB=Math.round(baseNeta*pct/100);
+  if(modo==='honorarios'){
+    const tasa=tasaRetencion(new Date().toISOString().slice(0,10));
+    const ret=Math.round(comB*tasa/100);
+    const dividido=document.getElementById('cfg-hon-paga')?.value==='dividido';
+    const pp=dividido?(Math.min(100,Math.max(0,parseFloat(document.getElementById('cfg-hon-pct')?.value)||0))):100;
+    const retP=Math.round(ret*pp/100), retN=ret-retP;
+    el.innerHTML=`<strong>Ejemplo</strong> — servicio de ${fmt(precio)}, IVA ${ivaPct}%, comisión ${pct}%:<br>
+      · IVA: <strong>${fmt(precio-Math.round(baseNeta))}</strong> · Neto: ${fmt(Math.round(baseNeta))}<br>
+      · Boleta de honorarios del profesional (bruto): <strong>${fmt(comB)}</strong><br>
+      · Retención SII ${String(tasa).replace('.',',')}%: <strong>${fmt(ret)}</strong> → profesional ${fmt(retP)} · barbería ${fmt(retN)}<br>
+      · Líquido a pagarle al profesional: <strong>${fmt(comB-retP)}</strong><br>
+      · Le queda a la barbería: <strong>${fmt(Math.round(baseNeta)-comB-retN)}</strong>`;
+    return;
+  }
   el.innerHTML=`<strong>Ejemplo</strong> — servicio de ${fmt(precio)}, IVA ${ivaPct}%, comisión 50%:<br>
     · Negocio cubre el IVA: comisión = <strong>${fmt(comA)}</strong><br>
     · IVA se descuenta antes de repartir: comisión = <strong>${fmt(comB)}</strong> (${fmt(comA-comB)} menos)<br>
@@ -3839,7 +3886,12 @@ async function guardarConfig(){
     iva_pct:parseFloat(document.getElementById('cfg-iva').value)||19,
     link_setmore:document.getElementById('cfg-setmore').value,
     link_reviews:_lr.url||null,
-    modo_comision:document.getElementById('cfg-modo-comision').value||'total'
+    // "Boleta de honorarios" es una capa sobre el modo neto: la comisión se
+    // calcula igual que 'neto_iva' y se le suma el desglose de la retención.
+    modo_comision:(v=>v==='honorarios'?'neto_iva':(v||'total'))(document.getElementById('cfg-modo-comision').value),
+    usa_honorarios:document.getElementById('cfg-modo-comision').value==='honorarios',
+    honorarios_retencion_paga:document.getElementById('cfg-hon-paga').value||'profesional',
+    honorarios_pct_profesional:Math.min(100,Math.max(0,parseFloat(document.getElementById('cfg-hon-pct').value)||0))
   }).eq('id',S.barberia.id);
   if(error){notify(error.message,'err');return;}
   await sb.from('barberias').select('*').eq('id',S.barberia.id).single().then(({data})=>S.barberia=data);
@@ -6317,7 +6369,10 @@ function renderConfig(){
     document.getElementById('cfg-iva').value=S.barberia.iva_pct||19;
     document.getElementById('cfg-setmore').value=S.barberia.link_setmore||'';
     document.getElementById('cfg-reviews').value=S.barberia.link_reviews||'';
-    document.getElementById('cfg-modo-comision').value=S.barberia.modo_comision||'total';
+    document.getElementById('cfg-modo-comision').value=S.barberia.usa_honorarios?'honorarios':(S.barberia.modo_comision||'total');
+    document.getElementById('cfg-hon-paga').value=S.barberia.honorarios_retencion_paga||'profesional';
+    document.getElementById('cfg-hon-pct').value=S.barberia.honorarios_pct_profesional??50;
+    actualizarEjemploComision();
     // El <select> vive en la tarjeta del horario pero la columna es de
     // barberias, así que se rellena acá con el resto de la configuración del
     // negocio y lo guarda guardarHorarioNegocio(). Está FUERA de #horario-dias
@@ -6956,6 +7011,7 @@ function renderReporteProfesional(){
     <div class="mc"><div class="mc-label">Ventas totales</div><div class="mc-val">${fmt(totalV)}</div></div>
     <div class="mc"><div class="mc-label">Profesionales activos</div><div class="mc-val">${Object.keys(byP).length}</div></div>`;
 
+  renderHonorarios(citas);
   document.getElementById('rep-tabla-prof').innerHTML=Object.entries(byP).sort((a,b)=>b[1].ventas-a[1].ventas).map(([p,d])=>{
     const com=Math.round(d.comision);
     const comP=Math.round(d.comisionProd||0);
@@ -7003,6 +7059,45 @@ function renderReporteProfesional(){
     const com=Math.round(v.comision_monto??calcularComision(v.valor,bar?.comision_pct||50));
     return`<tr><td data-label="Fecha">${v.fecha}</td><td data-label="Cliente">${cl?cl.nombre+' '+(cl.apellido||''):'—'}</td><td data-label="Servicio">${resolveServicioInfo(v.servicio).nombre}</td><td data-label="Valor">${fmt(v.valor)}</td><td data-label="Comisión" class="gold">${fmt(com)}</td></tr>`;
   }).join('')||'<tr><td colspan="5" class="empty">Sin datos en este rango</td></tr>';
+}
+
+// ─── HONORARIOS: lo que hay que pagar en el período ───────────────────────
+// Solo con el modo "Boleta de honorarios". Suma el desglose que cada visita
+// guardó al cobrarse (IVA, retención y quién la paga), así cambiar la tasa o el
+// reparto después no mueve lo ya cobrado. Las visitas anteriores a activar el
+// modo no tienen desglose: se cuentan aparte y no se inventan.
+// Propinas y productos quedan fuera: no van por boleta de honorarios.
+function renderHonorarios(citas){
+  const el=document.getElementById('rep-honorarios'); if(!el) return;
+  if(!S.barberia?.usa_honorarios){ el.innerHTML=''; return; }
+  const ok=citas.filter(v=>v.estado!=='Cancelada');
+  const con=ok.filter(v=>v.retencion_total!=null), sin=ok.length-con.length;
+  const by={};
+  con.forEach(v=>{
+    const p=v.barbero_nombre||'Sin asignar';
+    const d=by[p]||(by[p]={n:0,total:0,iva:0,neto:0,bruto:0,ret:0,retP:0,retN:0,liq:0});
+    const iva=v.iva_monto||0, bruto=v.comision_monto||0;
+    d.n++; d.total+=v.valor||0; d.iva+=iva; d.neto+=(v.valor||0)-iva; d.bruto+=bruto;
+    d.ret+=v.retencion_total||0; d.retP+=v.retencion_profesional||0; d.retN+=v.retencion_negocio||0; d.liq+=v.liquido_profesional||0;
+  });
+  const T=Object.values(by).reduce((a,d)=>{ Object.keys(d).forEach(k=>a[k]=(a[k]||0)+d[k]); return a; },{});
+  const quedaNeg=d=>d.neto-d.bruto-d.retN;
+  const filas=Object.entries(by).sort((a,b)=>b[1].total-a[1].total).map(([p,d])=>`<tr>
+    <td data-label="Profesional"><strong style="color:var(--text)">${escHtml(p)}</strong></td><td data-label="Servicios">${d.n}</td>
+    <td data-label="Cobrado (con IVA)">${fmt(d.total)}</td><td data-label="IVA">${fmt(d.iva)}</td><td data-label="Neto">${fmt(d.neto)}</td>
+    <td data-label="Boleta bruta" class="gold">${fmt(d.bruto)}</td>
+    <td data-label="Retención SII">${fmt(d.ret)}</td><td data-label="Paga profesional">${fmt(d.retP)}</td><td data-label="Paga barbería">${fmt(d.retN)}</td>
+    <td data-label="Líquido a pagarle" style="font-weight:600">${fmt(d.liq)}</td><td data-label="Le queda a la barbería">${fmt(quedaNeg(d))}</td></tr>`).join('');
+  el.innerHTML=`<div class="card"><div class="card-hdr"><span class="card-title">Honorarios del período</span></div>
+    <div class="g3" style="margin-bottom:12px">
+      <div class="mc"><div class="mc-label">IVA a pagar al SII</div><div class="mc-val">${fmt(T.iva||0)}</div></div>
+      <div class="mc"><div class="mc-label">Líquido a pagar a profesionales</div><div class="mc-val">${fmt(T.liq||0)}</div></div>
+      <div class="mc"><div class="mc-label">Retención a declarar al SII</div><div class="mc-val">${fmt(T.ret||0)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Servicios</th><th>Cobrado (con IVA)</th><th>IVA</th><th>Neto</th><th>Boleta bruta</th><th>Retención SII</th><th>Paga profesional</th><th>Paga barbería</th><th>Líquido a pagarle</th><th>Le queda a la barbería</th></tr></thead>
+    <tbody>${filas||'<tr><td colspan="11" class="empty">Sin servicios con desglose en este rango</td></tr>'}</tbody>
+    ${filas?`<tfoot><tr><td><strong>Total</strong></td><td>${T.n||0}</td><td>${fmt(T.total||0)}</td><td>${fmt(T.iva||0)}</td><td>${fmt(T.neto||0)}</td><td>${fmt(T.bruto||0)}</td><td>${fmt(T.ret||0)}</td><td>${fmt(T.retP||0)}</td><td>${fmt(T.retN||0)}</td><td><strong>${fmt(T.liq||0)}</strong></td><td>${fmt(quedaNeg(T))}</td></tr></tfoot>`:''}</table></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">La propina va entera al profesional y las ventas de productos no pasan por boleta: ninguna entra acá.${sin?` <span style="color:#e0a850">${sin} servicio${sin>1?'s':''} del rango son anteriores al modo honorarios y no tienen desglose.</span>`:''}</div></div>`;
 }
 
 function renderReporteCliente(){
