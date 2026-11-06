@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reservia</title>
+<link rel="manifest" href="/panel-manifest.json">
+<meta name="theme-color" content="#08090d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Reservia">
+<link rel="apple-touch-icon" href="/panel-icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
@@ -17,6 +22,12 @@
 #btn-sonido-aviso{position:fixed;left:12px;bottom:12px;z-index:900;width:38px;height:38px;border-radius:50%;border:1px solid var(--border,#2a2a2a);background:var(--bg2,#151515);color:var(--text,#eee);font-size:16px;cursor:pointer;opacity:.75}
 #btn-sonido-aviso:hover{opacity:1}
 @media(max-width:700px){#btn-sonido-aviso{bottom:70px}}
+
+#push-card{margin:0 14px 10px;font-size:11px;line-height:1.5;color:var(--text2)}
+#push-card button{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg4);color:var(--text);font-size:12px;cursor:pointer;text-align:left}
+#push-card button:hover{border-color:var(--p3)}
+#push-card .push-ok{color:var(--p3)}
+#push-card .push-nota{margin-top:6px}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <style>
@@ -437,6 +448,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="user-name" id="sb-user">—</div>
     <span class="user-role" id="sb-rol">—</span>
   </div>
+  <div id="push-card" style="display:none"></div>
   <nav>
     <div class="nav-section">Principal</div>
     <div class="nav-item active" data-page="dashboard" onclick="nav('dashboard')">
@@ -1816,6 +1828,7 @@ async function init(){
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
   nav(esRecepcion()?'agenda':'dashboard');
   escucharReservasNuevas();
+  pintarPush(); refrescarPushSilencioso();
   // El prototipo del tema guardaba un tema violeta en localStorage y lo
   // aplicaba al arrancar. Ya no existe; se limpia la clave para que nadie
   // la encuentre dentro de un año sin saber qué era. En try/catch porque
@@ -1902,6 +1915,74 @@ function escucharReservasNuevas(){
     })
     .subscribe();
   pintarBotonSonido();
+}
+
+// ─── AVISOS PUSH (llegan con el panel cerrado) ───────────────────────────
+// El equipo se suscribe una vez; la base (trigger + edge function push-reserva)
+// manda el aviso al dueño y la recepción cuando entra una reserva.
+function pushSoportado(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function esIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1); }
+function esAppInstalada(){ return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true; }
+function b64AUint8(b64){
+  const pad='='.repeat((4-b64.length%4)%4), raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+async function pushSuscripcionActual(){
+  try{ const reg=await navigator.serviceWorker.getRegistration('/'); return reg?await reg.pushManager.getSubscription():null; }catch(e){ return null; }
+}
+async function pintarPush(){
+  const el=document.getElementById('push-card'); if(!el) return;
+  if(!['dueno','recepcion'].includes(S.perfil?.rol)){ el.style.display='none'; return; }
+  el.style.display='block';
+  if(!pushSoportado()){
+    el.innerHTML=esIOS()&&!esAppInstalada()
+      ? '<div class="push-nota">📲 Para recibir avisos en este iPad/iPhone: en Safari toca Compartir → <strong>Agregar a inicio</strong>, abre Reservia desde ese ícono y activa los avisos.</div>'
+      : '<div class="push-nota">Este navegador no permite avisos con la app cerrada.</div>';
+    return;
+  }
+  if(Notification.permission==='denied'){
+    el.innerHTML='<div class="push-nota">🔕 Los avisos están bloqueados en este equipo. Permítelos en la configuración del navegador para este sitio.</div>'; return;
+  }
+  const sub=await pushSuscripcionActual();
+  el.innerHTML = sub&&Notification.permission==='granted'
+    ? '<button type="button" onclick="desactivarPush()"><span class="push-ok">✓ Avisos activados</span> en este equipo<br><span style="color:var(--text3)">Toca para desactivar</span></button>'
+    : '<button type="button" onclick="activarPush()">📲 Activar avisos de reservas<br><span style="color:var(--text3)">Suenan aunque el panel esté cerrado</span></button>';
+}
+async function activarPush(){
+  try{
+    if(!pushSoportado()){ pintarPush(); return; }
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){ notify('Sin permiso no podemos avisarte','warn'); pintarPush(); return; }
+    const reg=await navigator.serviceWorker.register('/panel-sw.js',{scope:'/'});
+    await navigator.serviceWorker.ready;
+    const {data:clave,error:e1}=await sb.rpc('push_clave_publica');
+    if(e1||!clave) throw new Error(e1?.message||'Sin clave de avisos');
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64AUint8(clave)});
+    const j=sub.toJSON();
+    const {error}=await sb.rpc('registrar_push',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+    if(error) throw new Error(error.message);
+    notify('Avisos activados en este equipo 🔔');
+    pintarPush();
+  }catch(e){ console.error(e); notify('No se pudieron activar los avisos: '+(e.message||e),'err'); pintarPush(); }
+}
+async function desactivarPush(){
+  try{
+    const sub=await pushSuscripcionActual();
+    if(sub){ const ep=sub.endpoint; await sub.unsubscribe(); await sb.rpc('quitar_push',{p_endpoint:ep}); }
+    notify('Avisos desactivados en este equipo');
+  }catch(e){ console.error(e); }
+  pintarPush();
+}
+// Si ya estaba activado, se renueva el registro en cada apertura (el navegador
+// puede rotar la suscripción) sin volver a pedir permiso.
+async function refrescarPushSilencioso(){
+  try{
+    if(!pushSoportado()||Notification.permission!=='granted'||!['dueno','recepcion'].includes(S.perfil?.rol)) return;
+    const sub=await pushSuscripcionActual(); if(!sub) return;
+    const j=sub.toJSON();
+    await sb.rpc('registrar_push',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+  }catch(e){}
 }
 
 function mostrarErrorCarga(mensaje){

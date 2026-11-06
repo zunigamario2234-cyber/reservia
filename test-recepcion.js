@@ -119,6 +119,10 @@ async function sesion(rol,signupFalla){
  ok('reserva nueva muestra el aviso con cliente y servicio',av.show&&/Pedro/.test(av.txt)&&/Corte clásico/.test(av.txt)&&av.boton,av);
  await p.click('#btn-sonido-aviso'); ok('el botón silencia los avisos',(await p.textContent('#btn-sonido-aviso')).trim()==='🔕');
  await p.click('#btn-sonido-aviso'); ok('y los reactiva',(await p.textContent('#btn-sonido-aviso')).trim()==='🔔');
+ const pc=await p.evaluate(async()=>{ await pintarPush(); const e=document.getElementById('push-card'); return {vis:e.style.display!=='none',txt:e.textContent}; });
+ ok('el dueño ve la tarjeta de avisos push',pc.vis&&/avisos/i.test(pc.txt),pc);
+ ok('el service worker de push existe y maneja push y clic',await p.evaluate(async()=>{ const t=await (await fetch('/panel-sw.js')).text(); return /addEventListener\('push'/.test(t)&&/notificationclick/.test(t); }));
+ ok('el manifest del panel es instalable',await p.evaluate(async()=>{ const m=await (await fetch('/panel-manifest.json')).json(); return m.display==='standalone'&&m.start_url==='/app.html'&&m.icons.length>=2; }));
  ok('sin errores de página (dueño)',errs.length===0,errs);
  await b.close();
 
