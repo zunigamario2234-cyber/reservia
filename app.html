@@ -2325,7 +2325,7 @@ function actualizarEjemploComision(){
   const baseNeta=precio-(precio*ivaPct/(100+ivaPct));
   const comB=Math.round(baseNeta*pct/100);
   if(modo==='honorarios'){
-    const tasa=tasaRetencion(new Date().toISOString().slice(0,10));
+    const tasa=tasaRetencion(ahoraEnChile().fecha);
     const ret=Math.round(comB*tasa/100);
     const dividido=document.getElementById('cfg-hon-paga')?.value==='dividido';
     const pp=dividido?(Math.min(100,Math.max(0,parseFloat(document.getElementById('cfg-hon-pct')?.value)||0))):100;
