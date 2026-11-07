@@ -36,9 +36,9 @@
 // las constantes sin actualizar las guardas.
 
 // ⚠ SOLO EN LA RAMA financiero-prueba (quitar esta sección antes de pasar a producción):
-// la vista previa de Vercel de esta rama (host con "-git-financiero-prueba-") habla con la base
+// la vista previa de Vercel de esta rama (cualquier dirección *.vercel.app) habla con la base
 // de PRUEBA (rama de Supabase), nunca con la de los clientes. Cualquier otro host usa producción.
-const __ES_PRUEBA_FIN = typeof location !== 'undefined' && location.hostname.indexOf('-git-financiero-prueba-') !== -1;
+const __ES_PRUEBA_FIN = typeof location !== 'undefined' && /\.vercel\.app$/.test(location.hostname);
 const SUPABASE_URL = __ES_PRUEBA_FIN ? 'https://axdpdcwxcpwacagpgcpi.supabase.co' : 'https://dqoqykngmtxtvbokxbzp.supabase.co';
 const SUPABASE_KEY = __ES_PRUEBA_FIN
   ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4ZHBkY3d4Y3B3YWNhZ3BnY3BpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQwMjIyNzgsImV4cCI6MjEwOTU5ODI3OH0.OmdrE3VmMCp_HEXkiAkqGcjzuASSvBzr7ouA_cgH1QM'
