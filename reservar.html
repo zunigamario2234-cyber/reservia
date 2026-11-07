@@ -707,7 +707,7 @@ function profesionalesDeSucursal(){
 }
 function serviciosVisibles(){
   if(!B.multiSuc || !SEL.sucursal) return B.servicios;
-  return B.servicios.filter(s=>profesionalesDeSucursal().some(b=>profesionalCalifica(b,s)));
+  return B.servicios.filter(s=>(!s.sucursal_id||s.sucursal_id===SEL.sucursal)&&profesionalesDeSucursal().some(b=>profesionalCalifica(b,s)));
 }
 function renderServicios(){
   if(B.multiSuc && !SEL.sucursal){

@@ -1049,7 +1049,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <tbody id="t-bloqueos"></tbody></table></div></div>
   </div>
   <div id="cfg-suc" style="display:none">
-    <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:14px">Si tu negocio tiene más de un local, agrégalos aquí. Los clientes, servicios, inventario y gastos son de todo el negocio; cada profesional, reserva y venta pertenece a una sucursal. Tú ves todo y puedes filtrar arriba por sucursal. Recepción y profesionales ven solo la suya.</p>
+    <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:14px">Si tu negocio tiene más de un local, agrégalos aquí. Los clientes y el Club VIP son de todo el negocio. Servicios, inventario, gastos, horarios, profesionales, reservas y ventas son de cada sucursal: al crear una nueva puedes copiar los servicios de otra. Tú ves todo y puedes filtrar arriba por sucursal, o elegir «Todas» para ver los totales. Recepción y profesionales ven solo la suya.</p>
     <div id="suc-lista"></div>
     <div style="margin:10px 0 16px"><button class="btn btn-primary" onclick="abrirSucursal()">+ Agregar sucursal</button></div>
     <div id="suc-general" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
@@ -1636,6 +1636,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="fg"><label>Nombre *</label><input id="su-nombre" type="text" placeholder="Ej: Talagante Centro"></div>
     <div class="fg"><label>Dirección</label><input id="su-dir" type="text"></div>
     <div class="fg"><label>Teléfono</label><input id="su-tel" type="text"></div>
+    <div class="fg" id="su-copiar-fg" style="display:none"><label>Copiar los servicios de</label><select id="su-copiar"></select><div style="font-size:10px;color:var(--text3);margin-top:4px">Se copian con su precio, duración y comisión; después puedes cambiarlos solo en esta sucursal.</div></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin:6px 0 14px"><input type="checkbox" id="su-activa" style="width:auto"> Sucursal activa (recibe reservas)</label>
     <div class="modal-footer" style="display:flex;gap:8px"><button class="btn btn-primary" onclick="guardarSucursal()">Guardar</button><button class="btn btn-ghost" onclick="closeM('m-sucursal')">Cancelar</button></div>
   </div>
@@ -1810,6 +1811,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         <div style="font-size:10px;color:var(--text3);margin-top:4px">JPG, PNG — máx 2MB</div>
       </div>
     </div>
+    <div class="fg" id="sv-suc-fg" style="display:none"><label>Sucursal</label><select id="sv-suc"></select></div>
     <div class="fr"><div class="fg"><label>Nombre *</label><input id="sv-nombre" type="text" placeholder="Corte Clásico"></div><div class="fg"><label>Precio ($)</label><input id="sv-precio" type="number" value="0"></div></div>
     <div class="fr"><div class="fg"><label>Duración (min)</label><input id="sv-dur" type="number" value="30"></div><div class="fg"><label>Comisión %</label><input id="sv-com" type="number" value="50"></div></div>
     <div class="fr"><div class="fg"><label>Abono para reservar</label><select id="sv-abono-tipo" onchange="svAbonoCambio()"><option value="">Usar el abono general</option><option value="ninguno">Sin abono</option><option value="porcentaje">Porcentaje del precio</option><option value="monto">Monto fijo ($)</option></select></div><div class="fg" id="sv-abono-valor-fg" style="display:none"><label id="sv-abono-valor-lbl">Valor</label><input id="sv-abono-valor" type="number" min="0"></div></div>
@@ -2260,7 +2262,7 @@ async function moverServicio(id,dir){
 // servicios en un orden distinto al de sus clientes.
 // El precio queda de desempate y los nulls al final, para que una fila que se
 // cuele sin orden se vaya al fondo en vez de desordenar la lista entera.
-async function loadServicios(){ const {data}=await sb.from('servicios').select('*').eq('barberia_id',S.barberia.id).order('orden',{nullsFirst:false}).order('precio'); S.servicios=data||[]; }
+async function loadServicios(){ let q=sb.from('servicios').select('*').eq('barberia_id',S.barberia.id); if(S.sucFiltro) q=q.eq('sucursal_id',S.sucFiltro); const {data}=await q.order('orden',{nullsFirst:false}).order('precio'); S.servicios=data||[]; }
 async function loadBarberos(){ let q=sb.from('barberos').select('*').eq('barberia_id',S.barberia.id); if(S.sucFiltro) q=q.eq('sucursal_id',S.sucFiltro); const {data}=await q.order('nombre'); S.barberos=data||[]; }
 async function loadBarberoServicios(){ const {data}=await sb.from('barbero_servicios').select('*').eq('barberia_id',S.barberia.id); S.barberoServicios=data||[]; }
 // Si la tabla no se puede leer (por ejemplo un profesional con la sesión) la
@@ -2793,7 +2795,7 @@ function initModal(id){
     document.getElementById('v-estado').value='Atendida';
     sel('v-cliente',S.clientes.map(c=>({v:c.id,t:c.nombre+' '+(c.apellido||'')})));
     sel('v-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})));
-    sel('v-servicio',S.servicios.map(s=>({v:s.id+'|'+s.precio,t:s.nombre+' ('+fmt(s.precio)+')'})),true);
+    sel('v-servicio',S.servicios.map(s=>({v:s.id+'|'+s.precio,t:s.nombre+' ('+fmt(s.precio)+')'+((sucActivas().length>1&&!S.sucFiltro&&s.sucursal_id)?' · '+sucNombre(s.sucursal_id):'')})),true);
   }
   if(id==='m-reserva'){
     document.getElementById('r-id').value='';
@@ -2867,7 +2869,7 @@ function initModal(id){
   if(id==='m-barbero'){document.getElementById('ba-id').value='';document.getElementById('m-ba-title').textContent='Agregar profesional';['ba-nombre','ba-wsp','ba-email'].forEach(i=>document.getElementById(i).value='');document.getElementById('ba-com').value=50;document.getElementById('ba-meta').value=80;document.getElementById('ba-foto-preview').innerHTML='👤';document.getElementById('ba-foto').value='';}
   if(id==='m-costo') pintarSelectSucursal('co-suc',sucDefecto(),'co-suc-fg');
   if(id==='m-entrada') sel('en-prod',S.inventario.map(p=>({v:p.id,t:p.nombre+((sucActivas().length>1&&!S.sucFiltro&&p.sucursal_id)?' · '+sucNombre(p.sucursal_id):'')})));
-  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-abono-tipo').value='';document.getElementById('sv-abono-valor').value='';svAbonoCambio();document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;}
+  if(id==='m-servicio'){document.getElementById('sv-id').value='';document.getElementById('m-srv-title').textContent='Agregar servicio';document.getElementById('sv-nombre').value='';document.getElementById('sv-precio').value=0;document.getElementById('sv-dur').value=30;document.getElementById('sv-com').value=50;document.getElementById('sv-desc').value='';document.getElementById('sv-abono-tipo').value='';document.getElementById('sv-abono-valor').value='';svAbonoCambio();document.getElementById('sv-foto-preview').innerHTML='✂️';const fi=document.getElementById('sv-foto');if(fi)fi.value='';FOTO_SRV_CROPPED_BLOB=null;pintarSelectSucursal('sv-suc',sucDefecto(),'sv-suc-fg');}
   if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';FOTO_ALZ_CROPPED_BLOB=null;}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
@@ -3513,6 +3515,7 @@ function editarServicio(id){
   openM('m-servicio');
   document.getElementById('m-srv-title').textContent='Editar servicio';
   document.getElementById('sv-id').value=s.id;
+  pintarSelectSucursal('sv-suc',s.sucursal_id,'sv-suc-fg');
   document.getElementById('sv-nombre').value=s.nombre||'';
   document.getElementById('sv-precio').value=s.precio||0;
   document.getElementById('sv-dur').value=s.duracion_min||30;
@@ -3789,6 +3792,7 @@ async function guardarServicio(){
   const id=document.getElementById('sv-id').value;
   const payload={
     barberia_id:S.barberia.id,nombre:n,
+    sucursal_id:document.getElementById('sv-suc').value||sucDefecto(),
     precio:parseFloat(document.getElementById('sv-precio').value)||0,
     duracion_min:parseInt(document.getElementById('sv-dur').value)||30,
     comision_pct:parseFloat(document.getElementById('sv-com').value)||50,
@@ -3812,13 +3816,14 @@ async function guardarServicio(){
     error=res.error;nuevoServicioId=res.data?.id;
   }
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
-  if(nuevoServicioId&&S.barberos.length){
+  const _profSuc=S.barberos.filter(b=>!payload.sucursal_id||!b.sucursal_id||b.sucursal_id===payload.sucursal_id);
+  if(nuevoServicioId&&_profSuc.length){
     // Un servicio nuevo lo pueden hacer todos los profesionales existentes
     // por defecto — mismo criterio "todos hacen todo" del backfill de
     // barbero_servicios; el dueño desactiva puntualmente después si hace
     // falta, igual que con un profesional nuevo (ver renderChecklistServiciosBarbero).
     await sb.from('barbero_servicios').insert(
-      S.barberos.map(b=>({barberia_id:S.barberia.id,barbero_id:b.id,servicio_id:nuevoServicioId,activo:true}))
+      _profSuc.map(b=>({barberia_id:S.barberia.id,barbero_id:b.id,servicio_id:nuevoServicioId,activo:true}))
     );
     await loadBarberoServicios();
   }
@@ -4834,7 +4839,7 @@ async function cambiarSucursal(v){
   S.sucFiltro=v||null;
   try{ if(v) localStorage.setItem('suc-'+S.barberia.id,v); else localStorage.removeItem('suc-'+S.barberia.id); }catch(e){}
   document.body.style.cursor='progress';
-  try{ await Promise.all([loadVisitas(),loadReservas(),loadBarberos(),loadCobroProductos(),loadInventario(),loadCostos(),loadHorarioNegocio()]); construirVentas(); }
+  try{ await Promise.all([loadVisitas(),loadReservas(),loadBarberos(),loadCobroProductos(),loadInventario(),loadCostos(),loadHorarioNegocio(),loadServicios()]); construirVentas(); }
   catch(e){ notify('No se pudo cambiar de sucursal: '+e.message,'err'); }
   document.body.style.cursor='';
   const pg=document.querySelector('.page.active');
@@ -4870,6 +4875,8 @@ function abrirSucursal(id){
   g('su-id').value=x?x.id:''; g('su-titulo').textContent=x?'Editar sucursal':'Agregar sucursal';
   g('su-nombre').value=x?x.nombre:''; g('su-dir').value=x?(x.direccion||''):''; g('su-tel').value=x?(x.telefono||''):'';
   g('su-activa').checked=x?!!x.activa:true;
+  const cf=g('su-copiar-fg'), cs=g('su-copiar');
+  if(!x&&sucActivas().length){ cs.innerHTML='<option value="">No copiar (empezar sin servicios)</option>'+sucActivas().map(y=>`<option value="${y.id}">${escHtml(y.nombre)}</option>`).join(''); cs.value=sucActivas()[0].id; cf.style.display=''; } else { cs.innerHTML=''; cf.style.display='none'; }
   openM('m-sucursal');
 }
 async function guardarSucursal(){
@@ -4879,10 +4886,18 @@ async function guardarSucursal(){
   if(!activa&&sucActivas().filter(x=>x.id!==id).length===0){ notify('Tiene que quedar al menos una sucursal activa','warn'); return; }
   const o={nombre,direccion:g('su-dir').value.trim()||null,telefono:g('su-tel').value.trim()||null,activa};
   const q=id?sb.from('sucursales').update(o).eq('id',id).eq('barberia_id',S.barberia.id)
-            :sb.from('sucursales').insert({...o,barberia_id:S.barberia.id,orden:(S.sucursales.length)});
-  const {error}=await q;
+            :sb.from('sucursales').insert({...o,barberia_id:S.barberia.id,orden:(S.sucursales.length)}).select('id').single();
+  const {data:nueva,error}=await q;
   if(error){ notify(/duplicate|unique/i.test(error.message)?'Ya existe una sucursal con ese nombre':error.message,'err'); return; }
-  closeM('m-sucursal'); notify(id?'Sucursal actualizada ✓':'Sucursal creada ✓');
+  let msg=id?'Sucursal actualizada ✓':'Sucursal creada ✓';
+  const origen=g('su-copiar').value;
+  if(!id&&nueva&&origen){
+    const {data:n,error:e2}=await sb.rpc('copiar_servicios_sucursal',{p_origen:origen,p_destino:nueva.id});
+    if(e2) msg='Sucursal creada, pero no se pudieron copiar los servicios: '+e2.message;
+    else msg='Sucursal creada ✓ · '+n+' servicio'+(n===1?'':'s')+' copiado'+(n===1?'':'s');
+  }
+  closeM('m-sucursal'); notify(msg);
+  await loadServicios();
   await loadSucursales();
   if(S.sucFiltro&&!sucActivas().some(x=>x.id===S.sucFiltro)) S.sucFiltro=null;
   pintarSucursalSwitch(); renderSucursales(); cargarRecepcion();
@@ -6767,7 +6782,7 @@ function renderConfig(){
       ?`<img src="${s.foto_url}" style="width:32px;height:32px;border-radius:7px;object-fit:cover;border:1px solid var(--p1)">`
       :`<div style="width:32px;height:32px;border-radius:7px;background:linear-gradient(135deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-size:14px">✂️</div>`;
     return `<tr>
-    <td class="td-avatar">${avatar}</td><td data-label="Nombre">${s.nombre}</td><td data-label="Precio">${fmt(s.precio)}</td><td data-label="Duración">${s.duracion_min} min</td>
+    <td class="td-avatar">${avatar}</td><td data-label="Nombre">${s.nombre}${etiquetaSuc(s.sucursal_id)}</td><td data-label="Precio">${fmt(s.precio)}</td><td data-label="Duración">${s.duracion_min} min</td>
     <td data-label="Comisión %">${s.comision_pct}%</td><td data-label="Activo">${s.activo?'<span class="badge b-green">Sí</span>':'<span class="badge b-red">No</span>'}</td>
     <td data-label="Orden" style="white-space:nowrap">
       <button class="btn btn-ghost btn-sm" onclick="moverServicio('${s.id}',-1)" title="Subir" ${i===0?'disabled':''}>↑</button>
