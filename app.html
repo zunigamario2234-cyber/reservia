@@ -138,6 +138,9 @@ input[readonly]{background:#111;color:#666;cursor:default}
 /* Modal */
 .overlay{display:none;position:fixed;inset:0;background:rgba(4,5,15,0.85);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:16px}
 .overlay.open{display:flex}
+/* Con modales apilados, el de abajo se oculta (sigue abierto, con sus datos): si no, su texto se transparenta bajo el de arriba y se ve doble y borroso. */
+.overlay.tapado{background:transparent;backdrop-filter:none}
+.overlay.tapado .modal{visibility:hidden}
 .modal{background:var(--bg3);border:0.5px solid var(--border);border-radius:14px;padding:22px;width:540px;max-width:100%;max-height:90vh;overflow-y:auto}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
 .modal-title{font-size:14px;font-weight:600;color:#fff}
@@ -1528,7 +1531,15 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div id="cob-gift-msg" style="font-size:11px;line-height:1.5;margin-top:6px"></div>
     </div>
 
-    <div class="fg"><label>Método de pago</label><select id="cob-metodo"></select></div>
+    <div class="fg"><label>Método de pago</label><select id="cob-metodo" onchange="cobroVuelto(true)"></select></div>
+
+    <!-- Solo con efectivo: el monto que te entregan y el vuelto. No se guarda, es para no calcular de cabeza en el mostrador. -->
+    <div id="cob-efectivo" style="display:none;background:var(--bg2);border-radius:10px;padding:12px;margin-bottom:14px">
+      <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:6px">Efectivo recibido ($)</label>
+      <div id="cob-billetes" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <input id="cob-recibido" type="number" min="0" inputmode="numeric" placeholder="Monto que te entregan" oninput="cobroVuelto()">
+      <div id="cob-vuelto" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
+    </div>
 
     <div class="modal-footer" style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-primary" id="cob-btn" onclick="confirmarCobro()">Registrar cobro</button>
@@ -2421,6 +2432,7 @@ function openM(id){
     el.style.zIndex=MODAL_Z_TOPE;
   }
   el.classList.add('open');
+  tapaModalesDeAbajo();
   initModal(id);
 }
 function closeM(id){
@@ -2429,6 +2441,11 @@ function closeM(id){
   el.style.zIndex='';
   MODAL_STACK=MODAL_STACK.filter(m=>m!==id);
   if(!MODAL_STACK.length) MODAL_Z_TOPE=MODAL_Z_BASE;
+  tapaModalesDeAbajo();
+}
+function tapaModalesDeAbajo(){
+  MODAL_STACK.forEach((m,i)=>{ const e=document.getElementById(m); if(e) e.classList.toggle('tapado',i<MODAL_STACK.length-1); });
+  const sinPila=document.querySelectorAll('.overlay.tapado'); sinPila.forEach(e=>{ if(!MODAL_STACK.includes(e.id)) e.classList.remove('tapado'); });
 }
 function esRecepcion(){ return S.perfil?.rol==='recepcion'; }
 function nav(page){
@@ -4704,6 +4721,7 @@ function cobroMontarModal(resumenHtml){
   document.getElementById('cob-desc-pct').value='';
   document.getElementById('cob-final').value=lista||'';
   document.getElementById('cob-propina').value='';
+  document.getElementById('cob-recibido').value='';
   document.getElementById('cob-desc-btns').innerHTML=DESCUENTO_TRAMOS.map(p=>
     `<button type="button" class="btn btn-ghost btn-sm" onclick="cobroDescuento(${p})">${p===0?'Sin dcto.':p+'%'}</button>`).join('');
   document.getElementById('cob-prop-btns').innerHTML=PROPINA_TRAMOS.map(p=>
@@ -5071,6 +5089,7 @@ async function cobroAplicarGift(){
     document.getElementById('cob-metodo').disabled=false;
     msg.innerHTML='';
     sel('cob-metodo',METODOS_PAGO.map(m=>({v:m,t:m})));
+    cobroVuelto();
     return;
   }
   const codigo=document.getElementById('cob-gift-codigo').value.trim().toUpperCase();
@@ -5091,6 +5110,7 @@ async function cobroAplicarGift(){
   document.getElementById('cob-gift-btn').textContent='Quitar';
   const m=document.getElementById('cob-metodo');
   m.add(new Option('Gift card','Gift card')); m.value='Gift card'; m.disabled=true;
+  cobroVuelto();
   msg.innerHTML='<span style="color:#00e096">✓ Gift card válida: '+data.servicio+'. El cobro completo queda registrado como gift card.</span>';
 }
 
@@ -5182,6 +5202,30 @@ function cobroRecalcular(){
     html+=`<br>Propina ${fmt(propina)} — entera al profesional, sin IVA ni comisión`;
   }
   document.getElementById('cob-desglose').innerHTML=html;
+  cobroVuelto();
+}
+
+// Vuelto en efectivo. Parte de lo que SE VA A COBRAR AHORA (total con propina, menos el abono ya pagado por transferencia).
+const BILLETES_CLP=[1000,2000,5000,10000,20000,50000];
+function cobroPonerRecibido(v){ document.getElementById('cob-recibido').value=v; cobroVuelto(); }
+function cobroVuelto(traerAVista){
+  const box=document.getElementById('cob-efectivo'); if(!box) return;
+  const esEf=document.getElementById('cob-metodo').value==='Efectivo'&&COBRO_CTX&&!COBRO_CTX.gift;
+  box.style.display=esEf?'':'none';
+  if(!esEf) return;
+  if(traerAVista===true) setTimeout(()=>box.scrollIntoView({block:'nearest',behavior:'smooth'}),0);
+  const rep=cobroProrratear();
+  const aCobrar=Math.max(rep.totalCobro-cobroAbonoTotal(rep),0);
+  const sug=BILLETES_CLP.filter(b=>b>=aCobrar&&b!==aCobrar).slice(0,3);
+  document.getElementById('cob-billetes').innerHTML=
+    `<button type="button" class="btn btn-ghost btn-sm" onclick="cobroPonerRecibido(${aCobrar})">Justo ${fmt(aCobrar)}</button>`+
+    sug.map(b=>`<button type="button" class="btn btn-ghost btn-sm" onclick="cobroPonerRecibido(${b})">${fmt(b)}</button>`).join('');
+  const raw=document.getElementById('cob-recibido').value;
+  const out=document.getElementById('cob-vuelto');
+  const rec=parseFloat(raw);
+  if(raw===''||isNaN(rec)){ out.innerHTML=`Por cobrar: <strong>${fmt(aCobrar)}</strong>`; }
+  else if(rec>=aCobrar){ out.innerHTML=`Por cobrar ${fmt(aCobrar)} · Recibido ${fmt(rec)}<br><span style="font-size:18px;font-weight:700;color:#00e096">Vuelto: ${fmt(rec-aCobrar)}</span>`; }
+  else { out.innerHTML=`Por cobrar ${fmt(aCobrar)} · Recibido ${fmt(rec)}<br><span style="font-size:16px;font-weight:700;color:#ff8f8f">Falta ${fmt(aCobrar-rec)}</span>`; }
 }
 
 // Manda el cobro entero a registrar_cobro_conjunto(), que lo escribe todo o no
