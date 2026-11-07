@@ -547,3 +547,25 @@ end $$;
 alter table public.reservas drop constraint if exists reservas_abono_estado_check;
 alter table public.reservas add constraint reservas_abono_estado_check check (abono_estado is null or abono_estado in
   ('Pendiente','Por confirmar','Confirmado','Vencido','Rechazado','Retenido','Reembolsado','Aplicado','Pendiente regularización'));
+
+-- ── Boleta de honorarios: qué entra (decidido con el dueño) ────────────────
+-- Propinas: NUNCA van en la boleta (fondos de terceros, aparte de honorarios).
+-- Comisión por venta de productos: va como renglón propio de la boleta si el negocio lo activa
+-- (así el pago al profesional queda documentado y el negocio lo justifica como gasto).
+alter table public.barberias add column if not exists comision_producto_en_boleta boolean not null default true;
+
+create or replace function public.fin_liquidacion_base_boleta(p_liq uuid)
+returns table(honorarios_servicios numeric, comision_productos numeric, monto_boleta numeric, propinas_fuera numeric, incluye_productos boolean)
+language plpgsql stable security definer set search_path to 'public' as $$
+declare l liquidaciones%rowtype; v_inc boolean;
+begin
+  select * into l from liquidaciones where id = p_liq and barberia_id = auth_barberia_id();
+  if not found then raise exception 'Liquidación no encontrada'; end if;
+  select comision_producto_en_boleta into v_inc from barberias where id = l.barberia_id;
+  honorarios_servicios := l.honorarios_brutos;
+  comision_productos := l.comision_productos;
+  incluye_productos := v_inc;
+  monto_boleta := l.honorarios_brutos + case when v_inc then l.comision_productos else 0 end;
+  propinas_fuera := l.propinas;
+  return next;
+end $$;

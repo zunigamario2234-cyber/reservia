@@ -13,6 +13,7 @@
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
 <script src="wsp.js"></script>
+<script src="financiero.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
@@ -501,6 +502,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
       <span>Impuestos</span>
     </div>
+    <div class="nav-item fin-only" data-page="financiero" onclick="nav('financiero')" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+      <span>Financiero</span>
+    </div>
     <div class="nav-item" data-page="profesionals" onclick="nav('profesionals')">
       <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
       <span>Profesionals</span>
@@ -702,6 +707,11 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 
 <!-- INVENTARIO -->
 <div id="p-impuestos" class="page">
+  <div class="card" id="imp-fin-card" style="display:none">
+    <div class="card-hdr"><span class="card-title">Módulo financiero nuevo</span><span id="imp-fin-estado" class="badge" style="background:#d4a85322">Desactivado</span></div>
+    <div style="font-size:12px;line-height:1.6;color:var(--text2);margin-bottom:10px">Comisiones con reglas por fecha, boletas de honorarios con retención, liquidaciones por profesional, IVA solo de operaciones propias y cuatro reportes con exportación. Al activarlo, los cobros anteriores no cambian.</div>
+    <button class="btn btn-primary btn-sm" id="imp-fin-btn" onclick="finAlternarActivacion()">Activar módulo financiero nuevo</button>
+  </div>
   <div class="card">
     <div class="card-hdr"><span class="card-title">Cómo tributa tu negocio</span></div>
     <div class="fr">
@@ -1109,6 +1119,139 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   </div>
 </div>
 
+
+<!-- FINANCIERO (módulo v2, solo dueño) -->
+<div id="p-financiero" class="page">
+  <div class="tabs" id="fin-tabs">
+    <div class="tab active" data-t="caja" onclick="finTab('caja')">Caja</div>
+    <div class="tab" data-t="ventas" onclick="finTab('ventas')">Ventas</div>
+    <div class="tab" data-t="trib" onclick="finTab('trib')">Tributación</div>
+    <div class="tab" data-t="liq" onclick="finTab('liq')">Liquidaciones</div>
+    <div class="tab" data-t="cfg" onclick="finTab('cfg')">Configuración</div>
+  </div>
+
+  <div id="fin-filtros" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+    <div class="fg" style="margin:0;flex:1 1 140px;min-width:130px"><label>Desde</label><input type="date" id="fin-desde" onchange="finFiltrar()"></div>
+    <div class="fg" style="margin:0;flex:1 1 140px;min-width:130px"><label>Hasta</label><input type="date" id="fin-hasta" onchange="finFiltrar()"></div>
+    <div class="fg" style="margin:0;flex:1 1 140px;min-width:130px"><label>Sucursal</label><select id="fin-suc" onchange="finFiltrar()"></select></div>
+    <div class="fg" style="margin:0;flex:1 1 140px;min-width:130px"><label>Profesional</label><select id="fin-prof" onchange="finFiltrar()"></select></div>
+    <div class="fg" style="margin:0;flex:1 1 140px;min-width:130px" id="fin-modelo-box"><label>Modelo</label>
+      <select id="fin-modelo" onchange="finFiltrar()"><option value="">Todos</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>
+    <div class="tabs" style="margin:0;flex:1 1 100%">
+      <div class="tab" onclick="finPreset('hoy')">Hoy</div>
+      <div class="tab" onclick="finPreset('mes')">Este mes</div>
+      <div class="tab" onclick="finPreset('mesant')">Mes anterior</div>
+      <div class="tab" onclick="finPreset('anio')">Este año</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-left:auto;align-self:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="finExportar('csv')">CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="finExportar('xlsx')">Excel</button>
+    </div>
+  </div>
+
+  <!-- Caja -->
+  <div id="fin-t-caja">
+    <div class="g3" id="fin-caja-cards"></div>
+    <div class="card"><div class="card-hdr"><span class="card-title">Entradas por medio de pago</span></div>
+      <div id="fin-caja-medios"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px" id="fin-caja-nota"></div></div>
+  </div>
+
+  <!-- Ventas -->
+  <div id="fin-t-ventas" style="display:none">
+    <div class="g3" id="fin-ventas-cards" style="grid-template-columns:repeat(4,1fr)"></div>
+    <div class="card"><div class="card-hdr"><span class="card-title">Ventas con su reparto</span></div><div id="fin-ventas-tabla"></div></div>
+  </div>
+
+  <!-- Tributación -->
+  <div id="fin-t-trib" style="display:none">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">IVA de <span id="fin-trib-mes"></span> (solo operaciones propias)</span>
+        <button class="btn btn-primary btn-sm" onclick="finCerrarMes()">Cerrar mes</button></div>
+      <div class="fr">
+        <div class="fg"><label>RUT</label><select id="fin-trib-rut" onchange="finTab('trib',true)"></select></div>
+        <div class="fg"><label>Reajuste del remanente (%)</label><input id="fin-trib-reaj" type="number" step="0.01" value="0" onchange="finTab('trib',true)"><div style="font-size:11px;color:var(--text3);margin-top:4px">Usa la variación que publica el SII; no se inventa.</div></div>
+      </div>
+      <div class="g3" id="fin-trib-cards" style="grid-template-columns:repeat(4,1fr)"></div>
+      <div style="font-size:11px;color:var(--text3)" id="fin-trib-nota"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Documentos tributarios</span>
+        <button class="btn btn-ghost btn-sm" onclick="finAbrirDoc(null,'')">Registrar documento</button></div>
+      <div id="fin-docs-aviso"></div>
+      <div id="fin-docs-tabla"></div>
+    </div>
+  </div>
+
+  <!-- Liquidaciones -->
+  <div id="fin-t-liq" style="display:none">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Liquidaciones por profesional</span>
+        <button class="btn btn-primary btn-sm" onclick="finNuevaLiq()">Nueva liquidación</button></div>
+      <div id="fin-liq-tabla"></div>
+    </div>
+  </div>
+
+  <!-- Configuración -->
+  <div id="fin-t-cfg" style="display:none">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Modelo comercial</span></div>
+      <div style="font-size:13px;margin-bottom:10px" id="fc-modelo-actual"></div>
+      <div class="fr">
+        <div class="fg"><label>Cambiar a</label><select id="fc-modelo-nuevo">
+          <option value="A">A · El negocio vende y paga comisión</option>
+          <option value="B">B · El profesional vende por su cuenta (arrienda el sillón)</option>
+          <option value="C">C · Mixto (requiere configuración validada)</option></select></div>
+        <div class="fg"><label>Rige desde (hoy o después)</label><input type="date" id="fc-desde"></div>
+      </div>
+      <div class="fg"><label>Motivo del cambio</label><input id="fc-motivo" type="text" placeholder="Ej: el profesional pasa a arrendar sillón"></div>
+      <button class="btn btn-primary btn-sm" onclick="finCambiarModelo()">Cambiar modelo</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">El cambio solo vale hacia adelante: lo ya cobrado queda con el modelo que tenía.</div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Datos tributarios</span></div>
+      <div class="fr">
+        <div class="fg"><label>RUT del negocio</label><input id="fc-rut" type="text" placeholder="76.000.000-0"></div>
+        <div class="fg"><label>Razón social</label><input id="fc-razon" type="text"></div>
+      </div>
+      <div id="fc-sucs"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin:8px 0"><input type="checkbox" id="fc-prod-boleta" style="width:auto"> Incluir la comisión por venta de productos en la boleta de honorarios (como renglón aparte)</label>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Las propinas nunca van en la boleta: se registran aparte como fondos de terceros.</div>
+      <button class="btn btn-primary btn-sm" onclick="finGuardarDatos()">Guardar</button>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin:14px 0 4px"><input type="checkbox" id="fc-validada" style="width:auto" onchange="finValidarConfig()"> Mi contador revisó y validó esta configuración tributaria</label>
+      <div style="font-size:11px;color:var(--text3)" id="fc-validada-info"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Reglas de reparto</span></div>
+      <div id="fc-reglas"></div>
+      <div style="font-size:13px;font-weight:500;margin:14px 0 8px">Nueva regla</div>
+      <div class="fr">
+        <div class="fg"><label>Se aplica a</label><select id="fc-regla-alc" onchange="finReglaAlcance()">
+          <option value="negocio">Todo el negocio</option><option value="profesional">Un profesional</option>
+          <option value="servicio">Un servicio</option><option value="profesional_servicio">Profesional + servicio</option></select></div>
+        <div class="fg" id="fc-regla-prof-box"><label>Profesional</label><select id="fc-regla-prof"></select></div>
+        <div class="fg" id="fc-regla-serv-box"><label>Servicio (nombre exacto)</label><input id="fc-regla-serv" type="text"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label>% para el profesional</label><input id="fc-regla-pct" type="number" min="0" max="100" step="0.01" placeholder="55"></div>
+        <div class="fg"><label>Se calcula sobre</label><select id="fc-regla-base"><option value="bruto">Precio final (con IVA)</option><option value="neto">Precio neto (sin IVA)</option></select></div>
+        <div class="fg"><label>Rige desde</label><input type="date" id="fc-regla-desde"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="finCrearRegla()">Crear regla</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Una regla no se edita: para cambiar un porcentaje se crea una versión nueva y los cobros anteriores siguen con la suya.</div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Arriendo de sillón (modelo B)</span></div>
+      <div id="fc-arr-lista"></div>
+      <div class="fr" style="margin-top:10px">
+        <div class="fg"><label>Profesional</label><select id="fc-arr-prof"></select></div>
+        <div class="fg"><label>Mes</label><input type="month" id="fc-arr-mes"></div>
+        <div class="fg"><label>Monto neto</label><input type="number" id="fc-arr-monto" min="0"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="finCrearArriendo()">Registrar arriendo</button>
+    </div>
+  </div>
+</div>
 
 <!-- AGENDA -->
 <div id="p-agenda" class="page">
@@ -1641,6 +1784,68 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   </div>
 </div>
 
+<!-- Financiero: nueva liquidación -->
+<div class="overlay" id="m-fin-liq">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">Nueva liquidación</span><button class="xbtn" onclick="closeM('m-fin-liq')">×</button></div>
+    <div class="fg"><label>Profesional</label><select id="fl-prof"></select></div>
+    <div class="fr"><div class="fg"><label>Desde</label><input type="date" id="fl-desde"></div><div class="fg"><label>Hasta</label><input type="date" id="fl-hasta"></div></div>
+    <div class="fg"><label>PPM estimado del profesional (%)</label><input type="number" id="fl-ppm" min="0" max="100" step="0.01"><div style="font-size:11px;color:var(--text3);margin-top:4px">Solo informativo: no se descuenta del pago.</div></div>
+    <div class="modal-footer" style="display:flex;gap:8px"><button class="btn btn-primary" onclick="finCrearLiq()">Crear liquidación</button><button class="btn btn-ghost" onclick="closeM('m-fin-liq')">Cancelar</button></div>
+  </div>
+</div>
+
+<!-- Financiero: detalle de liquidación -->
+<div class="overlay" id="m-fin-liqdet">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-hdr"><span class="modal-title" id="fl-det-titulo">Liquidación</span><button class="xbtn" onclick="closeM('m-fin-liqdet')">×</button></div>
+    <div id="fl-det"></div>
+    <div id="fl-acciones">
+      <div style="font-size:13px;font-weight:500;margin:14px 0 6px">Registrar transferencia</div>
+      <div class="fr">
+        <div class="fg"><label>Monto</label><input type="number" id="fl-pagar-monto" min="0"></div>
+        <div class="fg"><label>Medio</label><select id="fl-pagar-medio"><option>Transferencia</option><option>Efectivo</option><option>Otro</option></select></div>
+      </div>
+      <div class="fg"><label>N° de comprobante (opcional)</label><input id="fl-pagar-comp" type="text"></div>
+      <button class="btn btn-primary btn-sm" onclick="finPagarLiq()">Registrar pago</button>
+      <div style="font-size:13px;font-weight:500;margin:16px 0 6px">Ajuste</div>
+      <div class="fr">
+        <div class="fg"><label>Monto (negativo descuenta)</label><input type="number" id="fl-aj-monto"></div>
+        <div class="fg"><label>Motivo</label><input id="fl-aj-motivo" type="text"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="finAjustarLiq()">Guardar ajuste</button>
+      <button class="btn btn-ghost btn-sm" id="fl-btn-doc" style="margin-left:6px">Registrar boleta de honorarios</button>
+    </div>
+  </div>
+</div>
+
+<!-- Financiero: registrar documento tributario (manual, no emite ante el SII) -->
+<div class="overlay" id="m-fin-doc">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">Registrar documento</span><button class="xbtn" onclick="closeM('m-fin-doc')">×</button></div>
+    <input type="hidden" id="fd-liq">
+    <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Reservia no emite documentos ante el SII. Emítelo en el SII y anota aquí su folio; sin folio queda pendiente.</div>
+    <div class="fr">
+      <div class="fg"><label>Tipo</label><select id="fd-tipo"><option value="boleta_honorarios">Boleta de honorarios</option><option value="boleta_ventas">Boleta de ventas</option><option value="factura">Factura</option><option value="nota_credito">Nota de crédito</option><option value="otro">Otro</option></select></div>
+      <div class="fg"><label>Monto bruto</label><input type="number" id="fd-monto" min="0"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>RUT de quien emite</label><input id="fd-emisor" type="text" placeholder="12.345.678-9"></div>
+      <div class="fg"><label>RUT de quien recibe</label><input id="fd-receptor" type="text"></div>
+    </div>
+    <div class="fg"><label>¿Quien recibe es una empresa que retiene el impuesto?</label>
+      <select id="fd-retiene" onchange="finDocRetiene()"><option value="si">Sí, retiene</option><option value="no">No, es persona natural</option></select>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px" id="fd-ret-info"></div></div>
+    <div class="fg" id="fd-ppm-box"><label>PPM del profesional (%)</label><input type="number" id="fd-ppm" min="0" max="100" step="0.01"></div>
+    <div class="fr">
+      <div class="fg"><label>Fecha del documento</label><input type="date" id="fd-fecha"></div>
+      <div class="fg"><label>Folio (si ya lo emitiste)</label><input id="fd-folio" type="text"></div>
+    </div>
+    <div class="fg"><label>Impuesto que el negocio asume por el profesional (0 si ninguno)</label><input type="number" id="fd-subsidio" min="0"><div style="font-size:11px;color:var(--text3);margin-top:4px">Si el negocio paga parte del impuesto del profesional, se registra aparte y puede contar como renta adicional. Consúltalo con tu contador.</div></div>
+    <div class="modal-footer" style="display:flex;gap:8px"><button class="btn btn-primary" onclick="finGuardarDoc()">Registrar</button><button class="btn btn-ghost" onclick="closeM('m-fin-doc')">Cancelar</button></div>
+  </div>
+</div>
+
 <!-- Importar historial de IVA -->
 <div class="overlay" id="m-iva-import">
   <div class="modal" style="max-width:640px">
@@ -1988,6 +2193,7 @@ async function init(){
   if(esRecepcion()) document.body.classList.add('modo-recepcion');
   document.getElementById('sb-barberia').textContent = S.barberia?.nombre || '—';
   document.title = (S.barberia?.nombre||'Reservia') + ' — CRM';
+  if(window.finAplicarVisibilidad) window.finAplicarVisibilidad();
   nav(esRecepcion()?'agenda':'dashboard');
   escucharReservasNuevas();
   iniciarVigilanteAbonos();
@@ -2438,11 +2644,11 @@ function nav(page){
   document.getElementById('p-'+page).classList.add('active');
   const ni=document.querySelector(`.nav-item[data-page="${page}"]`);
   if(ni)ni.classList.add('active');
-  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',caja:'Caja del día',impuestos:'Impuestos',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
+  const titles={reportes:'Reportes y análisis',agenda:'Agenda',dashboard:'Dashboard',clientes:'Clientes',citas:'Citas',reservas:'Reservas',vip:'Club VIP',mensajes:'Mensajes automáticos',inventario:'Inventario',caja:'Caja del día',impuestos:'Impuestos',financiero:'Financiero',gift:'Gift cards',costos:'Costos e IVA',profesionals:'Equipo',config:'Configuración'};
   document.getElementById('page-title').textContent=titles[page]||page;
   // costos entra por entrarCostos y no por renderCostos: resetea el período al
   // mes en curso cada vez que se abre la pantalla.
-  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,caja:renderCaja,impuestos:renderImpuestos,gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
+  const renders={reportes:renderReporteResumen,agenda:renderAgenda,dashboard:renderDashboard,clientes:renderClientes,citas:renderVisitas,reservas:renderReservas,vip:renderVIP,mensajes:renderMensajes,inventario:renderInventario,caja:renderCaja,impuestos:renderImpuestos,financiero:()=>window.renderFinanciero&&window.renderFinanciero(),gift:renderGiftCards,costos:entrarCostos,profesionals:renderProfesionals,config:renderConfig};
   if(renders[page])renders[page]();
 }
 function switchTab(el,tid){
