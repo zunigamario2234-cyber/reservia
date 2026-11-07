@@ -35,5 +35,11 @@
 // antes y muestra un mensaje. Si tocas este archivo, no le cambies el nombre a
 // las constantes sin actualizar las guardas.
 
-const SUPABASE_URL = 'https://dqoqykngmtxtvbokxbzp.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
+// ⚠ SOLO EN LA RAMA financiero-prueba (quitar esta sección antes de pasar a producción):
+// la vista previa de Vercel de esta rama (host con "-git-financiero-prueba-") habla con la base
+// de PRUEBA (rama de Supabase), nunca con la de los clientes. Cualquier otro host usa producción.
+const __ES_PRUEBA_FIN = typeof location !== 'undefined' && location.hostname.indexOf('-git-financiero-prueba-') !== -1;
+const SUPABASE_URL = __ES_PRUEBA_FIN ? 'https://axdpdcwxcpwacagpgcpi.supabase.co' : 'https://dqoqykngmtxtvbokxbzp.supabase.co';
+const SUPABASE_KEY = __ES_PRUEBA_FIN
+  ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4ZHBkY3d4Y3B3YWNhZ3BnY3BpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQwMjIyNzgsImV4cCI6MjEwOTU5ODI3OH0.OmdrE3VmMCp_HEXkiAkqGcjzuASSvBzr7ouA_cgH1QM'
+  : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxb3F5a25nbXR4dHZib2t4YnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MTc1NDEsImV4cCI6MjA5Nzk5MzU0MX0.aLjslOdIod_wsdiHN3O7SRlbsM4hOj3nNQTlNTc_rY4';
