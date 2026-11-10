@@ -66,7 +66,7 @@ async function supabasePatch(path, body) {
   return res.json();
 }
 
-async function enviarEmail({ to, subject, html }) {
+async function enviarEmail({ to, subject, html, replyTo }) {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY no configurada en el servidor');
   }
@@ -76,12 +76,34 @@ async function enviarEmail({ to, subject, html }) {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ from: RESEND_FROM, to: [to], subject, html })
+    body: JSON.stringify({ from: RESEND_FROM, to: [to], subject, html, ...(replyTo ? { reply_to: replyTo } : {}) })
   });
   if (!resendRes.ok) {
     const detalle = await resendRes.text();
     throw new Error(`Resend respondió ${resendRes.status}: ${detalle}`);
   }
+}
+
+// Inserta una fila con la service_role key. Devuelve la fila creada.
+async function supabasePost(path, body) {
+  if (!SUPABASE_SERVICE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY no configurada en el servidor');
+  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const detalle = await res.text();
+    throw new Error(`Supabase POST ${path} respondió ${res.status}: ${detalle}`);
+  }
+  return res.json();
 }
 
 function escaparHtml(s) {
@@ -148,4 +170,4 @@ function emailShell({ nombreNegocio, contenidoHtml, logoUrl }) {
 </html>`;
 }
 
-module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, enviarEmail, emailShell };
+module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, supabasePost, enviarEmail, emailShell, escaparHtml };

@@ -3,103 +3,206 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reservia — Gestión inteligente para tu negocio</title>
-<meta name="description" content="Agenda, reservas online, CRM de clientes, comisiones por profesional y Club VIP con alianzas — todo en una sola plataforma para barberías, salones, spas y clínicas en Chile.">
+<title>Reservia — Agenda y caja para barberías y salones</title>
+<meta name="description" content="La agenda y la caja de tu barbería o salón: reservas online, cobro con propina y vuelto, comisiones por profesional, varias sucursales y Club VIP. Hecho en Chile.">
+<meta name="theme-color" content="#EEEEEA">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <style>
+@font-face{font-family:'Hanken Grotesk';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:400 800;font-display:swap}
+@font-face{font-family:'Bricolage Grotesque';src:url('fuentes/BricolageGrotesque-latin.woff2') format('woff2');font-weight:200 800;font-display:swap}
+
+/* Neutros con un matiz verdoso apenas perceptible; el único color con carga es
+   el rojo de la línea «ahora» de la agenda, que es un detalle real del producto. */
+:root{
+  --papel:#EEEEEA; --hoja:#FAFAF8; --tinta:#1A1B1D; --tinta-2:#55595F; --linea:#D2D2CC;
+  --ahora:#A82F23;
+  --salvia:#C9D6C4; --lino:#E0D5BC; --piedra:#D6D6D0;
+  --display:'Bricolage Grotesque','Hanken Grotesk',system-ui,sans-serif;
+  --texto:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{font-family:system-ui,-apple-system,sans-serif;background:#08090d;color:#e8e8f0;line-height:1.5}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+body{font-family:var(--texto);background:var(--papel);color:var(--tinta);line-height:1.55;font-size:16px;font-variant-numeric:tabular-nums}
 a{color:inherit}
-.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+:focus-visible{outline:2px solid var(--tinta);outline-offset:3px;border-radius:3px}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+
+/* ─── Botones ─── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;border-radius:999px;font:600 15px/1 var(--texto);cursor:pointer;border:1.5px solid var(--tinta);text-decoration:none;background:transparent;color:var(--tinta);transition:background .15s,color .15s}
+.btn:hover{background:var(--tinta);color:var(--papel)}
+.btn-k{background:var(--tinta);color:var(--papel)}
+.btn-k:hover{background:#000}
+.btn-s{padding:9px 16px;font-size:14px}
+.enlace{font-weight:600;font-size:15px;text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:1.5px}
 
 /* ─── Nav ─── */
-.nav{position:sticky;top:0;z-index:10;background:rgba(8,9,13,0.85);backdrop-filter:blur(10px);border-bottom:0.5px solid #1e2030}
-.nav .wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 20px}
-.brand{display:flex;align-items:center;gap:10px}
-.brand h1{font-size:18px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(135deg,#7c6af7,#5b8def,#38c9b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.nav-actions{display:flex;align-items:center;gap:10px}
-.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;text-decoration:none;transition:filter 0.15s,background 0.15s}
-.btn-p{background:linear-gradient(135deg,#7c6af7,#5b8def);color:#fff}
-.btn-p:hover{filter:brightness(1.1)}
-.btn-g{background:transparent;color:#aaa;border:0.5px solid #2a2c40}
-.btn-g:hover{color:#e8e8f0;border-color:#444}
-.nav .btn-g{padding:9px 16px}
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:rgba(238,238,234,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--linea)}
+.nav .wrap{display:flex;align-items:center;gap:28px;padding-top:12px;padding-bottom:12px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:auto}
+.brand b{font:700 21px/1 var(--display);letter-spacing:-.02em}
+.nav-links{display:flex;gap:24px;font-size:14.5px;font-weight:500}
+.nav-links a{text-decoration:none;color:var(--tinta-2)}
+.nav-links a:hover{color:var(--tinta)}
+.nav-cta{display:flex;align-items:center;gap:14px}
+.nav-cta .ing{font-size:14.5px;font-weight:600;text-decoration:none}
 
 /* ─── Hero ─── */
-.hero{padding:64px 0 48px;text-align:center}
-.hero-badge{display:inline-block;font-size:12px;color:#7c6af7;background:rgba(124,106,247,0.1);border:0.5px solid rgba(124,106,247,0.3);padding:6px 14px;border-radius:20px;margin-bottom:20px}
-.hero h2{font-size:clamp(28px,5vw,46px);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:18px}
-.hero h2 span{background:linear-gradient(135deg,#7c6af7,#5b8def,#38c9b0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hero p{font-size:16px;color:#8a8a9a;max-width:600px;margin:0 auto 32px}
-.hero-ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-.hero-ctas .btn{padding:13px 24px;font-size:14px}
+.hero{padding:56px 0 72px;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:56px;align-items:center}
+.hero h1{font:700 clamp(38px,5.6vw,64px)/1 var(--display);letter-spacing:-.035em;margin-bottom:22px;text-wrap:balance}
+.hero p.sub{font-size:18px;color:var(--tinta-2);max-width:30em;margin-bottom:28px}
+.hero-ctas{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.hero small{display:block;font-size:13.5px;color:var(--tinta-2)}
+.hero .para{margin-top:34px;padding-top:18px;border-top:1px solid var(--linea);font-size:14px;color:var(--tinta-2)}
 
-/* ─── Rubros ─── */
-.rubros{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:40px}
-.rubro-chip{font-size:12px;color:#8a8a9a;border:0.5px solid #1e2030;border-radius:20px;padding:7px 14px;background:#0f1020}
+/* Agenda de ejemplo: horas reales, nombres y precios chilenos */
+.hero .agenda{margin-bottom:40px}
+.agenda{--h:76px;--rail:48px;background:var(--hoja);border:1px solid var(--linea);border-radius:14px;position:relative;box-shadow:0 1px 0 var(--linea)}
+.ag-top{display:flex;justify-content:space-between;align-items:baseline;padding:14px 18px;border-bottom:1px solid var(--linea);font-size:13.5px}
+.ag-top b{font:700 16px/1.2 var(--display)}
+.ag-top span{color:var(--tinta-2)}
+.ag-head,.ag-grid{display:grid;grid-template-columns:var(--rail) repeat(3,minmax(0,1fr))}
+.ag-grid{position:relative;padding-bottom:6px}
+.ag-head div{padding:10px 8px 8px;font-size:12.5px;font-weight:700;border-bottom:1px solid var(--linea);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-head div+div{border-left:1px solid var(--linea)}
+.ag-horas{position:relative;height:calc(4 * var(--h))}
+.ag-horas span{position:absolute;right:8px;font-size:11.5px;color:var(--tinta-2);transform:translateY(-50%)}
+.ag-col{position:relative;height:calc(4 * var(--h));border-left:1px solid var(--linea);background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--h) - 1px),var(--linea) calc(var(--h) - 1px),var(--linea) var(--h))}
+.cita{position:absolute;left:4px;right:4px;top:calc(var(--t) * var(--h) + 2px);height:calc(var(--d) * var(--h) - 4px);border-radius:7px;padding:6px 8px;font-size:12px;line-height:1.25;overflow:hidden}
+.cita b{display:block;font-size:12.5px}
+.cita.una b{display:inline}
+.cita i{display:block;font-style:normal;color:rgba(26,27,29,.72)}
+.cita em{font-style:normal;font-weight:700}
+.b-a{background:var(--salvia)} .b-b{background:var(--lino)} .b-c{background:var(--piedra)}
+.b-k{background:var(--tinta);color:#F4F4F1}.b-k i{color:rgba(244,244,241,.78)}
+.libre{border:1.5px dashed #A9A9A2;color:var(--tinta-2);display:flex;align-items:center;justify-content:center;font-size:12px}
+.bloq{background:repeating-linear-gradient(135deg,#E4E4DE 0 6px,#EEEEE9 6px 12px);color:var(--tinta-2);display:flex;align-items:center;justify-content:center;font-size:12px}
+.ahora{position:absolute;left:var(--rail);right:0;top:calc(2.33 * var(--h));height:0;border-top:2px solid var(--ahora);z-index:3}
+.ahora::before{content:'12:20';position:absolute;left:calc(4px - var(--rail));top:-11px;background:var(--ahora);color:#fff;font:700 11px/1 var(--texto);padding:4px 6px;border-radius:4px}
+.toast{position:absolute;right:16px;bottom:-34px;background:var(--tinta);color:#F4F4F1;border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.35;max-width:230px;z-index:4;box-shadow:0 8px 24px rgba(26,27,29,.25)}
+.toast b{display:block;font-size:12px;opacity:.7;font-weight:600;margin-bottom:2px}
 
-/* ─── Sections ─── */
-section{padding:56px 0}
-.section-title{text-align:center;margin-bottom:40px}
-.section-title h3{font-size:clamp(22px,3.5vw,30px);font-weight:800;letter-spacing:-0.5px;margin-bottom:10px}
-.section-title p{font-size:14px;color:#8a8a9a;max-width:520px;margin:0 auto}
+/* ─── Secciones ─── */
+section{padding:84px 0;border-top:1px solid var(--linea)}
+.cab{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:56px;margin-bottom:44px;align-items:end}
+.cab h2{font:700 clamp(30px,4.2vw,46px)/1.04 var(--display);letter-spacing:-.03em;text-wrap:balance}
+.cab p{font-size:17px;color:var(--tinta-2);max-width:34em}
 
-/* ─── Features grid ─── */
-.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.feature{background:#0f1020;border:0.5px solid #1e2030;border-radius:14px;padding:22px}
-.feature-icon{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(124,106,247,0.15),rgba(91,141,239,0.15));display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:14px}
-.feature h4{font-size:14px;font-weight:700;margin-bottom:6px}
-.feature p{font-size:12.5px;color:#8a8a9a}
+/* Un día en tu local: la hora es el índice porque de verdad es una secuencia */
+.dia{list-style:none}
+.dia li{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr);gap:40px;padding:34px 0;border-top:1px solid var(--linea);align-items:start}
+.dia li:first-child{border-top:none;padding-top:0}
+.dia .hora{font:700 44px/1 var(--display);letter-spacing:-.03em}
+.dia h3{font:700 24px/1.15 var(--display);letter-spacing:-.02em;margin-bottom:10px}
+.dia p{color:var(--tinta-2);max-width:30em}
+.hoja{background:var(--hoja);border:1px solid var(--linea);border-radius:12px;padding:16px 18px;font-size:14px}
+.hoja .fila{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #E6E6E1}
+.hoja .fila:last-child{border-bottom:none}
+.hoja .fila span:last-child{font-weight:600;white-space:nowrap}
+.hoja .tit{font-weight:700;margin-bottom:4px}
+.hoja .total{font:700 17px/1.2 var(--display);border-top:1.5px solid var(--tinta);margin-top:6px;padding-top:10px}
+.hoja .vuelto{margin-top:10px;background:var(--salvia);border-radius:8px;padding:10px 12px;font-weight:700;display:flex;justify-content:space-between;font-size:16px}
+.hoja .nota{font-size:12.5px;color:var(--tinta-2);margin-top:8px}
+.chk{display:inline-block;width:16px;height:16px;border-radius:50%;background:var(--tinta);color:#fff;font-size:10px;line-height:16px;text-align:center;margin-right:6px;vertical-align:1px}
 
-/* ─── Club VIP highlight ─── */
-.highlight{background:linear-gradient(160deg,#151328,#0f1020);border:0.5px solid #2a2555;border-radius:20px;padding:40px 32px;display:grid;grid-template-columns:1.1fr 1fr;gap:36px;align-items:center}
-.highlight-tag{display:inline-block;font-size:11px;font-weight:700;color:#0a0a0a;background:linear-gradient(135deg,#f7c948,#f7924a);padding:5px 12px;border-radius:6px;margin-bottom:14px;letter-spacing:0.3px}
-.highlight h3{font-size:clamp(20px,3vw,26px);font-weight:800;letter-spacing:-0.5px;margin-bottom:14px}
-.highlight p{font-size:13.5px;color:#a8a8ba;margin-bottom:10px}
-.highlight ul{list-style:none;padding:0}
-.highlight li{font-size:13px;color:#c8c8d8;padding:8px 0;border-bottom:0.5px solid #23204a;display:flex;gap:10px}
-.highlight li:last-child{border-bottom:none}
-.highlight li::before{content:'✓';color:#38c9b0;font-weight:700;flex-shrink:0}
-.vip-visual{background:#0a0a14;border:0.5px solid #23204a;border-radius:14px;padding:22px}
-.vip-levels{display:flex;flex-direction:column;gap:10px}
-.vip-level{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:#0f1020;border:0.5px solid #1e2030}
-.vip-level .em{font-size:20px}
-.vip-level .t{font-size:13px;font-weight:600}
-.vip-level .d{font-size:11px;color:#777}
-.vip-alianza{margin-top:14px;padding-top:14px;border-top:0.5px dashed #23204a;font-size:12px;color:#8a8a9a;display:flex;align-items:center;gap:8px}
+/* Lista de funciones: una lista con líneas, no una grilla de tarjetas */
+.lista{display:grid;grid-template-columns:1fr 1fr;column-gap:56px}
+.lista div{padding:18px 0;border-top:1px solid var(--linea)}
+.lista dt{font:700 18px/1.2 var(--display);letter-spacing:-.01em;margin-bottom:4px}
+.lista dd{color:var(--tinta-2);font-size:15px;max-width:34em}
 
-/* ─── Mi Agenda section ─── */
-.split{display:grid;grid-template-columns:1fr 1fr;gap:36px;align-items:center}
-.split-card{background:#0f1020;border:0.5px solid #1e2030;border-radius:16px;padding:26px}
-.split h3{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin-bottom:14px}
-.split p{font-size:13.5px;color:#8a8a9a;margin-bottom:10px}
-.split ul{list-style:none;padding:0}
-.split li{font-size:13px;color:#c8c8d8;padding:7px 0;display:flex;gap:10px}
-.split li::before{content:'✓';color:#38c9b0;font-weight:700;flex-shrink:0}
+/* Tu marca */
+.marca{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:56px;align-items:center}
+.marca h2{font:700 clamp(30px,4.2vw,46px)/1.04 var(--display);letter-spacing:-.03em;margin-bottom:18px;text-wrap:balance}
+.marca p{color:var(--tinta-2);font-size:17px;max-width:30em;margin-bottom:14px}
+.logos{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 10px}
+.logos button{display:flex;align-items:center;gap:10px;padding:8px 16px 8px 8px;border-radius:999px;border:1.5px solid var(--linea);background:var(--hoja);font:600 14.5px/1 var(--texto);cursor:pointer;color:var(--tinta)}
+.logos button[aria-pressed=true]{border-color:var(--tinta)}
+.logos .disco{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:700 14px/1 var(--display);color:#fff}
+.leyenda{font-size:14px;color:var(--tinta-2);min-height:3em}
+.demo{--m-bg:#F6F7F4;--m-ink:#1A1B1D;--m-acc:#2F6B4F;--m-on:#fff;--m-linea:#DADDD6;background:var(--m-bg);color:var(--m-ink);border:1px solid var(--linea);border-radius:16px;padding:22px;transition:background .25s,color .25s}
+.demo .cabm{display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--m-linea)}
+.demo .cabm .logo{width:44px;height:44px;border-radius:50%;background:var(--m-acc);color:var(--m-on);display:grid;place-items:center;font:700 20px/1 var(--display);transition:background .25s}
+.demo .cabm b{font:700 20px/1.1 var(--display)}
+.demo .cabm small{display:block;opacity:.7;font-size:13px}
+.demo .sv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--m-linea);font-size:15px}
+.demo .sv span:last-child{font-weight:700}
+.demo .reservar{margin-top:18px;display:inline-block;background:var(--m-acc);color:var(--m-on);padding:12px 22px;border-radius:999px;font-weight:700;font-size:15px;transition:background .25s}
+.demo .vip{margin-top:16px;font-size:13px;opacity:.8}
+.demo .vip i{font-style:normal;color:var(--m-acc);font-weight:700}
 
-/* ─── Final CTA ─── */
-.cta-final{text-align:center;background:radial-gradient(ellipse at center,rgba(124,106,247,0.12),transparent 70%);border-radius:24px;padding:56px 24px}
-.cta-final h3{font-size:clamp(22px,4vw,32px);font-weight:800;letter-spacing:-0.5px;margin-bottom:14px}
-.cta-final p{font-size:14px;color:#8a8a9a;margin-bottom:26px}
+/* Para crecer */
+.tres{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.tres>div{padding:0 32px;border-left:1px solid var(--linea)}
+.tres>div:first-child{padding-left:0;border-left:none}
+.tres h3{font:700 22px/1.15 var(--display);letter-spacing:-.02em;margin-bottom:10px}
+.tres p{color:var(--tinta-2);font-size:15px;margin-bottom:10px}
+.tres ul{list-style:none;font-size:14.5px}
+.tres li{padding:6px 0;border-top:1px solid #E1E1DB}
+.pronto{display:inline-block;font-size:12px;font-weight:700;border:1.5px solid var(--tinta);border-radius:999px;padding:3px 10px;margin-bottom:10px}
 
-/* ─── Footer ─── */
-footer{border-top:0.5px solid #1e2030;padding:28px 0;text-align:center;font-size:12px;color:#555}
-footer a{color:#8a8a9a;text-decoration:none}
-footer a:hover{color:#e8e8f0}
+/* Planes */
+.planes{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:880px}
+.plan{background:var(--hoja);border:1px solid var(--linea);border-radius:16px;padding:30px 28px;display:flex;flex-direction:column}
+.plan.pro{background:var(--tinta);color:#F4F4F1;border-color:var(--tinta)}
+.plan h3{font:700 22px/1 var(--display);margin-bottom:6px}
+.plan .quien{font-size:14px;opacity:.72;margin-bottom:18px}
+.plan .precio{font:700 46px/1 var(--display);letter-spacing:-.03em;margin-bottom:18px}
+.plan .precio small{font:500 15px var(--texto);letter-spacing:0;opacity:.72}
+.plan ul{list-style:none;margin-bottom:24px;font-size:15px}
+.plan li{padding:7px 0;border-top:1px solid rgba(128,128,120,.28)}
+.plan .btn{margin-top:auto}
+.plan.pro .btn{background:#F4F4F1;color:var(--tinta);border-color:#F4F4F1}
+.plan.pro .btn:hover{background:#fff}
+.plan .peq{font-size:13px;opacity:.72;margin-top:12px}
+.final{background:var(--tinta);color:#F4F4F1;border-top:none;padding:76px 0;text-align:left}
+.final .wrap{display:flex;gap:32px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.final h2{font:700 clamp(30px,4.4vw,48px)/1.02 var(--display);letter-spacing:-.03em;max-width:14em}
+.final .btn{background:#F4F4F1;color:var(--tinta);border-color:#F4F4F1}
+.final .btn:hover{background:#fff}
+footer{padding:26px 0;font-size:13.5px;color:var(--tinta-2)}
+footer .wrap{display:flex;gap:18px;flex-wrap:wrap}
+footer a{text-decoration:none}footer a:hover{color:var(--tinta)}
 
-@media (max-width:820px){
-  .features{grid-template-columns:repeat(2,1fr)}
-  .highlight{grid-template-columns:1fr;padding:28px 20px}
-  .split{grid-template-columns:1fr}
-  .split.reverse .split-visual{order:2}
+/* Solicitud del plan Pro */
+dialog{border:none;border-radius:16px;padding:0;max-width:480px;width:calc(100% - 32px);background:var(--hoja);color:var(--tinta);box-shadow:0 24px 70px rgba(26,27,29,.35)}
+dialog::backdrop{background:rgba(26,27,29,.55)}
+.dlg{padding:28px 26px 24px}
+.dlg h3{font:700 26px/1.1 var(--display);letter-spacing:-.02em;margin-bottom:8px;padding-right:30px}
+.dlg .lead{color:var(--tinta-2);font-size:15px;margin-bottom:18px}
+.dlg .x{position:absolute;right:14px;top:12px;width:36px;height:36px;border:none;background:none;font-size:24px;cursor:pointer;color:var(--tinta-2);border-radius:50%}
+.dlg label{display:block;font-size:13.5px;font-weight:600;margin:12px 0 5px}
+.dlg input,.dlg select,.dlg textarea{width:100%;font:16px var(--texto);padding:11px 12px;border:1.5px solid var(--linea);border-radius:10px;background:#fff;color:var(--tinta)}
+.dlg input:focus,.dlg select:focus,.dlg textarea:focus{outline:none;border-color:var(--tinta)}
+.dlg .dos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dlg .acciones{display:flex;gap:12px;align-items:center;margin-top:20px;flex-wrap:wrap}
+.dlg .err{color:var(--ahora);font-size:14px;margin-top:12px;display:none}
+.dlg .ok{display:none}
+.dlg .ok .btn{margin-top:18px}
+.trampa{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+
+@media (max-width:900px){
+  .hero,.cab,.marca{grid-template-columns:1fr;gap:34px}
+  .hero{padding:36px 0 56px}
+  .cab{margin-bottom:30px}
+  .dia li{grid-template-columns:1fr;gap:14px;padding:28px 0}
+  .dia .hora{font-size:36px}
+  .lista{grid-template-columns:1fr}
+  .tres{grid-template-columns:1fr;gap:34px}
+  .tres>div{padding:26px 0 0;border-left:none;border-top:1px solid var(--linea)}
+  .tres>div:first-child{padding-top:0;border-top:none}
+  .planes{grid-template-columns:1fr}
+  .nav-links{display:none}
+  section{padding:60px 0}
 }
 @media (max-width:560px){
-  .features{grid-template-columns:1fr}
-  .hero{padding:44px 0 36px}
-  section{padding:40px 0}
-  .nav .btn-g{display:none}
+  .agenda{--rail:44px}
+  .ag-head,.ag-grid{grid-template-columns:var(--rail) repeat(2,minmax(0,1fr))}
+  .col-3,.ag-head div:nth-child(4){display:none}
+  .nav .ing{display:none}
+  .toast{max-width:190px}
+  .dlg .dos{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -107,140 +210,338 @@ footer a:hover{color:#e8e8f0}
 
 <nav class="nav">
   <div class="wrap">
-    <div class="brand">
-      <svg width="26" height="26" viewBox="0 0 56 56" fill="none">
-        <rect width="56" height="56" rx="16" fill="url(#lg)"/>
-        <rect x="12" y="17" width="32" height="26" rx="3" fill="none" stroke="white" stroke-width="2.2"/>
-        <path d="M20 13v8M36 13v8" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
-        <path d="M12 27h32" stroke="white" stroke-width="2.2"/>
-        <path d="M20 36l3.5 3.5L36 30" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <defs><linearGradient id="lg" x1="0" y1="0" x2="56" y2="56"><stop stop-color="#7c6af7"/><stop offset="0.5" stop-color="#5b8def"/><stop offset="1" stop-color="#38c9b0"/></linearGradient></defs>
+    <a class="brand" href="#top" aria-label="Reservia, inicio">
+      <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+        <rect width="56" height="56" rx="14" fill="#1A1B1D"/>
+        <rect x="12" y="17" width="32" height="26" rx="3" stroke="#EEEEEA" stroke-width="2.4"/>
+        <path d="M20 13v8M36 13v8M12 27h32" stroke="#EEEEEA" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M20 36l3.5 3.5L36 30" stroke="#EEEEEA" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <h1>Reservia</h1>
+      <b>Reservia</b>
+    </a>
+    <div class="nav-links">
+      <a href="#dia">Cómo funciona</a>
+      <a href="#funciones">Funciones</a>
+      <a href="#planes">Planes</a>
     </div>
-    <div class="nav-actions">
-      <a class="btn btn-g" href="ingresar.html">Ingresar</a>
-      <a class="btn btn-p" href="ingresar.html#registro">Crear cuenta gratis</a>
+    <div class="nav-cta">
+      <a class="ing" href="ingresar.html">Ingresar</a>
+      <a class="btn btn-k btn-s" href="ingresar.html#registro">Probar gratis</a>
     </div>
   </div>
 </nav>
 
+<main id="top">
 <div class="wrap">
-
   <div class="hero">
-    <span class="hero-badge">Hecho para negocios de agenda en Chile</span>
-    <h2>Tu negocio, <span>siempre organizado</span></h2>
-    <p>Agenda, reservas online, clientes y comisiones en un solo lugar — con un Club VIP y alianzas que fidelizan como ninguna otra plataforma en Chile.</p>
-    <div class="hero-ctas">
-      <a class="btn btn-p" href="ingresar.html#registro">Crear cuenta gratis</a>
-      <a class="btn btn-g" href="#funciones">Ver funciones</a>
+    <div>
+      <h1>Menos libreta, más sillas ocupadas.</h1>
+      <p class="sub">Reservia es la agenda y la caja de tu barbería o salón. Tus clientes reservan solos, tú cobras con propina y vuelto, y cada profesional ve solo lo suyo.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-k" href="ingresar.html#registro">Probar gratis</a>
+        <a class="enlace" href="#dia">Ver un día en el local</a>
+      </div>
+      <small>Sin tarjeta. El plan gratis incluye 1 profesional.</small>
+      <p class="para">Para barberías, peluquerías, salones, spas y consultas en Chile.</p>
     </div>
-    <div class="rubros">
-      <span class="rubro-chip">💈 Barberías</span>
-      <span class="rubro-chip">💇 Peluquerías / Salones</span>
-      <span class="rubro-chip">🧖 Spas y centros de estética</span>
-      <span class="rubro-chip">🩺 Clínicas y consultas</span>
+
+    <div class="agenda" role="img" aria-label="Ejemplo de agenda de un sábado con tres profesionales, citas, horas libres y una reserva online recién llegada">
+      <div class="ag-top"><b>Sábado 14 · Barbería Norte</b><span>8 citas · 1 espacio libre</span></div>
+      <div class="ag-head"><div></div><div>Mario</div><div>Diego</div><div>Camila</div></div>
+      <div class="ag-grid">
+        <div class="ag-horas">
+          <span style="top:0">10:00</span><span style="top:calc(1 * var(--h))">11:00</span><span style="top:calc(2 * var(--h))">12:00</span><span style="top:calc(3 * var(--h))">13:00</span>
+        </div>
+        <div class="ag-col">
+          <div class="cita una b-a" style="--t:0;--d:.5"><b>Luis Pérez</b> · <em>$12.000</em></div>
+          <div class="cita b-b" style="--t:1;--d:1"><b>Andrés Soto</b><i>Corte + barba</i><em>$18.000</em></div>
+          <div class="cita libre" style="--t:2.5;--d:.5">Libre</div>
+          <div class="cita una b-k" style="--t:3;--d:.5"><b>Bruno Fuentes</b> · <em>$6.000</em></div>
+        </div>
+        <div class="ag-col">
+          <div class="cita b-c" style="--t:0;--d:1"><b>Cristóbal M.</b><i>Degradado</i><em>$15.000</em></div>
+          <div class="cita b-a" style="--t:1.5;--d:.5"><b><span class="chk">✓</span>Joaquín V.</b></div>
+          <div class="cita bloq" style="--t:2;--d:1">Colación</div>
+          <div class="cita b-b" style="--t:3.5;--d:.5"><b>Matías R.</b></div>
+        </div>
+        <div class="ag-col col-3">
+          <div class="cita b-b" style="--t:0;--d:1.5"><b>Valentina R.</b><i>Color</i><em>$38.000</em></div>
+          <div class="cita b-c" style="--t:2.5;--d:1"><b>Francisca A.</b><i>Corte + brushing</i><em>$25.000</em></div>
+        </div>
+        <div class="ahora"></div>
+      </div>
+      <div class="toast"><b>Reserva online · recién</b>Tomás R. · Corte + barba<br>Hoy 16:30 con Mario</div>
     </div>
   </div>
-
-  <section id="funciones">
-    <div class="section-title">
-      <h3>Todo lo que tu negocio necesita</h3>
-      <p>Seis herramientas que hoy manejás por separado — reunidas en una sola plataforma.</p>
-    </div>
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">📅</div>
-        <h4>Agenda con bloqueos</h4>
-        <p>Vacaciones, días libres o un horario fijo por profesional — la agenda respeta cada bloqueo automáticamente.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🔗</div>
-        <h4>Reservas online</h4>
-        <p>Un link propio para que tus clientes reserven hora 24/7, eligiendo servicio, profesional y horario disponible.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">👥</div>
-        <h4>CRM de clientes</h4>
-        <p>Historial de visitas, cumpleaños, clientes inactivos y nivel VIP de cada persona, siempre a mano.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">💰</div>
-        <h4>Comisiones por profesional</h4>
-        <p>Configurá el % de cada profesional y Reservia calcula automáticamente lo que le corresponde por cada venta.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">📱</div>
-        <h4>Mi Agenda para profesionales</h4>
-        <p>Cada profesional entra con su propia cuenta a ver su día, gestionar sus citas y revisar sus comisiones.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">⭐</div>
-        <h4>Club VIP</h4>
-        <p>Niveles automáticos según visitas, con beneficios que premian a tus mejores clientes.</p>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <div class="highlight">
-      <div>
-        <span class="highlight-tag">Diferencial Reservia</span>
-        <h3>Club VIP con alianzas — algo que casi ninguna plataforma chilena ofrece hoy</h3>
-        <p>Tus clientes suben de nivel automáticamente según sus visitas y acceden a beneficios propios de tu negocio. Pero además, podés sumar alianzas con otros negocios — descuentos y beneficios cruzados que tus clientes VIP canjean directo desde su Club.</p>
-        <ul>
-          <li>Niveles automáticos por cantidad de visitas</li>
-          <li>Beneficios propios configurables por nivel</li>
-          <li>Alianzas con negocios externos como beneficio adicional</li>
-          <li>Página de Club VIP propia para cada cliente</li>
-        </ul>
-      </div>
-      <div class="vip-visual">
-        <div class="vip-levels">
-          <div class="vip-level"><span class="em">🥈</span><div><div class="t">Plata</div><div class="d">10% de descuento</div></div></div>
-          <div class="vip-level"><span class="em">🥇</span><div><div class="t">Oro</div><div class="d">Servicio gratis</div></div></div>
-          <div class="vip-level"><span class="em">💎</span><div><div class="t">Diamante</div><div class="d">Beneficios VIP totales</div></div></div>
-        </div>
-        <div class="vip-alianza">🤝 + Alianzas con negocios externos, canjeables desde el Club VIP</div>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <div class="split">
-      <div>
-        <h3>Cada profesional, con su propia app</h3>
-        <p>Con Mi Agenda, cada profesional del equipo tiene su propio login — sin ver el resto del negocio.</p>
-        <ul>
-          <li>Ve su agenda del día, no la de todo el negocio</li>
-          <li>Puede agendar, cancelar y ordenar sus propias citas</li>
-          <li>Revisa sus ventas y comisiones en tiempo real</li>
-          <li>Instalable como app en el celular</li>
-        </ul>
-      </div>
-      <div class="split-card">
-        <div class="feature-icon">📱</div>
-        <h4 style="font-size:15px;margin-bottom:8px">Mi Agenda</h4>
-        <p style="font-size:12.5px;color:#8a8a9a">Login propio para profesionales, separado del panel del dueño. Ideal para equipos donde cada persona necesita ver solo lo suyo.</p>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <div class="cta-final">
-      <h3>Registrá tu negocio, gratis</h3>
-      <p>Empezá a usar Reservia hoy mismo — sin tarjeta de crédito.</p>
-      <a class="btn btn-p" href="ingresar.html#registro">Crear cuenta gratis</a>
-    </div>
-  </section>
-
 </div>
+
+<section id="dia">
+  <div class="wrap">
+    <div class="cab">
+      <h2>Un día en tu local, con Reservia</h2>
+      <p>Lo que cambia entre abrir la cortina y cerrar la caja.</p>
+    </div>
+    <ol class="dia">
+      <li>
+        <div class="hora">09:40</div>
+        <div>
+          <h3>Un cliente reserva solo</h3>
+          <p>Compartes tu link o tu QR. Elige servicio, profesional y una hora que de verdad esté libre. Si cobras abono, la reserva queda confirmada cuando transfiere.</p>
+        </div>
+        <div class="hoja" aria-label="Ejemplo de reserva online confirmada">
+          <div class="tit"><span class="chk">✓</span>Reserva confirmada</div>
+          <div class="fila"><span>Corte + barba con Mario</span><span>$18.000</span></div>
+          <div class="fila"><span>Sáb 14, 16:30</span><span>Abono $5.000</span></div>
+          <div class="nota">Le llega el aviso por WhatsApp.</div>
+        </div>
+      </li>
+      <li>
+        <div class="hora">12:10</div>
+        <div>
+          <h3>Cobras sin calcular de cabeza</h3>
+          <p>Cobro con descuento, propina y método de pago. Si es efectivo, escribes lo que te entregan y Reservia te dice el vuelto. La propina va entera al profesional.</p>
+        </div>
+        <div class="hoja" aria-label="Ejemplo de cobro en efectivo con vuelto">
+          <div class="fila"><span>Corte clásico</span><span>$12.000</span></div>
+          <div class="fila"><span>Propina</span><span>$2.000</span></div>
+          <div class="fila total"><span>Total a cobrar</span><span>$14.000</span></div>
+          <div class="fila"><span>Efectivo recibido</span><span>$20.000</span></div>
+          <div class="vuelto"><span>Vuelto</span><span>$6.000</span></div>
+        </div>
+      </li>
+      <li>
+        <div class="hora">15:00</div>
+        <div>
+          <h3>Cada profesional ve lo suyo</h3>
+          <p>Con Mi Agenda, cada uno entra con su propia cuenta: ve su día, mueve sus citas y revisa sus comisiones. No ve las ventas del resto. Se instala como app en el celular.</p>
+        </div>
+        <div class="hoja" aria-label="Ejemplo de la vista de un profesional">
+          <div class="tit">Mi día · Diego</div>
+          <div class="fila"><span>Citas de hoy</span><span>7</span></div>
+          <div class="fila"><span>Comisión de hoy</span><span>$46.500</span></div>
+          <div class="fila"><span>Propinas</span><span>$9.000</span></div>
+          <div class="nota">Solo se ve su propia agenda.</div>
+        </div>
+      </li>
+      <li>
+        <div class="hora">20:30</div>
+        <div>
+          <h3>Cierras con las cuentas claras</h3>
+          <p>Ventas por método de pago, gastos, comisiones por profesional e IVA estimado del mes. Lo que ya está registrado no hay que pasarlo a una planilla.</p>
+        </div>
+        <div class="hoja" aria-label="Ejemplo de cierre del día por método de pago">
+          <div class="tit">Hoy, por método de pago</div>
+          <div class="fila"><span>Efectivo</span><span>$86.000</span></div>
+          <div class="fila"><span>Débito y crédito</span><span>$142.000</span></div>
+          <div class="fila"><span>Transferencia</span><span>$54.000</span></div>
+          <div class="fila total"><span>Ventas</span><span>$282.000</span></div>
+          <div class="nota">Las propinas se muestran aparte: no son ingreso del negocio.</div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="funciones">
+  <div class="wrap">
+    <div class="cab">
+      <h2>Y todo lo demás que un local necesita</h2>
+      <p>Lo que pedían los dueños que hoy usan Reservia, sin módulos extra que contratar por separado.</p>
+    </div>
+    <dl class="lista">
+      <div><dt>Agenda con bloqueos</dt><dd>Vacaciones, días libres, colación y horario fijo por profesional. La agenda respeta cada bloqueo.</dd></div>
+      <div><dt>Reservas online con link propio</dt><dd>Cada negocio y cada profesional tiene su link. Los horarios que se ofrecen son solo los disponibles.</dd></div>
+      <div><dt>Clientes e historial</dt><dd>Visitas, cumpleaños, clientes que dejaron de venir y mensajes de WhatsApp listos con un toque.</dd></div>
+      <div><dt>Comisiones por profesional</dt><dd>Un porcentaje para cada uno, también por producto vendido. Reservia calcula cuánto le corresponde en cada venta.</dd></div>
+      <div><dt>Varias sucursales</dt><dd>Cada local con sus horarios, su inventario, sus gastos y sus servicios. Tú ves todo junto o filtras por sucursal.</dd></div>
+      <div><dt>Inventario y productos</dt><dd>Vende productos en el mismo cobro que el servicio y descuenta el stock.</dd></div>
+      <div><dt>Gift cards y abonos</dt><dd>Tarjetas de regalo con código, y abono por transferencia para asegurar las horas importantes.</dd></div>
+      <div><dt>Encuestas de satisfacción</dt><dd>Después de la visita el cliente responde. Si la nota es baja, te avisamos por correo para que la resuelvas antes de que llegue a Google.</dd></div>
+      <div><dt>Recepción con permisos acotados</dt><dd>Quien atiende el mostrador agenda y cobra, pero no ve las cuentas ni las comisiones del negocio.</dd></div>
+      <div><dt>Gastos e impuestos</dt><dd>Registra gastos y mira el IVA y la proyección del mes para saber cuánto apartar.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section id="marca">
+  <div class="wrap marca">
+    <div>
+      <h2>Se ve como tu marca, no como la nuestra</h2>
+      <p>Subes tu logo y Reservia toma su color para tu panel, tu página de reservas y tu Club VIP. Si tu logo es blanco, todo pasa solo a modo oscuro con los detalles en blanco.</p>
+      <div class="logos" role="group" aria-label="Elige un ejemplo de logo">
+        <button type="button" aria-pressed="true" data-m="norte"><span class="disco" style="background:#2F6B4F">N</span>Norte</button>
+        <button type="button" aria-pressed="false" data-m="alba"><span class="disco" style="background:#8A3B62">A</span>Alba</button>
+        <button type="button" aria-pressed="false" data-m="tico"><span class="disco" style="background:#fff;color:#15181D;box-shadow:inset 0 0 0 1.5px #15181D">T</span>Tico</button>
+      </div>
+      <p class="leyenda" id="leyenda" aria-live="polite">Logo verde: el acento del negocio pasa a ser ese verde.</p>
+    </div>
+    <div class="demo" id="demo">
+      <div class="cabm"><div class="logo" id="demo-logo">N</div><div><b id="demo-nombre">Barbería Norte</b><small>Reserva tu hora</small></div></div>
+      <div class="sv"><span>Corte clásico · 30 min</span><span>$12.000</span></div>
+      <div class="sv"><span>Corte + barba · 45 min</span><span>$18.000</span></div>
+      <div class="sv"><span>Perfilado de barba · 20 min</span><span>$6.000</span></div>
+      <span class="reservar">Reservar hora</span>
+      <div class="vip">Club VIP · Visita 7 de 10 para <i>Oro</i></div>
+    </div>
+  </div>
+</section>
+
+<section id="crecer">
+  <div class="wrap">
+    <div class="cab">
+      <h2>Para cuando el negocio crece</h2>
+      <p>Más locales, clientes que vuelven y cuentas que hay que ordenar.</p>
+    </div>
+    <div class="tres">
+      <div>
+        <h3>Club VIP con alianzas</h3>
+        <p>Los clientes suben de nivel según sus visitas y canjean beneficios.</p>
+        <ul><li>Plata, Oro y Diamante, con beneficios que tú defines</li><li>Alianzas con otros negocios, canjeables desde el Club</li><li>Página propia para cada cliente</li></ul>
+      </div>
+      <div>
+        <h3>Varios locales, un solo panel</h3>
+        <p>Cada sucursal es independiente en lo operativo.</p>
+        <ul><li>Al crear una, copias los servicios de la principal</li><li>Los clientes y el Club VIP son de todo el negocio</li><li>Recepción y profesionales ven solo su sucursal</li></ul>
+      </div>
+      <div>
+        <span class="pronto">En camino</span>
+        <h3>Boletas y reparto</h3>
+        <p>Pensado para locales con profesionales independientes.</p>
+        <ul><li>Reparto de cada venta entre negocio y profesional</li><li>Arriendo de sillón, IVA y liquidaciones</li><li>Registro de boletas con su folio</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="planes">
+  <div class="wrap">
+    <div class="cab">
+      <h2>Empieza gratis, pasa a Pro cuando lo necesites</h2>
+      <p>El plan Pro se activa por transferencia. Dejas tus datos y te escribimos con las instrucciones.</p>
+    </div>
+    <div class="planes">
+      <div class="plan">
+        <h3>Gratis</h3>
+        <div class="quien">Para probar con tu equipo</div>
+        <div class="precio">$0<small> /mes</small></div>
+        <ul><li>Hasta 50 clientes</li><li>1 profesional</li><li>Agenda y reservas online</li><li>Cobro con propina y vuelto</li></ul>
+        <a class="btn" href="ingresar.html#registro">Crear cuenta gratis</a>
+      </div>
+      <div class="plan pro">
+        <h3>Pro</h3>
+        <div class="quien">Para un local con equipo</div>
+        <div class="precio">US$15<small> /mes</small></div>
+        <ul><li>Clientes sin límite</li><li>Hasta 5 profesionales</li><li>Club VIP, gift cards y encuestas</li><li>Comisiones y reportes completos</li></ul>
+        <button class="btn" type="button" id="abrir-pro">Solicitar plan Pro</button>
+        <div class="peq">Te enviamos los datos de transferencia por correo.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2>Arma tu agenda hoy y deja la libreta en el cajón.</h2>
+    <a class="btn" href="ingresar.html#registro">Probar gratis</a>
+  </div>
+</section>
+</main>
 
 <footer>
   <div class="wrap">
-    © 2026 Reservia · <a href="ingresar.html">Ingresar</a>
+    <span>© 2026 Reservia</span><a href="ingresar.html">Ingresar</a><a href="#planes">Planes</a>
   </div>
 </footer>
+
+<dialog id="dlg-pro" aria-labelledby="dlg-titulo">
+  <div class="dlg">
+    <button class="x" type="button" id="cerrar-pro" aria-label="Cerrar">×</button>
+    <form id="form-pro" novalidate>
+      <h3 id="dlg-titulo">Solicitar plan Pro</h3>
+      <p class="lead">Déjanos tus datos. Te escribimos con los datos de transferencia y, cuando se confirme el pago, activamos tu plan.</p>
+      <div class="trampa" aria-hidden="true"><label>No completar<input type="text" name="web" tabindex="-1" autocomplete="off"></label></div>
+      <label for="p-nombre">Tu nombre</label>
+      <input id="p-nombre" name="nombre" autocomplete="name" required maxlength="80">
+      <label for="p-negocio">Nombre del negocio</label>
+      <input id="p-negocio" name="negocio" autocomplete="organization" required maxlength="100">
+      <div class="dos">
+        <div><label for="p-wsp">WhatsApp</label><input id="p-wsp" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" required maxlength="20"></div>
+        <div><label for="p-email">Correo</label><input id="p-email" name="email" type="email" autocomplete="email" required maxlength="120"></div>
+      </div>
+      <label for="p-prof">¿Cuántos profesionales tiene tu equipo?</label>
+      <select id="p-prof" name="profesionales"><option value="1 a 2">1 a 2</option><option value="3 a 5" selected>3 a 5</option><option value="Más de 5">Más de 5</option></select>
+      <label for="p-msg">Algo que quieras contarnos (opcional)</label>
+      <textarea id="p-msg" name="mensaje" rows="2" maxlength="500"></textarea>
+      <div class="err" id="p-err" role="alert"></div>
+      <div class="acciones">
+        <button class="btn btn-k" type="submit" id="p-enviar">Enviar solicitud</button>
+        <button class="btn btn-s" type="button" id="p-cancelar">Cancelar</button>
+      </div>
+    </form>
+    <div class="ok" id="p-ok">
+      <h3>Recibimos tu solicitud</h3>
+      <p class="lead" style="margin-bottom:0">Te escribiremos con los datos de transferencia. Mientras tanto puedes seguir usando Reservia con el plan gratis.</p>
+      <button class="btn btn-k" type="button" id="p-listo">Listo</button>
+    </div>
+  </div>
+</dialog>
+
+
+<script>
+// ─── Ejemplo de marca: el logo define el color del negocio ───
+(function(){
+  var MARCAS={
+    norte:{n:'Barbería Norte',l:'N',v:{'--m-bg':'#F6F7F4','--m-ink':'#1A1B1D','--m-acc':'#2F6B4F','--m-on':'#FFFFFF','--m-linea':'#DADDD6'},t:'Logo verde: el acento del negocio pasa a ser ese verde.'},
+    alba:{n:'Salón Alba',l:'A',v:{'--m-bg':'#F8F5F6','--m-ink':'#1A1B1D','--m-acc':'#8A3B62','--m-on':'#FFFFFF','--m-linea':'#E4DADF'},t:'Logo ciruela: botones, íconos y detalles toman ese color.'},
+    tico:{n:'Tico Barber',l:'T',v:{'--m-bg':'#15181D','--m-ink':'#F2F2F2','--m-acc':'#FFFFFF','--m-on':'#15181D','--m-linea':'#2B3038'},t:'Logo blanco: todo cambia solo a modo oscuro, con los detalles en blanco.'}
+  };
+  var demo=document.getElementById('demo'); if(!demo) return;
+  document.querySelectorAll('.logos button').forEach(function(b){
+    b.addEventListener('click',function(){
+      var m=MARCAS[b.getAttribute('data-m')]; if(!m) return;
+      Object.keys(m.v).forEach(function(k){ demo.style.setProperty(k,m.v[k]); });
+      document.getElementById('demo-logo').textContent=m.l;
+      document.getElementById('demo-nombre').textContent=m.n;
+      document.getElementById('leyenda').textContent=m.t;
+      document.querySelectorAll('.logos button').forEach(function(x){ x.setAttribute('aria-pressed',x===b?'true':'false'); });
+    });
+  });
+})();
+
+// ─── Solicitud del plan Pro ───
+// Va a /api/solicitar-plan-pro, que la guarda y le avisa por correo al equipo de
+// Reservia. No cobra nada: el plan se activa a mano cuando llega la transferencia.
+(function(){
+  var dlg=document.getElementById('dlg-pro'); if(!dlg) return;
+  var form=document.getElementById('form-pro'), err=document.getElementById('p-err'), ok=document.getElementById('p-ok');
+  function abrir(){ form.style.display=''; ok.style.display='none'; err.style.display='none';
+    if(typeof dlg.showModal==='function') dlg.showModal(); else dlg.setAttribute('open',''); }
+  function cerrar(){ if(typeof dlg.close==='function') dlg.close(); else dlg.removeAttribute('open'); }
+  document.getElementById('abrir-pro').addEventListener('click',abrir);
+  ['cerrar-pro','p-cancelar','p-listo'].forEach(function(id){ document.getElementById(id).addEventListener('click',cerrar); });
+  dlg.addEventListener('click',function(e){ if(e.target===dlg) cerrar(); });
+  if(location.hash==='#pro') abrir();
+
+  function mostrarError(t){ err.textContent=t; err.style.display='block'; }
+  form.addEventListener('submit',async function(e){
+    e.preventDefault(); err.style.display='none';
+    var f=new FormData(form), d={};
+    f.forEach(function(v,k){ d[k]=String(v).trim(); });
+    if(d.nombre.length<2||d.negocio.length<2){ mostrarError('Escribe tu nombre y el del negocio.'); return; }
+    if(d.whatsapp.replace(/\D/g,'').length<8){ mostrarError('Revisa el número de WhatsApp.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)){ mostrarError('Revisa el correo.'); return; }
+    var btn=document.getElementById('p-enviar'); btn.disabled=true; btn.textContent='Enviando…';
+    try{
+      d.origen='landing';
+      var r=await fetch('/api/solicitar-plan-pro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+      var j=await r.json().catch(function(){ return {}; });
+      if(!r.ok||!j.ok) throw new Error(j.error||'No pudimos enviar la solicitud.');
+      form.style.display='none'; ok.style.display='block'; form.reset();
+    }catch(x){ mostrarError((x&&x.message)||'No pudimos enviar la solicitud. Inténtalo de nuevo.'); }
+    finally{ btn.disabled=false; btn.textContent='Enviar solicitud'; }
+  });
+})();
+</script>
 
 <script>
 // ─── Enlaces de correo que aterrizan acá por error ───

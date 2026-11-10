@@ -115,7 +115,7 @@ input:focus{outline:none;border-color:#7c6af7;box-shadow:0 0 0 3px rgba(124,106,
           <div class="plan" onclick="selPlan(this,'pro')">
             <div class="plan-name">Pro ⭐</div>
             <div class="plan-price">$15<span>USD/mes</span></div>
-            <div class="plan-feat">Ilimitado · 5 profesionales</div>
+            <div class="plan-feat">Ilimitado · 5 profesionales<br>Se activa por transferencia: te escribimos con los datos</div>
           </div>
         </div>
         <input type="hidden" id="r-plan" value="free">
@@ -188,7 +188,7 @@ async function doReg(){
   try{
     const{data:auth,error:e1}=await sb.auth.signUp({email:RD.email,password:RD.pass,options:{data:{nombre:RD.nombre,rol:'dueno'}}});
     if(e1)throw e1;
-    const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,rubro:RD.rubro,plan:document.getElementById('r-plan').value}).select().single();
+    const{data:barb,error:e2}=await sb.from('barberias').insert({nombre:RD.neg,direccion:RD.dir,whatsapp:RD.wsp,rubro:RD.rubro,plan:'free'}).select().single();
     if(e2)throw e2;
     // insert(), no upsert(): "perfiles" solo permite UPDATE de la columna
     // "nombre" desde este rol (rol/barberia_id están bloqueadas por diseño,
@@ -227,7 +227,17 @@ async function doReg(){
       {barberia_id:barb.id,evento:'Cliente confirma reserva',mensaje:'Hola! Quiero confirmar mi reserva en {barberia}:\n📅 {fecha} a las {hora} hrs\n✂️ {servicio} con {profesional}\nNombre: {nombre}',activo:true}
     ];
     await sb.from('plantillas_mensajes').insert(plantillas);
-    showAlert('alert-reg','¡Negocio creado! Iniciando sesión...','ok');
+    // El plan Pro no se asigna desde el navegador: la cuenta nace en Free y la
+    // elección queda como solicitud. El equipo de Reservia responde con los datos
+    // de transferencia y activa el plan cuando llega el pago.
+    const pidioPro=document.getElementById('r-plan').value==='pro';
+    if(pidioPro){
+      try{
+        await fetch('/api/solicitar-plan-pro',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({nombre:RD.nombre,negocio:RD.neg,email:RD.email,whatsapp:RD.wsp,origen:'registro',barberiaId:barb.id})});
+      }catch(_){ /* la cuenta ya existe; la solicitud se puede repetir desde la landing */ }
+    }
+    showAlert('alert-reg',pidioPro?'¡Negocio creado! Recibimos tu solicitud del plan Pro y te escribimos con los datos de transferencia. Iniciando sesión...':'¡Negocio creado! Iniciando sesión...','ok');
     setTimeout(()=>window.location.replace('app.html'),1500);
   }catch(e){
     showAlert('alert-reg',e.message||'Error al crear la cuenta');
