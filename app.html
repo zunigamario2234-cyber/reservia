@@ -366,6 +366,9 @@ body.modo-recepcion .topbar button[onclick*="m-cita"]{display:none}
    estados) y que en fondo claro no se leen. */
 body.panel-claro .logo-text h1,body.panel-claro .topbar h2,body.panel-claro .mc-val,body.panel-claro .modal-title{color:var(--texto-fuerte)}
 body.panel-claro .nav-section{color:var(--text3)}
+/* Oscuro con fondo de marca: los grises fijos del panel no alcanzan contraste sobre el color. */
+body.panel-fondo .nav-section{color:var(--text3)}
+body.panel-fondo .btn-ghost{color:var(--text2)}
 body.panel-claro .btn-primary{color:var(--texto-sobre-acento)}
 body.panel-claro .btn-primary:hover{background:var(--acento-hover)}
 body.panel-claro .btn-ghost{color:var(--text2)}
@@ -937,7 +940,11 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
                  modo ya cambia ESTE panel, así que esconder el aviso haría
                  creer que también cambia sus páginas. El modo claro de las
                  páginas públicas es una entrega aparte. -->
-            <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.45">Por ahora tus páginas de reserva y Club VIP se ven en modo oscuro, elijas lo que elijas aquí. El color de acento sí se aplica en ellas.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.45">El modo claro u oscuro y el color de acento también se aplican en tus páginas de reserva y Club VIP.</div>
+            <div style="font-size:11px;color:var(--text3);margin:14px 0 6px">Fondo con el color de tu marca</div>
+            <div id="tema-fondos" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+            <div id="tema-fondo-nota" style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.45"></div>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-tema-sugerencia" style="display:none;margin-top:8px" onclick="temaUsarSugerencia()"></button>
             <div id="tema-aviso" style="font-size:11px;margin-top:12px;line-height:1.5"></div>
             <button class="btn btn-primary btn-sm" id="btn-tema-guardar" style="margin-top:14px" onclick="temaGuardar()">Guardar tema</button>
           </div>
@@ -8674,7 +8681,7 @@ async function subirPortadaBlob(blob){
 // `turnoResuelto` empieza en 0, igual que `turno`, así que antes del primer
 // análisis los dos coinciden y el estado es "resuelto sin análisis" — que es
 // la verdad: no hay nada corriendo y no hay resultado.
-let TEMA = { an: null, color: null, modo: 'auto', src: null, intentado: false, turno: 0, turnoResuelto: 0 };
+let TEMA = { an: null, color: null, fondo: null, modo: 'auto', src: null, intentado: false, turno: 0, turnoResuelto: 0 };
 
 // `anPre` es un análisis ya calculado por quien llama (hoy, subirLogoBlob,
 // que lo lanza en paralelo con la subida). Si viene, no se vuelve a
@@ -8712,6 +8719,7 @@ async function temaRefrescar(src, anPre) {
   TEMA.color = hexValido(S.barberia.color_marca) ? S.barberia.color_marca
              : (an ? an.acentoSugerido : AZUL_RESERVIA);
   document.getElementById('tema-modo').value = TEMA.modo;
+  TEMA.fondo = hexValido(S.barberia.color_fondo_marca) ? S.barberia.color_fondo_marca.toUpperCase() : null;
   temaPintar();
   return an;
 }
@@ -8749,12 +8757,13 @@ function aplicarTemaPanel(){
   renderLogoSidebar();
   const r = document.documentElement;
   PANEL_VARS_PUESTAS.forEach(k => r.style.removeProperty(k)); PANEL_VARS_PUESTAS = [];
-  PANEL_CLARO = false; document.body.classList.remove('panel-claro');
+  PANEL_CLARO = false; document.body.classList.remove('panel-claro'); document.body.classList.remove('panel-fondo');
   const b = S.barberia || {};
   let t = null;
-  try { t = derivarSuperficies({ modo: b.modo_tema === 'claro' ? 'claro' : 'oscuro', colorMarca: b.color_marca, colorFondoLogo: b.color_fondo_logo }); } catch (e) { t = null; }
+  const fm = hexValido(b.color_fondo_marca) ? b.color_fondo_marca : null;
+  try { t = derivarSuperficies({ modo: b.modo_tema === 'claro' ? 'claro' : 'oscuro', colorMarca: b.color_marca, colorFondoLogo: b.color_fondo_logo, colorFondoMarca: fm }); } catch (e) { t = null; }
   if (!t) return;
-  const claro = b.modo_tema === 'claro';
+  const claro = fm ? modoDeFondoMarca(fm) === 'claro' : b.modo_tema === 'claro';
   const v = {
     '--bg': t['--fondo'], '--bg2': claro ? t['--tarjeta'] : t['--portada-fondo'], '--bg3': t['--tarjeta'],
     '--bg4': claro ? t['--superficie-2'] : t['--prefijo-fondo'],
@@ -8763,14 +8772,17 @@ function aplicarTemaPanel(){
     '--p1-light': panelRgba(t['--acento'], claro ? 0.12 : 0.18), '--p1-glow': panelRgba(t['--acento'], 0.3),
     '--cal-linea': claro ? t['--borde-suave'] : '#16172a'
   };
-  if (claro) Object.assign(v, { '--text': t['--texto'], '--text2': t['--texto-suave'], '--text3': t['--texto-debil'] });
+  // En oscuro con fondo de marca los grises del panel no alcanzan contraste sobre el color: se usan los textos calculados.
+  if (claro || fm) Object.assign(v, { '--text': t['--texto'], '--text2': t['--texto-suave'], '--text3': t['--texto-debil'] });
   Object.keys(t).forEach(k => { if (!(k in v)) v[k] = t[k]; });   // el resto (--exito, --b-gold-texto…) lo usa el CSS de panel-claro
   Object.keys(v).forEach(k => { r.style.setProperty(k, v[k]); PANEL_VARS_PUESTAS.push(k); });
   if (claro) { PANEL_CLARO = true; document.body.classList.add('panel-claro'); }
+  if (fm) document.body.classList.add('panel-fondo');
 }
 function cvar(nombre, defecto){ return (getComputedStyle(document.documentElement).getPropertyValue(nombre) || '').trim() || defecto; }
 
 function temaModoEfectivo() {
+  if (hexValido(TEMA.fondo)) return modoDeFondoMarca(TEMA.fondo);   // el fondo decide el modo
   if (TEMA.modo === 'claro' || TEMA.modo === 'oscuro') return TEMA.modo;
   return TEMA.an ? TEMA.an.modoSugerido : 'claro';
 }
@@ -8794,11 +8806,54 @@ function temaElegirHex(v) {
   temaElegirColor(s);
 }
 function temaElegirModo(m) { TEMA.modo = m; temaPintar(); }
+function temaElegirFondo(hex) { TEMA.fondo = hexValido(hex) ? hex.toUpperCase() : null; temaPintar(); }
+function temaUsarSugerencia() {
+  const sg = sugerirFondoMarca(TEMA.an).sugerido; if (!sg) return;
+  TEMA.fondo = sg.fondo; TEMA.color = sg.acento; temaPintar();
+}
+
+// Muestras de fondo: «Neutro» (claro/oscuro de siempre) y los colores del logo.
+// Si el logo no da colores utilizables, solo queda «Neutro».
+function temaPintarFondos(modo) {
+  const cont = document.getElementById('tema-fondos'); if (!cont) return;
+  const sg = sugerirFondoMarca(TEMA.an);
+  const lista = sg.fondos.slice();
+  if (hexValido(TEMA.fondo) && !lista.includes(TEMA.fondo)) lista.unshift(TEMA.fondo);
+  const sel = hexValido(TEMA.fondo) ? TEMA.fondo : null;
+  const boton = (hex, etq) => `<div style="display:flex;flex-direction:column;align-items:center;width:44px">
+    <button type="button" onclick="temaElegirFondo(${hex ? `'${hex}'` : 'null'})" title="${hex || 'Neutro'}"
+      style="width:36px;height:36px;border-radius:9px;cursor:pointer;padding:0;background:${hex || 'repeating-linear-gradient(45deg,var(--bg3),var(--bg3) 4px,var(--bg4) 4px,var(--bg4) 8px)'};
+      border:${sel === hex ? '2px solid var(--p1)' : '1px solid var(--border)'}"></button>
+    <div style="font-size:9px;color:var(--text3);text-align:center;line-height:1.2;margin-top:3px">${etq}</div></div>`;
+  cont.innerHTML = boton(null, 'Neutro') + lista.map(h => boton(h, '')).join('');
+  const nota = document.getElementById('tema-fondo-nota');
+  const dis = document.getElementById('tema-modo'); if (dis) dis.disabled = !!sel;
+  nota.textContent = sel
+    ? 'El fondo toma este color y el modo ' + modo + ' se decide solo para que el texto se lea. El acento sigue siendo el color de arriba.'
+    : (lista.length ? 'Elige un color de tu logo para pintar el fondo con él, y deja otro color como acento.' : 'Tu logo no tiene colores para usar de fondo: el tema queda claro u oscuro.');
+  const bs = document.getElementById('btn-tema-sugerencia');
+  if (sg.sugerido && !sel) { bs.style.display = ''; bs.textContent = 'Usar sugerencia: fondo ' + sg.sugerido.fondo + ' con acento ' + sg.sugerido.acento; }
+  else bs.style.display = 'none';
+}
 
 function temaPintar() {
   const an = TEMA.an, modo = temaModoEfectivo();
   const tokens = generarTema({ color: TEMA.color, modo: modo });
+  // Con fondo de marca, la vista previa usa las superficies reales (derivarSuperficies,
+  // la misma función que usan el panel y las páginas públicas).
+  if (hexValido(TEMA.fondo)) {
+    const d = derivarSuperficies({ modo, colorMarca: TEMA.color, colorFondoMarca: TEMA.fondo, colorFondoLogo: S.barberia && S.barberia.color_fondo_logo });
+    if (d) {
+      Object.assign(tokens, {
+        '--fondo': d['--fondo'], '--tarjeta': d['--tarjeta'], '--fondo-suave': d['--portada-fondo'],
+        '--borde': d['--borde'], '--borde-suave': d['--borde'], '--texto': d['--texto'], '--texto-atenuado': d['--texto-suave'],
+        '--acento': d['--acento'], '--texto-sobre-acento': d['--texto-sobre-acento'],
+        '--acento-tinte': mezclar(d['--acento'], d['--tarjeta'], 0.85), '--acento-borde': mezclar(d['--acento'], d['--tarjeta'], 0.6)
+      });
+    }
+  }
   const acento = tokens['--acento'];
+  temaPintarFondos(modo);
 
   // Las muestras. Cada una va en su propia columna para que la etiqueta
   // quede DEBAJO de su botón: antes el div de la etiqueta era otro hijo del
@@ -8900,7 +8955,8 @@ async function temaGuardar() {
   // El NULL-por-fallo vale en la SUBIDA, donde el logo cambió y el valor
   // viejo ya no describe nada. Acá el logo no cambió.
   const anVigente = (TEMA.turno === TEMA.turnoResuelto) ? TEMA.an : undefined;
-  const cambios = { color_marca: TEMA.color, modo_tema: modo };
+  const fondoMarca = hexValido(TEMA.fondo) ? TEMA.fondo.toUpperCase() : null;
+  const cambios = { color_marca: TEMA.color, modo_tema: modo, color_fondo_marca: fondoMarca };
   let fondoLogo;                       // undefined = no se toca la columna
   if (anVigente) {
     fondoLogo = (anVigente.fondoUniforme && !anVigente.fondoTransparente && hexValido(anVigente.fondo))
@@ -8920,7 +8976,7 @@ async function temaGuardar() {
   // update traería error; pero una relectura también detecta el caso de que
   // una política filtre la fila y el update no toque nada sin fallar.
   const { data: fresco, error: eRead } = await sb.from('barberias')
-    .select('color_marca,modo_tema,color_fondo_logo').eq('id', S.barberia.id).single();
+    .select('color_marca,modo_tema,color_fondo_logo,color_fondo_marca').eq('id', S.barberia.id).single();
   if (eRead || !fresco) {
     console.error('Guardado, pero no se pudo releer:', eRead && eRead.message);
     notify('Tema guardado, pero no pudimos confirmarlo. Recarga la página.', 'warn');
@@ -8929,7 +8985,7 @@ async function temaGuardar() {
   // color_fondo_logo se confirma SOLO si se escribió. Si no se incluyó en
   // el update, comparar no tendría sentido: la columna puede traer
   // cualquier valor anterior y estaría bien.
-  if (fresco.color_marca !== TEMA.color || fresco.modo_tema !== modo
+  if (fresco.color_marca !== TEMA.color || fresco.modo_tema !== modo || (fresco.color_fondo_marca || null) !== fondoMarca
       || (fondoLogo !== undefined && fresco.color_fondo_logo !== fondoLogo)) {
     console.error('La base quedó con otros valores:', fresco);
     notify('El tema no quedó guardado como pedimos. Revisa e intenta de nuevo.', 'err');
@@ -8937,12 +8993,14 @@ async function temaGuardar() {
   }
   S.barberia.color_marca = fresco.color_marca;
   S.barberia.modo_tema = fresco.modo_tema;
+  S.barberia.color_fondo_marca = fresco.color_fondo_marca || null;
   S.barberia.color_marca = fresco.color_marca; S.barberia.color_fondo_logo = fresco.color_fondo_logo;
   aplicarTemaPanel();
   try { renderDashboard(); } catch (e) {}
   S.barberia.color_fondo_logo = fresco.color_fondo_logo;
   TEMA.color = fresco.color_marca;
   TEMA.modo = fresco.modo_tema;
+  TEMA.fondo = fondoMarca;
   document.getElementById('tema-modo').value = fresco.modo_tema;
   notify('Tema guardado ✓');
   temaPintar();

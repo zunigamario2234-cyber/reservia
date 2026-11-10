@@ -293,7 +293,7 @@ function aplicarTemaPublico(barb){
   // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
   // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
   // variable se toca y la página es la de antes, píxel por píxel.
-  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo, colorFondoMarca: barb.color_fondo_marca });
   if(!vars) return false;
   // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
   // valor que no pase hexValido no debe poder convertirse en una regla. Con
@@ -875,7 +875,7 @@ async function init(){
   // PostgREST devuelve 400 y ACÁ SE VE COMO "no encontramos este negocio", que
   // no se parece en nada al problema real. Por eso la migración de intervalo_min
   // tuvo que ir ANTES que este código, no después.
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono,intervalo_min,color_marca,color_fondo_logo,modo_tema').eq('id',BARBERIA_ID).single();
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,descripcion,direccion,telefono,intervalo_min,color_marca,color_fondo_logo,modo_tema,color_fondo_marca').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
   aplicarTemaPublico(barb);

@@ -160,7 +160,7 @@ function aplicarTemaPublico(barb){
   // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
   // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
   // variable se toca y la página es la de antes, píxel por píxel.
-  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo, colorFondoMarca: barb.color_fondo_marca });
   if(!vars) return false;
   // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
   // valor que no pase hexValido no debe poder convertirse en una regla. Con
@@ -362,7 +362,7 @@ async function init(){
   //
   // modo_tema SÍ se pide, para respetar el modo que el dueño eligió. Solo
   // 'claro' cambia la página; 'auto' y 'oscuro' son la de siempre.
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo,modo_tema').eq('id',BARBERIA_ID).single();
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo,modo_tema,color_fondo_marca').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
   BARBERIA = barb;
 
