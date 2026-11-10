@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Reservia — Administración</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<style>
+@font-face{font-family:'Hanken';src:url('fuentes/HankenGrotesk-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
+:root{--papel:#EEEEEA;--hoja:#FAFAF8;--tinta:#1A1B1D;--tinta-2:#55595F;--linea:#D2D2CC;--alerta:#A82F23;--ok:#2F6B3F;--ok-fondo:#DDE8D9;--aviso-fondo:#EFE3C4;--gris-fondo:#E2E2DC}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Hanken',system-ui,sans-serif;background:var(--papel);color:var(--tinta);font-size:15px;line-height:1.45;min-height:100vh}
+button,input,select,textarea{font:inherit;color:inherit}
+.wrap{max-width:900px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-left,0px))}
+header{border-bottom:1px solid var(--linea);background:var(--hoja)}
+header .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:14px}
+h1{font-size:19px;font-weight:700}
+.link{background:none;border:none;text-decoration:underline;cursor:pointer;color:var(--tinta-2);font-size:14px}
+main{padding-block:22px 60px}
+.pestanas{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.chip{border:1px solid var(--linea);background:var(--hoja);border-radius:999px;padding:7px 14px;font-size:14px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--tinta);color:#fff;border-color:var(--tinta)}
+.chip b{font-weight:600;opacity:.7;margin-left:4px}
+.lista{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--hoja);border:1px solid var(--linea);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.cab{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.cab h2{font-size:17px;font-weight:700}
+.sub{color:var(--tinta-2);font-size:13px}
+.etq{display:inline-block;border-radius:6px;padding:2px 9px;font-size:12.5px;font-weight:600;background:var(--gris-fondo)}
+.etq.nueva{background:var(--aviso-fondo)}
+.etq.pagada,.etq.activada,.etq.pro{background:var(--ok-fondo);color:var(--ok)}
+.etq.descartada{color:var(--tinta-2)}
+.datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 18px;font-size:14px}
+.datos span{color:var(--tinta-2);font-size:12.5px;display:block}
+.datos a{color:var(--tinta)}
+.msg{font-size:14px;background:var(--papel);border-radius:8px;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.fila{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:1px solid var(--tinta);background:var(--hoja);border-radius:8px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer}
+.btn.pri{background:var(--tinta);color:#fff}
+.btn.peli{border-color:var(--alerta);color:var(--alerta)}
+.btn.peli.conf{background:var(--alerta);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+input[type=text],input[type=email],input[type=password],select,textarea{width:100%;border:1px solid var(--linea);border-radius:8px;padding:9px 11px;background:#fff}
+textarea{resize:vertical;min-height:44px}
+.vinc{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--linea);padding-top:10px}
+.vinc label{font-size:13px;color:var(--tinta-2)}
+.vacio{text-align:center;color:var(--tinta-2);padding:36px 0}
+.err{color:var(--alerta);font-size:14px}
+.login{max-width:380px;margin:12vh auto 0;display:flex;flex-direction:column;gap:12px}
+.login .card{gap:10px}
+.fila-neg{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+.sw{display:flex;align-items:center;gap:8px}
+.sw button{width:46px;height:26px;border-radius:999px;border:1px solid var(--linea);background:var(--gris-fondo);position:relative;cursor:pointer;padding:0}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.sw button[aria-checked="true"]{background:var(--ok);border-color:var(--ok)}
+.sw button[aria-checked="true"]::after{transform:translateX(20px)}
+.sw button:disabled{opacity:.5}
+.buscar{margin-bottom:12px}
+.aviso{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--tinta);color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;max-width:92vw}
+.aviso.mal{background:var(--alerta)}
+:focus-visible{outline:2px solid var(--tinta);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="v-login" class="wrap" hidden>
+  <form class="login" id="f-login">
+    <h1>Administración de Reservia</h1>
+    <div class="card">
+      <input type="email" id="l-email" placeholder="Correo" autocomplete="username" required>
+      <input type="password" id="l-pass" placeholder="Contraseña" autocomplete="current-password" required>
+      <button class="btn pri" type="submit" id="l-ok">Entrar</button>
+      <p class="err" id="l-err" role="alert"></p>
+    </div>
+  </form>
+</div>
+
+<div id="v-panel" hidden>
+  <header><div class="wrap"><h1>Administración</h1><button class="link" id="salir">Salir</button></div></header>
+  <main class="wrap">
+    <div class="pestanas" id="pestanas">
+      <button class="chip" data-vista="solicitudes" aria-pressed="true">Solicitudes</button>
+      <button class="chip" data-vista="negocios" aria-pressed="false">Negocios</button>
+    </div>
+    <div id="vista-solicitudes">
+      <div class="pestanas" id="filtros"></div>
+      <div class="lista" id="lista-sol"></div>
+    </div>
+    <div id="vista-negocios" hidden>
+      <input type="text" class="buscar" id="buscar" placeholder="Buscar por nombre o correo">
+      <div class="lista" id="lista-neg"></div>
+    </div>
+  </main>
+</div>
+<div id="aviso" class="aviso" role="status" hidden></div>
+
+<script>
+(function(){
+  if (typeof SUPABASE_URL === 'undefined') { document.body.textContent = 'Falta supabase-config.js'; return; }
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  var $ = function(id){ return document.getElementById(id); };
+  var SOL = [], NEG = [], filtro = 'abiertas', vista = 'solicitudes', confirmando = null;
+
+  var ESTADOS = { nueva:'Nueva', contactada:'En progreso', pagada:'Pagada', activada:'Activada', descartada:'Descartada' };
+  var FILTROS = [['abiertas','Por atender'],['nueva','Nuevas'],['contactada','En progreso'],['pagada','Pagadas'],['activada','Activadas'],['descartada','Descartadas'],['todas','Todas']];
+
+  function el(tag, cls, txt){ var e = document.createElement(tag); if(cls) e.className = cls; if(txt != null) e.textContent = txt; return e; }
+  function aviso(t, mal){ var a = $('aviso'); a.textContent = t; a.className = 'aviso' + (mal ? ' mal' : ''); a.hidden = false; clearTimeout(aviso.t); aviso.t = setTimeout(function(){ a.hidden = true; }, 3500); }
+  function fecha(iso){ try { return new Date(iso).toLocaleString('es-CL', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}); } catch(e){ return ''; } }
+  function dato(k, v, href){ var d = el('div'); d.appendChild(el('span', '', k)); if(href){ var a = el('a', '', v); a.href = href; a.target = '_blank'; a.rel = 'noopener'; d.appendChild(a); } else d.appendChild(document.createTextNode(v || '—')); return d; }
+  function etiqueta(clave, txt){ return el('span', 'etq ' + clave, txt); }
+  function rpc(nombre, args){ return sb.rpc(nombre, args || {}).then(function(r){ if(r.error) throw new Error(r.error.message); return r.data; }); }
+
+  // ── Sesión ──
+  function mostrarLogin(msg){ $('v-panel').hidden = true; $('v-login').hidden = false; $('l-err').textContent = msg || ''; }
+  function iniciar(){
+    sb.auth.getSession().then(function(r){
+      if(!r.data || !r.data.session){ mostrarLogin(); return; }
+      return rpc('es_admin').then(function(ok){
+        if(!ok){ sb.auth.signOut(); mostrarLogin('Esta cuenta no es de administrador.'); return; }
+        $('v-login').hidden = true; $('v-panel').hidden = false; cargar();
+      });
+    }).catch(function(){ mostrarLogin('No pudimos verificar la sesión.'); });
+  }
+  $('f-login').addEventListener('submit', function(ev){
+    ev.preventDefault(); $('l-err').textContent = ''; $('l-ok').disabled = true;
+    sb.auth.signInWithPassword({ email: $('l-email').value.trim(), password: $('l-pass').value }).then(function(r){
+      $('l-ok').disabled = false;
+      if(r.error){ $('l-err').textContent = 'Correo o contraseña incorrectos.'; return; }
+      iniciar();
+    });
+  });
+  $('salir').addEventListener('click', function(){ sb.auth.signOut().then(function(){ mostrarLogin(); }); });
+
+  function cargar(){
+    return Promise.all([rpc('admin_solicitudes'), rpc('admin_negocios')]).then(function(r){
+      SOL = r[0] || []; NEG = r[1] || []; pintar();
+    }).catch(function(e){ aviso('No se pudo cargar: ' + e.message, true); });
+  }
+
+  // ── Pestañas y filtros ──
+  $('pestanas').addEventListener('click', function(ev){
+    var b = ev.target.closest('[data-vista]'); if(!b) return;
+    vista = b.dataset.vista;
+    Array.prototype.forEach.call($('pestanas').children, function(c){ c.setAttribute('aria-pressed', c === b ? 'true' : 'false'); });
+    pintar();
+  });
+  $('buscar').addEventListener('input', pintarNegocios);
+
+  function pasaFiltro(s){
+    if(filtro === 'todas') return true;
+    if(filtro === 'abiertas') return s.estado === 'nueva' || s.estado === 'contactada' || s.estado === 'pagada';
+    return s.estado === filtro;
+  }
+  function pintar(){
+    $('vista-solicitudes').hidden = vista !== 'solicitudes';
+    $('vista-negocios').hidden = vista !== 'negocios';
+    if(vista === 'solicitudes'){ pintarFiltros(); pintarSolicitudes(); } else pintarNegocios();
+  }
+  function pintarFiltros(){
+    var cont = $('filtros'); cont.textContent = '';
+    FILTROS.forEach(function(f){
+      var n = SOL.filter(function(s){ var old = filtro; filtro = f[0]; var r = pasaFiltro(s); filtro = old; return r; }).length;
+      var b = el('button', 'chip', f[1]); b.setAttribute('aria-pressed', filtro === f[0] ? 'true' : 'false');
+      b.appendChild(el('b', '', String(n)));
+      b.addEventListener('click', function(){ filtro = f[0]; pintar(); });
+      cont.appendChild(b);
+    });
+  }
+
+  // ── Solicitudes ──
+  function pintarSolicitudes(){
+    var cont = $('lista-sol'); cont.textContent = '';
+    var items = SOL.filter(pasaFiltro);
+    if(!items.length){ cont.appendChild(el('p', 'vacio', 'No hay solicitudes en esta lista.')); return; }
+    items.forEach(function(s){ cont.appendChild(tarjeta(s)); });
+  }
+  function tarjeta(s){
+    var c = el('article', 'card');
+    var cab = el('div', 'cab'), t = el('div');
+    t.appendChild(el('h2', '', s.negocio));
+    t.appendChild(el('div', 'sub', s.nombre + ' · ' + fecha(s.created_at) + ' · ' + (s.origen === 'registro' ? 'al crear su cuenta' : 'desde la landing')));
+    cab.appendChild(t);
+    var e = el('div', 'fila'); e.appendChild(etiqueta(s.estado, ESTADOS[s.estado] || s.estado));
+    if(s.plan_actual) e.appendChild(etiqueta(s.plan_actual === 'pro' ? 'pro' : '', 'Plan ' + s.plan_actual));
+    cab.appendChild(e); c.appendChild(cab);
+
+    var d = el('div', 'datos');
+    d.appendChild(dato('WhatsApp', s.whatsapp, 'https://wa.me/' + String(s.whatsapp).replace(/\D/g, '')));
+    d.appendChild(dato('Correo', s.email, 'mailto:' + s.email));
+    if(s.profesionales) d.appendChild(dato('Profesionales', s.profesionales));
+    c.appendChild(d);
+    if(s.mensaje) c.appendChild(el('div', 'msg', s.mensaje));
+
+    // Vincular a un negocio (las que llegan de la landing no traen cuenta).
+    var sel = null;
+    if(!s.barberia_id){
+      var v = el('div', 'vinc');
+      v.appendChild(el('label', '', 'Aún sin cuenta vinculada. Elige el negocio cuando se registre:'));
+      sel = el('select'); sel.setAttribute('aria-label', 'Negocio a vincular');
+      sel.appendChild(new Option('— elegir negocio —', ''));
+      var sugerido = NEG.filter(function(n){ return n.email && n.email.toLowerCase() === String(s.email).toLowerCase(); })[0];
+      NEG.forEach(function(n){ sel.appendChild(new Option(n.nombre + (n.email ? ' · ' + n.email : '') + ' (' + n.plan + ')', n.id)); });
+      if(sugerido) sel.value = sugerido.id;
+      v.appendChild(sel); c.appendChild(v);
+    }
+    var notas = el('textarea'); notas.value = s.notas || ''; notas.placeholder = 'Notas (ej.: transferencia pendiente)'; notas.setAttribute('aria-label', 'Notas');
+    c.appendChild(notas);
+
+    function barb(){ return s.barberia_id || (sel && sel.value) || null; }
+    function guardar(estado, ok){
+      return rpc('admin_actualizar_solicitud', { p_id: s.id, p_estado: estado, p_notas: notas.value, p_barberia: s.barberia_id ? null : (sel && sel.value) || null })
+        .then(function(){ aviso(ok); return cargar(); }).catch(function(er){ aviso(er.message, true); });
+    }
+    var f = el('div', 'fila');
+    function boton(txt, cls, fn, desactivado){ var b = el('button', 'btn ' + (cls || ''), txt); b.type = 'button'; b.disabled = !!desactivado; b.addEventListener('click', fn); f.appendChild(b); return b; }
+    if(s.estado !== 'activada'){
+      boton('Contactada', '', function(){ guardar('contactada', 'Marcada en progreso'); });
+      boton('Pagada', '', function(){ guardar('pagada', 'Marcada como pagada'); });
+      var act = boton('Activar Pro', 'pri', function(){
+        var id = barb(); if(!id){ aviso('Vincula primero el negocio.', true); return; }
+        rpc('admin_set_plan', { p_barberia: id, p_plan: 'pro' })
+          .then(function(){ return rpc('admin_actualizar_solicitud', { p_id: s.id, p_estado: 'activada', p_notas: notas.value, p_barberia: s.barberia_id ? null : id }); })
+          .then(function(){ aviso('Plan Pro activado'); return cargar(); }).catch(function(er){ aviso(er.message, true); });
+      });
+      if(sel) sel.addEventListener('change', function(){ act.title = ''; });
+    } else {
+      boton('Guardar nota', '', function(){ guardar('activada', 'Nota guardada'); });
+    }
+    if(s.estado !== 'descartada' && s.estado !== 'activada'){
+      var key = 'd' + s.id;
+      var d2 = boton('Descartar', 'peli', function(){
+        if(confirmando !== key){ confirmando = key; d2.textContent = 'Confirmar: descartar'; d2.classList.add('conf'); return; }
+        confirmando = null; guardar('descartada', 'Solicitud descartada');
+      });
+    }
+    if(s.estado === 'descartada') boton('Reabrir', '', function(){ guardar('nueva', 'Solicitud reabierta'); });
+    c.appendChild(f);
+    return c;
+  }
+
+  // ── Negocios: encender / apagar el Pro ──
+  function pintarNegocios(){
+    var q = $('buscar').value.trim().toLowerCase();
+    var cont = $('lista-neg'); cont.textContent = '';
+    var items = NEG.filter(function(n){ return !q || (n.nombre || '').toLowerCase().indexOf(q) >= 0 || (n.email || '').toLowerCase().indexOf(q) >= 0; });
+    if(!items.length){ cont.appendChild(el('p', 'vacio', 'No hay negocios que coincidan.')); return; }
+    items.forEach(function(n){
+      var c = el('article', 'card'), fila = el('div', 'fila-neg'), t = el('div');
+      t.appendChild(el('h2', '', n.nombre || '(sin nombre)'));
+      t.appendChild(el('div', 'sub', (n.email || 'sin correo') + ' · creado ' + fecha(n.created_at)));
+      fila.appendChild(t);
+      var sw = el('div', 'sw'); sw.appendChild(el('span', '', 'Pro'));
+      var b = el('button'); b.type = 'button'; b.setAttribute('role', 'switch'); b.setAttribute('aria-label', 'Plan Pro de ' + n.nombre);
+      b.setAttribute('aria-checked', n.plan === 'pro' ? 'true' : 'false');
+      var key = 'n' + n.id;
+      b.addEventListener('click', function(){
+        var nuevo = n.plan === 'pro' ? 'free' : 'pro';
+        if(nuevo === 'free' && confirmando !== key){ confirmando = key; aviso('Toca de nuevo para volver ' + n.nombre + ' a Free'); setTimeout(function(){ if(confirmando === key) confirmando = null; }, 4000); return; }
+        confirmando = null; b.disabled = true;
+        rpc('admin_set_plan', { p_barberia: n.id, p_plan: nuevo }).then(function(){ aviso(n.nombre + ': plan ' + nuevo); return cargar(); })
+          .catch(function(er){ b.disabled = false; aviso(er.message, true); });
+      });
+      sw.appendChild(b); fila.appendChild(sw); c.appendChild(fila); cont.appendChild(c);
+    });
+  }
+
+  iniciar();
+})();
+</script>
+</body>
+</html>
