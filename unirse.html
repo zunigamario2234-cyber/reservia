@@ -362,8 +362,9 @@ async function init(){
   //
   // modo_tema SÍ se pide, para respetar el modo que el dueño eligió. Solo
   // 'claro' cambia la página; 'auto' y 'oscuro' son la de siempre.
-  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo,modo_tema').eq('id',BARBERIA_ID).single();
+  const {data:barb} = await sb.from('barberias').select('nombre,whatsapp,foto_portada,logo_url,color_marca,color_fondo_logo,modo_tema,club_vip_activo').eq('id',BARBERIA_ID).single();
   if(!barb){ mostrarError('No encontramos este negocio.'); return; }
+  if(barb.club_vip_activo === false){ mostrarError('Este negocio no tiene el Club VIP activo por ahora.'); return; }
   BARBERIA = barb;
 
   // El tema va ANTES de pintar nombre, portada y logo, para que el cambio

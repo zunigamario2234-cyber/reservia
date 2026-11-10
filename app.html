@@ -1038,6 +1038,15 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div class="alert al-warn" style="margin-top:10px">⚠️ Este cambio afecta el monto que se paga a los profesionales <strong>desde ahora en adelante</strong>. No se recalculan comisiones de citas ya atendidas.</div>
       <button class="btn btn-primary" onclick="guardarConfig()">Guardar cambios</button>
     </div>
+    <div class="card" id="cfg-club-vip-card" style="margin-bottom:14px;display:none">
+      <div class="card-hdr"><span class="card-title">Club VIP</span></div>
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13px;line-height:1.5">
+        <input type="checkbox" id="cfg-club-vip" style="margin-top:3px" onchange="toggleClubVip(this.checked)">
+        <span>Usar Club VIP en mi negocio
+          <span style="display:block;font-size:11px;color:var(--text3)">Niveles por visitas, alianzas y el link para que tus clientes se unan. Si lo apagas se esconde todo lo del club y los avisos de subida de nivel; tus clientes y su historial se conservan y puedes volver a encenderlo cuando quieras.</span>
+        </span>
+      </label>
+    </div>
   </div>
   <div id="cfg-srv" style="display:none">
     <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Con las flechas ↑↓ decides en qué orden ven tus clientes los servicios al reservar. El de más arriba aparece primero.</p>
@@ -1977,6 +1986,30 @@ let S = { gifts:[], user:null, perfil:null, barberia:null, clientes:[], citas:[]
 const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 let VIP_HABILITADO=true;
 const RUBRO_VIP='Barbería / Peluquería / Centro de estética';
+// El Club VIP lo usa un negocio cuando su rubro lo contempla Y el dueño no lo
+// apagó (barberias.club_vip_activo; sin la columna o en null cuenta como activo).
+function calcularVipHabilitado(){
+  return (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP && S.barberia?.club_vip_activo !== false;
+}
+// Enciende o apaga el Club VIP desde Config → Negocio. Guarda primero; solo si
+// la base lo aceptó cambia la pantalla. Al encender carga los datos del club.
+async function toggleClubVip(activo){
+  const chk=document.getElementById('cfg-club-vip');
+  const {error}=await sb.from('barberias').update({club_vip_activo:activo}).eq('id',S.barberia.id);
+  if(error){ if(chk) chk.checked=!activo; notify('No se pudo cambiar el Club VIP: '+error.message,'err'); return; }
+  S.barberia.club_vip_activo=activo;
+  VIP_HABILITADO=calcularVipHabilitado();
+  document.body.classList.toggle('no-vip',!VIP_HABILITADO);
+  if(VIP_HABILITADO){ await Promise.all([loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip()]); }
+  pintarEstadoClubVip();
+  notify(activo?'Club VIP activado':'Club VIP desactivado. Tus clientes y su historial se conservan.','ok');
+}
+function pintarEstadoClubVip(){
+  const card=document.getElementById('cfg-club-vip-card'); if(!card) return;
+  const aplica=(S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
+  card.style.display=aplica?'':'none';
+  document.getElementById('cfg-club-vip').checked=S.barberia?.club_vip_activo!==false;
+}
 
 // ─── INIT ───
 async function init(){
@@ -2207,7 +2240,7 @@ async function loadAll(){
   S.barberia = b;
   await loadSucursales();
   aplicarTemaPanel();
-  VIP_HABILITADO = (S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
+  VIP_HABILITADO = calcularVipHabilitado();
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
   const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards(),loadAnticipos(),loadIvaHistorico()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
@@ -6811,6 +6844,7 @@ function renderConfig(){
     // Sin await a propósito: pide el token por RPC y rellena el campo cuando
     // llega. Esperarlo dejaría el resto de la configuración en blanco mientras
     // tanto, y el link del QR no es lo primero que se viene a mirar acá.
+    pintarEstadoClubVip();
     cargarLinkClubQR();
   }
   cargarAbonoConfig();
