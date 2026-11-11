@@ -7052,8 +7052,20 @@ function renderAgenda(){
     return;
   }
 
-  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).map(r=>({...r,_tipo:'reserva'}));
+  // Al cobrar una reserva se crea una visita a la misma hora y con el mismo
+  // profesional: dibujar las dos apila dos bloques verdes uno sobre otro y el
+  // texto se ve doble. Se muestra solo la visita (el cobro) y se oculta la
+  // reserva ya cobrada que le corresponde. Se empareja una a una, así dos
+  // atenciones simultáneas de verdad no se tapan entre sí.
   const visitasDia=S.visitas.filter(v=>v.fecha===fecha).map(v=>({...v,_tipo:'visita'}));
+  const visitasLibres=[...visitasDia];
+  const reservasDia=S.reservas.filter(r=>r.fecha===fecha).filter(r=>{
+    if(!r.procesado||!r.hora)return true;
+    const i=visitasLibres.findIndex(v=>v.hora===r.hora&&(v.barbero_nombre||'')===(r.barbero_nombre||''));
+    if(i<0)return true;
+    visitasLibres.splice(i,1);
+    return false;
+  }).map(r=>({...r,_tipo:'reserva'}));
   let todas=[...reservasDia,...visitasDia];
   if(bf) todas=todas.filter(x=>(x.barbero_nombre||'Sin asignar')===bf);
 
