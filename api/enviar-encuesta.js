@@ -16,7 +16,7 @@
 // panel manda el cobroId que devuelve registrar_cobro_conjunto(); Mi Agenda
 // manda el visitaId que devuelve mi_agenda_procesar_pago().
 
-const { supabaseGet, supabasePatch, enviarEmail, emailShell } = require('./_lib/resend');
+const { supabaseGet, supabasePatch, enviarEmail, emailShell, negocioParaEmail } = require('./_lib/resend');
 
 function escapeHtml(s) {
   return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({
@@ -113,7 +113,7 @@ module.exports = async function handler(req, res) {
           e.cliente_id
             ? supabaseGet(`clientes?id=eq.${e.cliente_id}&select=nombre,email`)
             : Promise.resolve([]),
-          supabaseGet(`barberias?id=eq.${e.barberia_id}&select=nombre,logo_url`),
+          negocioParaEmail(`id=eq.${e.barberia_id}`, 'nombre,logo_url'),
           supabaseGet(`visitas?id=eq.${e.visita_id}&select=servicio,barbero_nombre`)
         ]);
         const cliente = clientes[0];
@@ -137,6 +137,7 @@ module.exports = async function handler(req, res) {
           html: emailShell({
             nombreNegocio: barberias[0]?.nombre || 'tu negocio',
             logoUrl: barberias[0]?.logo_url,
+            negocio: barberias[0],
             contenidoHtml: construirContenido({
               nombreCliente: cliente?.nombre,
               servicio: visitas[0]?.servicio,

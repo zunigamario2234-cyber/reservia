@@ -276,7 +276,7 @@ function aplicarTemaPublico(barb){
   // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
   // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
   // variable se toca y la página es la de antes, píxel por píxel.
-  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo, colorFondoMarca: barb.color_fondo_marca });
   if(!vars) return false;
   // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
   // valor que no pase hexValido no debe poder convertirse en una regla. Con

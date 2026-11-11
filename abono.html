@@ -126,7 +126,7 @@ function ver(id){ ['cargando','vacio','pendiente','porconfirmar','confirmado','v
 
 function aplicarTema(barb){
   if (!barb || typeof derivarSuperficies !== 'function') return;
-  const vars = derivarSuperficies({ modo: barb.modo_tema === 'claro' ? 'claro' : 'oscuro', colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  const vars = derivarSuperficies({ modo: barb.modo_tema === 'claro' ? 'claro' : 'oscuro', colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo, colorFondoMarca: barb.color_fondo_marca });
   if (vars) Object.keys(vars).forEach(k => document.documentElement.style.setProperty(k, vars[k]));
 }
 

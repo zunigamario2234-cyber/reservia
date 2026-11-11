@@ -17,7 +17,7 @@
 // El `avisada_at` es lo que hace que se avise UNA sola vez: se comprueba antes
 // y se marca después.
 
-const { supabaseGet, supabasePatch, enviarEmail, emailShell } = require('./_lib/resend');
+const { supabaseGet, supabasePatch, enviarEmail, emailShell, negocioParaEmail } = require('./_lib/resend');
 
 // El mismo umbral que usa responder_encuesta_publico para decidir si ofrece el
 // link de Google. Vive en dos lados y no hay forma de evitarlo —uno es SQL y
@@ -102,7 +102,7 @@ module.exports = async function handler(req, res) {
     }
 
     const [barberias, clientes, visitas] = await Promise.all([
-      supabaseGet(`barberias?id=eq.${encodeURIComponent(barberiaId)}&select=nombre,email,logo_url`),
+      negocioParaEmail(`id=eq.${encodeURIComponent(barberiaId)}`, 'nombre,email,logo_url'),
       e.cliente_id
         ? supabaseGet(`clientes?id=eq.${e.cliente_id}&select=nombre,apellido,whatsapp`)
         : Promise.resolve([]),
@@ -129,6 +129,7 @@ module.exports = async function handler(req, res) {
       html: emailShell({
         nombreNegocio: negocio?.nombre || 'tu negocio',
         logoUrl: negocio?.logo_url,
+        negocio,
         contenidoHtml: construirContenido({
           puntaje: e.puntaje,
           comentario: e.comentario,

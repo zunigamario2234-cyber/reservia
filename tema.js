@@ -295,6 +295,64 @@ function generarTema(op) {
         '--texto-sobre-acento': '#FFFFFF' };
   return t;
 }
+
+// ── Fondo del color de la marca ───────────────────────────────────────
+// Además de claro/oscuro, el dueño puede pintar el fondo con un color de su
+// logo (gris, verde, vino…) y dejar el acento para otro color del logo. El
+// modo (claro u oscuro) NO se elige: lo decide el propio fondo, según con qué
+// texto —blanco o casi negro— se lee mejor encima.
+function modoDeFondoMarca(fondoHex) {
+  return contrasteHex(fondoHex, '#FFFFFF') >= contrasteHex(fondoHex, TXT_OSCURO) ? 'oscuro' : 'claro';
+}
+function distColor(a, b) {
+  var p = rgbDe(a), q = rgbDe(b);
+  return Math.sqrt(Math.pow(p[0] - q[0], 2) + Math.pow(p[1] - q[1], 2) + Math.pow(p[2] - q[2], 2));
+}
+// Candidatos a fondo y acento que salen del análisis del logo. Función pura.
+//  · fondos: el fondo propio del logo (si es opaco y uniforme), el color
+//    dominante de la marca y el color medio. Incluye grises: un logo gris
+//    puede pedir un fondo gris, aunque no cuente como "color de marca".
+//  · acentos: los colores de la paleta que se distinguen del fondo elegido.
+//  · sugerido: solo si el logo tiene DOS colores distintos de verdad. Con un
+//    solo color (o ninguno) devuelve null y el tema sigue siendo claro u oscuro.
+function sugerirFondoMarca(an) {
+  if (!an) return { fondos: [], sugerido: null };
+  var fondos = [];
+  var poner = function (h) {
+    if (!hexValido(h)) return;
+    for (var i = 0; i < fondos.length; i++) if (distColor(fondos[i], h) < 40) return;
+    fondos.push(h.toUpperCase());
+  };
+  if (an.fondoUniforme && !an.fondoTransparente) poner(an.fondo);
+  if (an.clase !== 'monocromatico') poner(an.colorRepresentativo);
+  (an.paleta || []).forEach(poner);
+  var sugerido = null;
+  if (fondos.length) {
+    var f = fondos[0];
+    var acentos = [];
+    (an.paleta || []).concat([an.colorMedio]).forEach(function (h) {
+      if (hexValido(h) && distColor(h, f) >= 90 && acentos.indexOf(h.toUpperCase()) < 0) acentos.push(h.toUpperCase());
+    });
+    if (acentos.length) sugerido = { fondo: f, acento: acentos[0] };
+  }
+  return { fondos: fondos.slice(0, 6), sugerido: sugerido };
+}
+// Superficies cuando el fondo es un color de la marca. Parte del color tal
+// cual y solo lo desplaza lo mínimo para que el texto alcance contraste.
+function superficiesDeFondoMarca(fm, claro) {
+  var N = '#000000', Bn = '#FFFFFF';
+  var f = fm, k;
+  if (!claro) {
+    for (k = 0; k <= 0.6 && contrasteHex('#E8E6E0', mezclar(f, Bn, 0.07)) < 5.5; k = Math.round((k + 0.04) * 100) / 100) f = mezclar(fm, N, k);
+    return { base: f, fondo: f, portada: mezclar(f, N, 0.18), tarjeta: mezclar(f, Bn, 0.07),
+             inputFondo: mezclar(f, N, 0.25), prefijo: mezclar(f, N, 0.10),
+             borde: mezclar(f, Bn, 0.16), inputBorde0: mezclar(f, Bn, 0.30) };
+  }
+  for (k = 0; k <= 0.7 && contrasteHex(TXT_OSCURO, mezclar(f, N, 0.06)) < 6; k = Math.round((k + 0.04) * 100) / 100) f = mezclar(fm, Bn, k);
+  return { base: f, fondo: f, portada: mezclar(f, N, 0.06), tarjeta: mezclar(f, Bn, 0.55),
+           inputFondo: mezclar(f, Bn, 0.70), prefijo: mezclar(f, N, 0.04),
+           borde: mezclar(f, N, 0.14), inputBorde0: mezclar(f, N, 0.45) };
+}
 // El acento es un elemento de interfaz, no texto: contra la superficie que
 // lo rodea necesita 3:1, no 4,5:1. Si no llega, el panel lo DICE en vez de
 // esconderlo — un botón que no se distingue del fondo es un botón perdido.
@@ -337,8 +395,11 @@ function derivarSuperficies(op) {
   op = op || {};
   var claro = op.modo === 'claro';
   var tieneColor = hexValido(op.colorMarca);
-  if (!claro && !tieneColor) return null;
-  var colorBase = tieneColor ? op.colorMarca : '#7C6AF7';
+  var fm = hexValido(op.colorFondoMarca) ? op.colorFondoMarca.toUpperCase() : null;
+  if (fm) claro = modoDeFondoMarca(fm) === 'claro';   // el fondo decide el modo
+  if (!claro && !tieneColor && !fm) return null;
+  // Con fondo de marca y sin acento elegido: acento neutro, legible sobre ese fondo.
+  var colorBase = tieneColor ? op.colorMarca : (fm ? (claro ? '#15181D' : '#FFFFFF') : '#7C6AF7');
   var satDe = function (h) { var p = rgbDe(h); return satHSV(p[0], p[1], p[2]); };
   var neutro = function (h) { var p = aHsl(h); return deHsl(p[0], 0, p[2]); };
   var out = {};
@@ -371,6 +432,14 @@ function derivarSuperficies(op) {
             medio: aclararHasta(B.medio, 4.6, sup.prefijo), debil: aclararHasta(B.debil, 4.6, sup.tarjeta) };
     borde = mez(B.borde, 0.06);
     inputBorde = aclararHasta(mez(B.inputBorde, 0.20), 3.1, sup.tarjeta);
+    if (fm) {
+      var sf = superficiesDeFondoMarca(fm, false);
+      sup = { fondo: sf.fondo, portada: sf.portada, tarjeta: sf.tarjeta, inputFondo: sf.inputFondo, prefijo: sf.prefijo };
+      txt = { texto: aclararHasta(B.texto, 4.6, sup.tarjeta), suave: aclararHasta(B.suave, 4.6, sup.tarjeta),
+              medio: aclararHasta(B.medio, 4.6, sup.prefijo), debil: aclararHasta(B.debil, 4.6, sup.tarjeta) };
+      borde = sf.borde;
+      inputBorde = aclararHasta(sf.inputBorde0, 3.1, sup.tarjeta);
+    }
     acento = aclararHasta(acentoBase, 4.5, sup.tarjeta);
     sobre = textoSobre(acento).color;
     hover = mezclar(acento, '#FFFFFF', 0.14);        // en oscuro el hover ACLARA
@@ -388,6 +457,15 @@ function derivarSuperficies(op) {
             medio: oscurecerContra(B.medio, 4.6, pisoTxt), debil: oscurecerContra(B.debil, 4.6, pisoTxt) };
     borde = mez(B.borde, 0.06);
     inputBorde = oscurecerContra(mez(B.inputBorde, 0.20), 3.1, sup.tarjeta);
+    if (fm) {
+      var sl = superficiesDeFondoMarca(fm, true);
+      sup = { fondo: sl.fondo, portada: sl.portada, tarjeta: sl.tarjeta, inputFondo: sl.inputFondo, prefijo: sl.prefijo };
+      pisoTxt = piso(sup.portada, sup.prefijo);
+      txt = { texto: oscurecerContra(B.texto, 4.6, pisoTxt), suave: oscurecerContra(B.suave, 4.6, pisoTxt),
+              medio: oscurecerContra(B.medio, 4.6, pisoTxt), debil: oscurecerContra(B.debil, 4.6, pisoTxt) };
+      borde = sl.borde;
+      inputBorde = oscurecerContra(sl.inputBorde0, 3.1, sup.tarjeta);
+    }
     acento = oscurecerContra(acentoBase, 4.6, sup.fondo);
     sobre = textoSobre(acento).color;
     hover = mezclar(acento, '#000000', 0.14);        // en claro el hover OSCURECE
@@ -409,11 +487,11 @@ function derivarSuperficies(op) {
     out['--texto-apagado'] = oscurecerContra('#666666', 4.6, pisoTxt);
     out['--texto-tenue'] = oscurecerContra('#777777', 4.6, pisoTxt);
     out['--texto-inerte'] = '#9096A3';                      // días pasados: deshabilitado a propósito
-    out['--borde-suave'] = '#E9EBF1';
-    out['--borde-2'] = '#D5D8E0';
-    out['--borde-fuerte'] = '#9AA0AE';
-    out['--superficie-2'] = '#E6E8EF';
-    out['--info-fondo'] = '#F0F1F6';
+    out['--borde-suave'] = fm ? mezclar(sup.fondo, '#000000', 0.08) : '#E9EBF1';
+    out['--borde-2'] = fm ? mezclar(sup.fondo, '#000000', 0.18) : '#D5D8E0';
+    out['--borde-fuerte'] = fm ? oscurecerContra(mezclar(sup.fondo, '#000000', 0.45), 3.1, sup.tarjeta) : '#9AA0AE';
+    out['--superficie-2'] = fm ? mezclar(sup.fondo, '#000000', 0.04) : '#E6E8EF';
+    out['--info-fondo'] = fm ? mezclar(sup.tarjeta, sup.fondo, 0.5) : '#F0F1F6';
     out['--seleccion-fondo'] = mezclar(acento, blanco, 0.90);
     var chipF = mezclar(acento, blanco, 0.88);
     out['--chip-fondo'] = chipF;
@@ -624,6 +702,8 @@ if (typeof module !== 'undefined' && module.exports) {
     muestrasPara: muestrasPara,
     acentoPara: acentoPara,
     generarTema: generarTema, acentoContraSuperficie: acentoContraSuperficie,
+    modoDeFondoMarca: modoDeFondoMarca, sugerirFondoMarca: sugerirFondoMarca, superficiesDeFondoMarca: superficiesDeFondoMarca,
+    derivarSuperficies: derivarSuperficies,
     aplicarTema: aplicarTema, mediana: mediana
   };
 }

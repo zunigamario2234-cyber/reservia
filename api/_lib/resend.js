@@ -138,30 +138,84 @@ function escaparHtml(s) {
 //
 // Y todo va en tablas con estilos en línea por lo mismo: el CSS de <head> y el
 // layout moderno se caen en la mitad de los clientes de correo.
-function emailShell({ nombreNegocio, contenidoHtml, logoUrl }) {
+// ── Tema del dueño en los correos ────────────────────────────────────
+// Los correos se ven como la app de cada negocio: mismas superficies, texto y
+// acento que deriva tema.js (la misma función que usan el panel y las páginas
+// públicas, con el contraste ya calculado). Un negocio sin tema propio sigue
+// recibiendo el correo de siempre. Cualquier fallo del tema cae a ese correo:
+// un correo transaccional nunca debe dejar de salir por un color.
+const CAMPOS_TEMA = 'color_marca,modo_tema,color_fondo_logo,color_fondo_marca';
+let TEMA_JS = null;
+try { TEMA_JS = require('../../tema.js'); } catch (e) { console.error('tema.js no disponible para los correos:', e.message); }
+
+function temaDeNegocio(n) {
+  if (!TEMA_JS || !n) return null;
+  try {
+    return TEMA_JS.derivarSuperficies({
+      modo: n.modo_tema === 'claro' ? 'claro' : 'oscuro',
+      colorMarca: n.color_marca, colorFondoLogo: n.color_fondo_logo, colorFondoMarca: n.color_fondo_marca
+    });
+  } catch (e) { console.error('No se pudo derivar el tema del negocio:', e.message); return null; }
+}
+
+// Lee el negocio con los campos que pide el correo MÁS los del tema. Si la
+// columna color_fondo_marca todavía no existe, reintenta sin ella.
+async function negocioParaEmail(filtro, campos) {
+  try {
+    return await supabaseGet(`barberias?${filtro}&select=${campos},${CAMPOS_TEMA}`);
+  } catch (e) {
+    return await supabaseGet(`barberias?${filtro}&select=${campos},color_marca,modo_tema,color_fondo_logo`);
+  }
+}
+
+// Los contenidos de cada correo traen sus grises fijos. Con tema se
+// reemplazan por los colores calculados, que ya cumplen contraste.
+function aplicarTemaAContenido(html, t, oscuro) {
+  const caja = oscuro ? t['--portada-fondo'] : t['--fondo'];
+  const mapa = {
+    '111': t['--texto'], '222': t['--texto'],
+    '333': t['--texto-suave'], '444': t['--texto-suave'], '555': t['--texto-suave'], '666': t['--texto-suave'],
+    '888': t['--texto-debil'], '999': t['--texto-debil'],
+    'f4f4f7': caja, 'f7f7fa': caja
+  };
+  return String(html)
+    .replace(/background:linear-gradient\(135deg,#7c6af7,#5b8def\)/gi, `background:${t['--acento']}`)
+    .replace(/color:#fff;text-decoration:none/gi, `color:${t['--texto-sobre-acento']};text-decoration:none`)
+    .replace(/#([0-9a-f]{3}|[0-9a-f]{6})(?![0-9a-f])/gi, (m, h) => mapa[h.toLowerCase()] || m);
+}
+
+function emailShell({ nombreNegocio, contenidoHtml, logoUrl, negocio }) {
   const nombre = escaparHtml(nombreNegocio);
   // Solo se acepta http(s): un `logo_url` con javascript: o data: no tiene
   // sentido acá y no vale la pena dejarlo pasar a un correo.
   const logo = logoUrl && /^https?:\/\//i.test(logoUrl) ? escaparHtml(logoUrl) : '';
+  const t = temaDeNegocio(negocio);
+  const oscuro = !!t && TEMA_JS.modoDeFondoMarca(t['--fondo']) === 'oscuro';
+  const pagina = t ? t['--fondo'] : '#f4f4f7';
+  const tarjeta = t ? t['--tarjeta'] : '#ffffff';
+  const cabeza = t ? `background:${t['--acento']}` : 'background:#6f5cf0;background:linear-gradient(135deg,#7c6af7,#5b8def)';
+  const textoCabeza = t ? t['--texto-sobre-acento'] : '#ffffff';
+  const fondoLogo = t ? t['--fondo-logo'] : '#ffffff';
+  const cuerpo = t ? aplicarTemaAContenido(contenidoHtml, t, oscuro) : contenidoHtml;
   return `<!DOCTYPE html>
 <html lang="es">
-<body style="margin:0;padding:0;background:#f4f4f7;font-family:system-ui,-apple-system,sans-serif">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 16px">
+<body style="margin:0;padding:0;background:${pagina};font-family:system-ui,-apple-system,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${pagina};padding:32px 16px">
     <tr><td align="center">
-      <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:100%">
-        <tr><td style="background:#6f5cf0;background:linear-gradient(135deg,#7c6af7,#5b8def);padding:24px 32px">
+      <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:${tarjeta};border-radius:12px;overflow:hidden;max-width:100%">
+        <tr><td style="${cabeza};padding:24px 32px">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
             ${logo ? `<td style="padding-right:12px;vertical-align:middle">
               <img src="${logo}" alt="" width="44" height="44"
-                   style="display:block;width:44px;height:44px;border-radius:8px;object-fit:cover;background:#ffffff">
+                   style="display:block;width:44px;height:44px;border-radius:8px;object-fit:cover;background:${fondoLogo}">
             </td>` : ''}
             <td style="vertical-align:middle">
-              <span style="color:#ffffff;font-size:18px;font-weight:700">${nombre}</span>
+              <span style="color:${textoCabeza};font-size:18px;font-weight:700">${nombre}</span>
             </td>
           </tr></table>
         </td></tr>
         <tr><td style="padding:32px">
-          ${contenidoHtml}
+          ${cuerpo}
         </td></tr>
       </table>
     </td></tr>
@@ -170,4 +224,4 @@ function emailShell({ nombreNegocio, contenidoHtml, logoUrl }) {
 </html>`;
 }
 
-module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, supabasePost, enviarEmail, emailShell, escaparHtml };
+module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, supabasePost, enviarEmail, emailShell, escaparHtml, negocioParaEmail, temaDeNegocio };

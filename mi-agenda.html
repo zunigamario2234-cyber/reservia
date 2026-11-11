@@ -441,7 +441,7 @@ async function afterLogin(){
   // reservar.html usa para leer B.barberia. Nombre y dirección, una vez
   // al loguear (no en cada mensaje de WhatsApp) — dirección hace falta
   // para {direccion} si la plantilla "Confirmación reserva" la usa.
-  const {data:negocio}=await sb.from('barberias').select('nombre,direccion,color_marca,color_fondo_logo,modo_tema').eq('id',perfil.barberia_id).single();
+  const {data:negocio}=await sb.from('barberias').select('nombre,direccion,color_marca,color_fondo_logo,modo_tema,color_fondo_marca').eq('id',perfil.barberia_id).single();
   aplicarTemaAgenda(negocio);
   NEGOCIO_NOMBRE=negocio?.nombre||'';
   NEGOCIO_DIRECCION=negocio?.direccion||'';
@@ -473,7 +473,7 @@ function aplicarTemaAgenda(barb){
   // La aritmética vive en tema.js (derivarSuperficies, función pura). Devuelve
   // null cuando no hay nada que escribir —oscuro sin color de marca—: ni una
   // variable se toca y la página es la de antes, píxel por píxel.
-  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo });
+  const vars = derivarSuperficies({ modo, colorMarca: barb.color_marca, colorFondoLogo: barb.color_fondo_logo, colorFondoMarca: barb.color_fondo_marca });
   if(!vars) return false;
   // Se usa setProperty y nunca se arma texto CSS ni se inyecta <style>: un
   // valor que no pase hexValido no debe poder convertirse en una regla. Con
