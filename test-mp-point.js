@@ -142,6 +142,19 @@ const pagoOk = (extra = {}) => ({ id: ORD, status: 'processed', transactions: { 
   DB.mp_point_ordenes.push({ barberia_id: B2, order_id: 'ORD_NEGOCIO_DOS_0001', external_reference: 'x', monto: 1000, estado: 'created' });
   r = await llamar(U_REC, { accion: 'estado', orderId: 'ORD_NEGOCIO_DOS_0001' }); ok('no se ve la orden de otro negocio', r.st === 404, r);
 
+  // Reconocimiento del método de pago con otras formas de informarlo
+  const I = handler._interpretarOrden;
+  const ord = pm => ({ status: 'processed', transactions: { payments: [{ status: 'processed', paid_amount: '1000', payment_method: pm }] } });
+  ok('método: debit_card → Débito', I(ord({ type: 'debit_card' })).metodo === 'Débito', null);
+  ok('método: id debmaster → Débito', I(ord({ id: 'debmaster' })).metodo === 'Débito', null);
+  ok('método: credit_card → Crédito', I(ord({ type: 'credit_card' })).metodo === 'Crédito', null);
+  ok('método: cuotas > 1 → Crédito', I(ord({ installments: 3 })).metodo === 'Crédito', null);
+  ok('método desconocido → null (la caja pide confirmar, nunca Efectivo)', I(ord({ type: 'prepaid_card' })).metodo === null && I(ord({})).metodo === null, null);
+  ok('el detalle guardado no arrastra campos sensibles', !JSON.stringify(I(ord({ type: 'debit_card', card_number: '4111', holder_name: 'X', id: 'debvisa' })).forma).match(/4111|holder|card_number/), I(ord({ type: 'debit_card', card_number: '4111' })).forma);
+  MP.orden.body = pagoOk(); DB.mp_point_ordenes[0].estado = 'created'; delete DB.mp_point_ordenes[0].pago_detalle;
+  await llamar(U_REC, { accion: 'estado', orderId: ORD });
+  ok('al pagarse se guarda la forma del pago en el libro', DB.mp_point_ordenes[0].pago_detalle && DB.mp_point_ordenes[0].pago_detalle.payment_method.type === 'debit_card', DB.mp_point_ordenes[0]);
+
   // Cancelar
   r = await llamar(U_REC, { accion: 'cancelar', orderId: ORD }); ok('cancelar ok', r.out.cancelado === true && DB.mp_point_ordenes[0].estado === 'cancelado', r);
   MP.cancelar = { status: 409, body: { errors: [{ code: 'cannot_cancel_order' }] } };

@@ -54,3 +54,7 @@ begin
 end $$;
 revoke all on function public.mp_point_config() from public, anon;
 grant execute on function public.mp_point_config() to authenticated;
+
+-- Forma del pago que informó Mercado Pago (tipo de tarjeta, cuotas, claves recibidas).
+-- Sirve para afinar el reconocimiento de débito/crédito sin adivinar.
+alter table public.mp_point_ordenes add column if not exists pago_detalle jsonb;

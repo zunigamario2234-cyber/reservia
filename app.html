@@ -5563,7 +5563,10 @@ async function pointEsperar(run){
         // Si la venta no quedó registrada (error de red, etc.) el pago sigue valiendo: se reintenta con el botón.
         if(COBRO_CTX&&COBRO_CTX.point) pointMsg('✅ El cliente ya pagó '+fmt(run.monto)+'. Aprieta «Registrar cobro» para guardar la venta.');
       } else {
-        pointMsg('✅ El cliente pagó '+fmt(run.monto)+'. '+(igual?'Elige el método de pago y registra el cobro.':'El monto de la caja cambió después de enviarlo: revisa y registra el cobro.'));
+        // Mercado Pago no dijo si fue débito o crédito: nunca se deja «Efectivo» por defecto
+        // (descuadraría la caja en efectivo). Se pone Débito y se pide confirmar.
+        if(!metodo&&!['Débito','Crédito'].includes(s_.value)){ s_.value='Débito'; cobroVuelto(); }
+        pointMsg('✅ El cliente pagó '+fmt(run.monto)+' con tarjeta. '+(!igual?'El monto de la caja cambió después de enviarlo: revisa y registra el cobro.':'No pudimos saber si fue débito o crédito: confirma el método y registra el cobro.'));
       }
       return;
     }

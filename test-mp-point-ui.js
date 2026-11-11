@@ -103,6 +103,16 @@ async function sesion(rol,signupFalla){
  const reg2=s.rpcs.slice(a2).find(r=>r.n==='registrar_cobro_conjunto');
  ok('pago con crédito se registra como Crédito',reg2&&reg2.body.p_metodo_pago==='Crédito',reg2);
 
+ // Método desconocido: no registra solo y NO deja Efectivo
+ estados=[{ok:true,estado:'pagado',metodo:null,monto:12000}]; api.length=0;
+ await abrir(p); const a4=s.rpcs.length;
+ await p.evaluate(()=>{ document.getElementById('cob-metodo').value='Efectivo'; });
+ await p.evaluate(()=>cobrarConPoint()); await p.waitForTimeout(500);
+ ok('método desconocido: no se registra solo',!s.rpcs.slice(a4).some(r=>r.n==='registrar_cobro_conjunto'),null);
+ ok('método desconocido: el método queda en Débito, nunca Efectivo',await p.evaluate(()=>document.getElementById('cob-metodo').value)==='Débito',await p.evaluate(()=>document.getElementById('cob-metodo').value));
+ ok('método desconocido: pide confirmar débito o crédito',/débito o crédito/.test(await p.textContent('#cob-point-msg')),await p.textContent('#cob-point-msg'));
+ await p.evaluate(()=>closeM('m-cobro'));
+
  // Cancelar
  estados=[{ok:true,estado:'esperando'},{ok:true,estado:'esperando'},{ok:true,estado:'esperando'},{ok:true,estado:'esperando'}]; api.length=0;
  await abrir(p);

@@ -60,6 +60,26 @@ function mensajeMp(r) {
   return 'Mercado Pago rechazó la operación' + (cod ? ` (${cod.slice(0, 80)})` : '') + '.';
 }
 
+// Resumen NO sensible de cómo informó Mercado Pago el pago (nombres de campos y valores
+// cortos del medio de pago). Se guarda en el libro para afinar el reconocimiento de
+// débito/crédito con datos reales. Nunca incluye números de tarjeta ni titulares.
+function formaDelPago(o, pago) {
+  const pm = (pago && pago.payment_method && typeof pago.payment_method === 'object') ? pago.payment_method : {};
+  const pmSeguro = {};
+  Object.keys(pm).forEach(k => {
+    const v = pm[k];
+    if (/number|holder|token|name|document|email/i.test(k)) return;
+    if (typeof v === 'string' && v.length <= 40) pmSeguro[k] = v;
+    else if (typeof v === 'number' || typeof v === 'boolean') pmSeguro[k] = v;
+  });
+  return {
+    payment_method: pmSeguro,
+    claves_pago: pago ? Object.keys(pago).slice(0, 40) : [],
+    claves_orden: o ? Object.keys(o).slice(0, 40) : [],
+    status_detail: String((o && o.status_detail) || '').slice(0, 60)
+  };
+}
+
 // Estados de la orden de Mercado Pago → los que entiende la pantalla de cobro.
 function interpretarOrden(o) {
   const pagos = (o && o.transactions && Array.isArray(o.transactions.payments)) ? o.transactions.payments : [];
@@ -74,10 +94,15 @@ function interpretarOrden(o) {
   else if (st === 'failed' || st === 'rejected') estado = 'fallido';
   else if (st === 'action_required') estado = 'revisar';
   else estado = 'esperando';
-  const tipo = pago && pago.payment_method && String(pago.payment_method.type || '').toLowerCase();
-  const metodo = tipo === 'debit_card' ? 'Débito' : (tipo === 'credit_card' ? 'Crédito' : null);
+  const pm = (pago && pago.payment_method && typeof pago.payment_method === 'object') ? pago.payment_method : {};
+  // Se mira el tipo y el id del medio de pago (ej. debit_card / debmaster) y las cuotas:
+  // Mercado Pago no siempre informa el tipo con el mismo nombre.
+  const pistas = [pm.type, pm.id, pago && pago.payment_type, pago && pago.payment_method_type]
+    .map(x => String(x || '').toLowerCase()).join(' ');
+  const cuotas = Number(pm.installments || (pago && pago.installments) || 0);
+  const metodo = /deb/.test(pistas) ? 'Débito' : (/cred/.test(pistas) || cuotas > 1 ? 'Crédito' : null);
   const pagado = pago && pago.paid_amount != null ? Math.round(Number(pago.paid_amount)) : null;
-  return { estado, metodo, pagado, detalle: String((o && o.status_detail) || '') };
+  return { estado, metodo, pagado, detalle: String((o && o.status_detail) || ''), forma: formaDelPago(o, pago) };
 }
 
 // ── Sesión y permisos ────────────────────────────────────────────────────────
@@ -254,7 +279,8 @@ const acciones = {
     }
     if (i.estado !== f[0].estado) {
       await supabasePatch(`mp_point_ordenes?order_id=eq.${orderId}`, {
-        estado: i.estado, ...(i.metodo ? { metodo: i.metodo } : {}), ...(i.estado === 'pagado' ? { pagado_at: new Date().toISOString() } : {})
+        estado: i.estado, ...(i.metodo ? { metodo: i.metodo } : {}),
+        ...(i.estado === 'pagado' ? { pagado_at: new Date().toISOString(), pago_detalle: i.forma } : {})
       });
     }
     return { estado: i.estado, metodo: i.metodo, monto: f[0].monto };
