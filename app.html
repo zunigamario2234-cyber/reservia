@@ -5514,7 +5514,7 @@ async function cobrarConPoint(){
   if(!COBRO_CTX||POINT_RUN) return;
   const rep=cobroProrratear(); const monto=cobroPointMonto(rep);
   if(monto<1){notify('No hay nada que cobrar con la terminal','warn');return;}
-  const run={monto,orderId:null,ctx:COBRO_CTX,cancelando:false};
+  const run={monto,orderId:null,ctx:COBRO_CTX,cancelando:false,inicio:Date.now()};
   POINT_RUN=run;
   document.getElementById('cob-btn').disabled=true;
   cobroPointActualizar(rep);
@@ -5522,7 +5522,7 @@ async function cobrarConPoint(){
   try{
     const j=await pointApi('cobrar',{monto,clave:crypto.randomUUID()});
     run.orderId=j.orderId;
-    pointMsg('📲 Enviado a la terminal. Pásasela al cliente para que pague con su tarjeta.',{cancelar:true});
+    pointMsg('📲 Cobro enviado a Mercado Pago. En unos segundos debería aparecer en la terminal.',{cancelar:true});
     await pointEsperar(run);
   }catch(e){
     if(POINT_RUN===run){ pointTerminar(run); pointMsg('⚠️ '+escHtml(e.message)); }
@@ -5567,7 +5567,8 @@ async function pointEsperar(run){
       }
       return;
     }
-    if(j.estado==='en_terminal') pointMsg('💳 El cliente está pagando en la terminal…',{cancelar:false});
+    if(j.estado==='esperando'&&Date.now()-run.inicio>25000) pointMsg('⏳ La terminal todavía no recibe el cobro. Revisa que esté encendida, con internet y en modo integrado (si cambiaste su modo hace poco, reiníciala). Puedes cancelar y volver a intentar.',{cancelar:true});
+    else if(j.estado==='en_terminal') pointMsg('💳 El cliente está pagando en la terminal…',{cancelar:true});
     else if(j.estado==='cancelado'){ pointTerminar(run); pointMsg('El cobro se canceló. Puedes intentarlo de nuevo.'); return; }
     else if(j.estado==='expirado'){ pointTerminar(run); pointMsg('El cobro venció sin pago. Puedes intentarlo de nuevo.'); return; }
     else if(j.estado==='fallido'){ pointTerminar(run); pointMsg('El pago no se pudo completar. Puedes intentarlo de nuevo.'); return; }
