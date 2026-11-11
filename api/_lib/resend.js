@@ -106,6 +106,25 @@ async function supabasePost(path, body) {
   return res.json();
 }
 
+// Borra filas con la service_role key. Igual que supabasePatch, exige filtro: un
+// DELETE sin where en PostgREST borra la tabla entera.
+async function supabaseDelete(path) {
+  if (!SUPABASE_SERVICE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY no configurada en el servidor');
+  }
+  if (!/[?&][a-z_]+=(eq|in)\./i.test(path)) {
+    throw new Error(`supabaseDelete sin filtro: "${path}" borraría la tabla entera`);
+  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: 'DELETE',
+    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
+  });
+  if (!res.ok) {
+    const detalle = await res.text();
+    throw new Error(`Supabase DELETE ${path} respondió ${res.status}: ${detalle}`);
+  }
+}
+
 function escaparHtml(s) {
   return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -224,4 +243,4 @@ function emailShell({ nombreNegocio, contenidoHtml, logoUrl, negocio }) {
 </html>`;
 }
 
-module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, supabasePost, enviarEmail, emailShell, escaparHtml, negocioParaEmail, temaDeNegocio };
+module.exports = { SUPABASE_URL, supabaseGet, supabasePatch, supabasePost, supabaseDelete, enviarEmail, emailShell, escaparHtml, negocioParaEmail, temaDeNegocio };

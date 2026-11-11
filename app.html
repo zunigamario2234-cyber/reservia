@@ -887,6 +887,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="tab" onclick="switchTab(this,'cfg-srv')">Servicios</div>
     <div class="tab" onclick="switchTab(this,'cfg-blq')">Bloqueos</div>
     <div class="tab" onclick="switchTab(this,'cfg-abono')">Abono</div>
+    <div class="tab" id="tab-point" onclick="switchTab(this,'cfg-point')" style="display:none">Terminal Point</div>
     <div class="tab" onclick="switchTab(this,'cfg-suc')">Sucursales</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-alz')">Alianzas</div>
     <div class="tab vip-only" onclick="switchTab(this,'cfg-vip')">Club VIP</div>
@@ -1118,6 +1119,28 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div style="margin-bottom:14px"><button class="btn btn-primary" onclick="openM('m-nivel')">+ Nivel</button></div>
     <div class="card"><div class="tbl-wrap tbl-cards"><table><thead><tr><th></th><th>Nombre</th><th>Visitas mínimas</th><th>Beneficio</th><th></th></tr></thead>
     <tbody id="t-niveles-vip"></tbody></table></div></div>
+  </div>
+  <div id="cfg-point" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">Cobrar con terminal Mercado Pago Point</span></div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:14px">Con tu terminal Point conectada, al cobrar en Reservia el monto se envía a la terminal, el cliente paga con su tarjeta y la venta se registra sola, con el método (débito o crédito) que realmente usó. No hay que digitar nada dos veces ni marcar a mano si pagó.</p>
+      <div id="pt-paso-conectar">
+        <div class="fg"><label>Access Token de producción de Mercado Pago</label><input id="pt-token" type="password" autocomplete="off" spellcheck="false" placeholder="APP_USR-…"></div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.6;margin:-4px 0 12px">Se saca en mercadopago.cl/developers → Tus integraciones → tu aplicación → Credenciales de producción. Queda guardado solo en el servidor de Reservia: ni tú ni tu equipo lo vuelven a ver completo.</div>
+        <button class="btn btn-primary" id="pt-btn-conectar" onclick="pointConectar()">Conectar cuenta</button>
+      </div>
+      <div id="pt-paso-conectado" style="display:none">
+        <div id="pt-cuenta" style="font-size:13px;margin-bottom:12px"></div>
+        <div class="fg" style="max-width:380px"><label>Terminal</label><select id="pt-terminal"></select></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+          <button class="btn btn-ghost btn-sm" id="pt-btn-buscar" onclick="pointBuscarTerminales()">Buscar mis terminales</button>
+          <button class="btn btn-primary btn-sm" id="pt-btn-usar" onclick="pointElegirTerminal()">Usar esta terminal</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px"><input type="checkbox" id="pt-activo" onchange="pointActivo()" style="width:auto"> Ofrecer «Cobrar con Point» en la caja</label>
+        <div id="pt-aviso" style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:14px"></div>
+        <button class="btn btn-ghost btn-sm" onclick="pointDesconectar()">Desconectar Mercado Pago</button>
+      </div>
+    </div>
   </div>
   <div id="cfg-int" style="display:none">
     <div class="card">
@@ -1548,6 +1571,16 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     </div>
 
     <div class="fg"><label>Método de pago</label><select id="cob-metodo" onchange="cobroVuelto(true)"></select></div>
+
+    <!-- Cobro con terminal Mercado Pago Point (solo si el negocio lo activó). -->
+    <div id="cob-point" style="display:none;background:var(--bg2);border-radius:10px;padding:12px;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Terminal Point: <strong id="cob-point-nombre"></strong></div>
+      <button type="button" class="btn btn-primary" id="cob-point-btn" onclick="cobrarConPoint()">Cobrar con Point</button>
+      <div id="cob-point-estado" style="display:none;font-size:13px;line-height:1.5;margin-top:10px">
+        <div id="cob-point-msg"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="cob-point-cancel" style="margin-top:8px" onclick="pointCancelarCobro()">Cancelar cobro</button>
+      </div>
+    </div>
 
     <!-- Solo con efectivo: el monto que te entregan y el vuelto. No se guarda, es para no calcular de cabeza en el mostrador. -->
     <div id="cob-efectivo" style="display:none;background:var(--bg2);border-radius:10px;padding:12px;margin-bottom:14px">
@@ -2249,7 +2282,7 @@ async function loadAll(){
   aplicarTemaPanel();
   VIP_HABILITADO = calcularVipHabilitado();
   document.body.classList.toggle('no-vip', !VIP_HABILITADO);
-  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards(),loadAnticipos(),loadIvaHistorico()];
+  const cargas=[loadClientes(),loadVisitas(),loadReservas(),loadServicios(),loadBarberos(),loadBarberoServicios(),loadInventario(),loadCostos(),loadCobroProductos(),loadPlantillas(),loadEncuestas(),loadHorarioNegocio(),loadBloqueos(),loadGiftCards(),loadAnticipos(),loadIvaHistorico(),loadPointConfig()];
   if(VIP_HABILITADO)cargas.push(loadVIP(),loadAlianzas(),loadAlianzaCanjes(),loadNivelesVip());
   await Promise.all(cargas);
   // Después de las dos fuentes, nunca antes: S.ventas es derivado.
@@ -5243,6 +5276,7 @@ function cobroRecalcular(){
   }
   document.getElementById('cob-desglose').innerHTML=html;
   cobroVuelto();
+  cobroPointActualizar(rep);
 }
 
 // Vuelto en efectivo. Parte de lo que SE VA A COBRAR AHORA (total con propina, menos el abono ya pagado por transferencia).
@@ -5364,6 +5398,191 @@ async function confirmarCobro(){
   COBRO_CTX=null;
   closeM('m-cobro');closeM('m-reserva');
   if(document.getElementById('p-agenda').classList.contains('active'))renderAgenda();
+}
+
+// ─── Mercado Pago Point ─────────────────────────────────────────────────────
+// El Access Token vive solo en el servidor (/api/mp-point). Acá nunca se ve:
+// el navegador solo sabe si hay Point activo y los últimos 4 caracteres.
+let POINT={conectado:false,activo:false};
+let POINT_RUN=null;
+async function loadPointConfig(){
+  try{
+    const {data}=await sb.rpc('mp_point_config');
+    POINT=(data&&typeof data==='object'&&!Array.isArray(data))?data:{conectado:false,activo:false};
+  }catch(e){ POINT={conectado:false,activo:false}; }
+}
+async function pointApi(accion,datos){
+  const {data:ses}=await sb.auth.getSession();
+  const r=await fetch('/api/mp-point',{method:'POST',
+    headers:{'Content-Type':'application/json',Authorization:'Bearer '+(ses?.session?.access_token||'')},
+    body:JSON.stringify({accion,...(datos||{})})});
+  let j=null; try{j=await r.json();}catch(e){}
+  if(!r.ok||!j||j.ok===false) throw new Error((j&&j.error)||'No pudimos comunicarnos con el servidor. Inténtalo de nuevo.');
+  return j;
+}
+
+// Configuración (solo el dueño)
+function pintarPointConfig(){
+  const g=id=>document.getElementById(id); if(!g('tab-point')) return;
+  const dueno=S.perfil?.rol==='dueno';
+  g('tab-point').style.display=dueno?'':'none';
+  if(!dueno) return;
+  g('pt-paso-conectar').style.display=POINT.conectado?'none':'';
+  g('pt-paso-conectado').style.display=POINT.conectado?'':'none';
+  if(!POINT.conectado) return;
+  g('pt-cuenta').innerHTML='Cuenta de Mercado Pago conectada · token terminado en <strong>'+escHtml(POINT.token_final||'····')+'</strong>';
+  const sel_=g('pt-terminal');
+  if(!sel_.options.length||sel_.dataset.nombre!==(POINT.terminal_nombre||'')){
+    sel_.innerHTML=POINT.terminal_elegida?`<option value="">${escHtml(POINT.terminal_nombre||'Terminal elegida')} (elegida)</option>`:'<option value="">Aprieta «Buscar mis terminales»</option>';
+    sel_.dataset.nombre=POINT.terminal_nombre||'';
+  }
+  g('pt-activo').checked=!!POINT.activo;
+  g('pt-activo').disabled=!POINT.terminal_elegida;
+  g('pt-aviso').textContent=POINT.terminal_elegida
+    ?(POINT.activo?'Activo: en la caja aparece el botón «Cobrar con Point».':'Apagado: la caja funciona como siempre.')
+    :'Primero busca y elige tu terminal.';
+}
+async function pointConectar(){
+  const inp=document.getElementById('pt-token'), btn=document.getElementById('pt-btn-conectar');
+  const token=inp.value.trim();
+  if(!token){notify('Pega el Access Token','warn');return;}
+  btn.disabled=true;btn.textContent='Verificando...';
+  try{
+    await pointApi('conectar',{token});
+    inp.value='';
+    await loadPointConfig(); pintarPointConfig();
+    notify('Mercado Pago conectado ✓');
+  }catch(e){ notify(e.message,'err'); }
+  btn.disabled=false;btn.textContent='Conectar cuenta';
+}
+async function pointBuscarTerminales(){
+  const btn=document.getElementById('pt-btn-buscar'); btn.disabled=true;btn.textContent='Buscando...';
+  try{
+    const j=await pointApi('terminales');
+    const s_=document.getElementById('pt-terminal');
+    if(!j.terminales.length){ s_.innerHTML='<option value="">No hay terminales en tu cuenta</option>'; notify('Mercado Pago no devolvió terminales. Revisa que la Point esté vinculada a tu cuenta.','warn'); }
+    else s_.innerHTML=j.terminales.map(t=>`<option value="${escHtml(t.id)}"${t.id===j.elegida?' selected':''}>${escHtml(t.nombre)}${t.modo==='PDV'?' — modo integrado':''}</option>`).join('');
+  }catch(e){ notify(e.message,'err'); }
+  btn.disabled=false;btn.textContent='Buscar mis terminales';
+}
+async function pointElegirTerminal(){
+  const id=document.getElementById('pt-terminal').value;
+  if(!id){notify('Primero busca y elige una terminal','warn');return;}
+  const btn=document.getElementById('pt-btn-usar'); btn.disabled=true;btn.textContent='Configurando...';
+  try{
+    const j=await pointApi('elegir_terminal',{terminalId:id});
+    await loadPointConfig(); pintarPointConfig();
+    notify(j.reiniciar?'Terminal lista ✓ Reinícia la Point para que tome el modo integrado.':'Terminal lista ✓');
+  }catch(e){ notify(e.message,'err'); }
+  btn.disabled=false;btn.textContent='Usar esta terminal';
+}
+async function pointActivo(){
+  const on=document.getElementById('pt-activo').checked;
+  try{ await pointApi('activo',{activo:on}); await loadPointConfig(); pintarPointConfig(); notify(on?'Cobro con Point activado ✓':'Cobro con Point apagado'); }
+  catch(e){ notify(e.message,'err'); await loadPointConfig(); pintarPointConfig(); }
+}
+async function pointDesconectar(){
+  if(!confirm('¿Desconectar Mercado Pago? La caja dejará de ofrecer el cobro con Point y se borra el token guardado.'))return;
+  try{ await pointApi('desconectar'); await loadPointConfig(); pintarPointConfig(); notify('Mercado Pago desconectado'); }
+  catch(e){ notify(e.message,'err'); }
+}
+
+// Caja: botón «Cobrar con Point»
+function cobroPointMonto(rep){
+  rep=rep||cobroProrratear();
+  return Math.round(Math.max(rep.totalCobro-cobroAbonoTotal(rep),0));
+}
+function cobroPointActualizar(rep){
+  const box=document.getElementById('cob-point'); if(!box) return;
+  const monto=cobroPointMonto(rep);
+  const visible=!!(POINT.activo&&COBRO_CTX&&!COBRO_CTX.gift&&(monto>0||POINT_RUN||COBRO_CTX.point));
+  box.style.display=visible?'':'none';
+  if(!visible) return;
+  document.getElementById('cob-point-nombre').textContent=POINT.terminal_nombre||'';
+  const btn=document.getElementById('cob-point-btn');
+  const pagado=!!(COBRO_CTX.point&&COBRO_CTX.point.pagado);
+  btn.style.display=(POINT_RUN||pagado)?'none':'';
+  btn.textContent='Cobrar '+fmt(monto)+' con Point';
+}
+function pointMsg(html,{cancelar=false,visible=true}={}){
+  document.getElementById('cob-point-estado').style.display=visible?'':'none';
+  document.getElementById('cob-point-msg').innerHTML=html;
+  document.getElementById('cob-point-cancel').style.display=cancelar?'':'none';
+}
+function pointEspera(ms){ return new Promise(r=>setTimeout(r,ms)); }
+async function cobrarConPoint(){
+  if(!COBRO_CTX||POINT_RUN) return;
+  const rep=cobroProrratear(); const monto=cobroPointMonto(rep);
+  if(monto<1){notify('No hay nada que cobrar con la terminal','warn');return;}
+  const run={monto,orderId:null,ctx:COBRO_CTX,cancelando:false};
+  POINT_RUN=run;
+  document.getElementById('cob-btn').disabled=true;
+  cobroPointActualizar(rep);
+  pointMsg('Enviando '+fmt(monto)+' a la terminal…',{cancelar:false});
+  try{
+    const j=await pointApi('cobrar',{monto,clave:crypto.randomUUID()});
+    run.orderId=j.orderId;
+    pointMsg('📲 Enviado a la terminal. Pásasela al cliente para que pague con su tarjeta.',{cancelar:true});
+    await pointEsperar(run);
+  }catch(e){
+    if(POINT_RUN===run){ pointTerminar(run); pointMsg('⚠️ '+escHtml(e.message)); }
+  }
+}
+function pointTerminar(run){
+  if(POINT_RUN===run) POINT_RUN=null;
+  const b=document.getElementById('cob-btn'); if(b) b.disabled=false;
+  if(COBRO_CTX) cobroPointActualizar();
+}
+async function pointEsperar(run){
+  const hasta=Date.now()+16*60*1000; let fallos=0;
+  while(POINT_RUN===run){
+    await pointEspera(3000);
+    if(POINT_RUN!==run) return;
+    // Se cerró la ventana del cobro con la terminal esperando: se intenta soltar la terminal.
+    if(!document.getElementById('m-cobro').classList.contains('open')||COBRO_CTX!==run.ctx){
+      pointApi('cancelar',{orderId:run.orderId}).catch(()=>{});
+      pointTerminar(run);
+      notify('Quedó un cobro enviado a la terminal. Si el cliente alcanzó a pagar, regístralo como Débito o Crédito en la caja.','warn');
+      return;
+    }
+    let j;
+    try{ j=await pointApi('estado',{orderId:run.orderId}); fallos=0; }
+    catch(e){ if(++fallos>=5){ pointTerminar(run); pointMsg('⚠️ Perdimos la conexión con Mercado Pago. Revisa en la terminal si el cliente pagó.'); return; } continue; }
+    if(POINT_RUN!==run) return;
+    if(j.estado==='pagado'){
+      POINT_RUN=null;
+      COBRO_CTX.point={orderId:run.orderId,monto:run.monto,pagado:true};
+      const metodo=j.metodo; const s_=document.getElementById('cob-metodo');
+      if(metodo&&[...s_.options].some(o=>o.value===metodo)){ s_.value=metodo; cobroVuelto(); }
+      const igual=cobroPointMonto()===run.monto;
+      document.getElementById('cob-btn').disabled=false;
+      cobroPointActualizar();
+      if(metodo&&igual){
+        pointMsg('✅ Pago aprobado ('+metodo+'). Registrando la venta…',{});
+        await confirmarCobro();
+        // Si la venta no quedó registrada (error de red, etc.) el pago sigue valiendo: se reintenta con el botón.
+        if(COBRO_CTX&&COBRO_CTX.point) pointMsg('✅ El cliente ya pagó '+fmt(run.monto)+'. Aprieta «Registrar cobro» para guardar la venta.');
+      } else {
+        pointMsg('✅ El cliente pagó '+fmt(run.monto)+'. '+(igual?'Elige el método de pago y registra el cobro.':'El monto de la caja cambió después de enviarlo: revisa y registra el cobro.'));
+      }
+      return;
+    }
+    if(j.estado==='en_terminal') pointMsg('💳 El cliente está pagando en la terminal…',{cancelar:false});
+    else if(j.estado==='cancelado'){ pointTerminar(run); pointMsg('El cobro se canceló. Puedes intentarlo de nuevo.'); return; }
+    else if(j.estado==='expirado'){ pointTerminar(run); pointMsg('El cobro venció sin pago. Puedes intentarlo de nuevo.'); return; }
+    else if(j.estado==='fallido'){ pointTerminar(run); pointMsg('El pago no se pudo completar. Puedes intentarlo de nuevo.'); return; }
+    else if(j.estado==='revisar'||j.estado==='reembolsado'){ pointTerminar(run); pointMsg('⚠️ '+escHtml(j.mensaje||'Revisa este pago en tu cuenta de Mercado Pago antes de registrar la venta.')); return; }
+    if(Date.now()>hasta){ pointTerminar(run); pointMsg('El cobro tardó demasiado. Revisa la terminal y vuelve a intentarlo.'); return; }
+  }
+}
+async function pointCancelarCobro(){
+  const run=POINT_RUN; if(!run||!run.orderId||run.cancelando) return;
+  run.cancelando=true;
+  try{
+    const j=await pointApi('cancelar',{orderId:run.orderId});
+    if(j.cancelado){ pointTerminar(run); pointMsg('Cobro cancelado.'); }
+    else { run.cancelando=false; pointMsg('📲 '+escHtml(j.mensaje||'Cancélalo desde la terminal.'),{cancelar:true}); }
+  }catch(e){ run.cancelando=false; notify(e.message,'err'); }
 }
 
 async function canjearVIP(id){
@@ -6855,6 +7074,7 @@ function renderConfig(){
     cargarLinkClubQR();
   }
   cargarAbonoConfig();
+  pintarPointConfig();
   renderSucursales();
   renderHorarioNegocio();
   renderBloqueos();
