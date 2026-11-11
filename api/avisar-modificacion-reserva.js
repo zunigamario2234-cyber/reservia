@@ -13,7 +13,7 @@
 //  · el dueño, solo como respaldo cuando al profesional nuevo no se le pudo avisar.
 // Cada envío es independiente: que uno falle no impide los demás.
 
-const { supabaseGet, supabasePatch, enviarEmail, emailShell } = require('./_lib/resend');
+const { supabaseGet, supabasePatch, enviarEmail, emailShell, negocioParaEmail } = require('./_lib/resend');
 const { resolverProfesional, esc, normalizar } = require('./enviar-confirmacion');
 
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -112,11 +112,11 @@ module.exports = async function handler(req, res) {
 
     const reserva = (await supabaseGet(`reservas?id=eq.${encodeURIComponent(reservaId)}&select=*`))[0];
     if (!reserva) { res.status(404).json({ ok: false, error: 'Reserva no encontrada' }); return; }
-    const barberia = (await supabaseGet(`barberias?id=eq.${encodeURIComponent(reserva.barberia_id)}&select=nombre,email,logo_url`))[0];
+    const barberia = (await negocioParaEmail(`id=eq.${encodeURIComponent(reserva.barberia_id)}`, 'nombre,email,logo_url'))[0];
     const nombreNegocio = barberia?.nombre || 'tu negocio';
     const logoUrl = barberia?.logo_url;
     const a = cambio.anterior || {}, n = cambio.nuevo || {};
-    const shell = (contenidoHtml) => emailShell({ nombreNegocio, logoUrl, contenidoHtml });
+    const shell = (contenidoHtml) => emailShell({ nombreNegocio, logoUrl, contenidoHtml, negocio: barberia });
 
     const barberos = await supabaseGet(`barberos?barberia_id=eq.${encodeURIComponent(reserva.barberia_id)}&select=nombre,email,activo`);
     const out = { profesional: { sent: false }, anterior: { sent: false }, cliente: { sent: false }, dueno: { sent: false } };

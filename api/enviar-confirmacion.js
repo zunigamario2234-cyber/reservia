@@ -8,7 +8,7 @@
 // y su motivo en la respuesta. El aviso al profesional es funcionalidad nueva
 // y no puede, si falla, romper la confirmación al cliente, que ya funcionaba.
 
-const { supabaseGet, enviarEmail, emailShell } = require('./_lib/resend');
+const { supabaseGet, enviarEmail, emailShell, negocioParaEmail } = require('./_lib/resend');
 
 // Valor literal que ponen crear_reserva_publica() y crear_reserva_club_vip()
 // cuando el cliente no eligió profesional. No es un nombre, es un placeholder:
@@ -163,7 +163,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const barberias = await supabaseGet(`barberias?id=eq.${encodeURIComponent(reserva.barberia_id)}&select=nombre,email,logo_url`);
+    const barberias = await negocioParaEmail(`id=eq.${encodeURIComponent(reserva.barberia_id)}`, 'nombre,email,logo_url');
     const barberia = barberias[0];
     const nombreNegocio = barberia?.nombre || 'tu negocio';
     // El logo va en los TRES correos de este endpoint, igual que en los otros
@@ -182,6 +182,7 @@ module.exports = async function handler(req, res) {
           html: emailShell({
             nombreNegocio,
             logoUrl: logoNegocio,
+            negocio: barberia,
             contenidoHtml: construirContenidoCliente({
               nombreCliente: reserva.nombre_cliente,
               fecha,
@@ -224,6 +225,7 @@ module.exports = async function handler(req, res) {
           html: emailShell({
             nombreNegocio,
             logoUrl: logoNegocio,
+            negocio: barberia,
             contenidoHtml: construirContenidoProfesional({
               nombreProfesional: resuelto.profesional.nombre,
               nombreCliente: reserva.nombre_cliente,
@@ -262,6 +264,7 @@ module.exports = async function handler(req, res) {
           html: emailShell({
             nombreNegocio,
             logoUrl: logoNegocio,
+            negocio: barberia,
             contenidoHtml: construirContenidoDueno({
               barberoNombre: reserva.barbero_nombre,
               motivo: profesional.motivo,
