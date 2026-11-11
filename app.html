@@ -1448,7 +1448,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         <input id="r-buscar" type="text" placeholder="Escribe nombre o WhatsApp..." oninput="buscarClienteReserva(this.value)" autocomplete="off">
         <div id="r-sugerencias" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:0.5px solid #d4a853;border-radius:8px;z-index:100;max-height:180px;overflow-y:auto;margin-top:2px"></div>
       </div>
-      <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX"></div></div>
+      <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX" oninput="reservaFichaActualizar()"></div></div>
       <div class="fr"><div class="fg"><label>Correo (opcional — le llega la confirmación)</label><input id="r-email" type="email" placeholder="juan@correo.com" autocomplete="off"></div><div class="fg"></div></div>
       <!-- Ficha del cliente elegido en el autocompletar. Identifica de quién se
            prellenó el correo y a quién se le puede rellenar el suyo si estaba
@@ -1462,6 +1462,12 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <div class="fr"><div class="fg"><label>Fecha de nacimiento</label><input id="rn-cumple" type="date"></div><div class="fg"><label>Profesional preferido</label><select id="rn-profesional"><option value="">Sin preferencia</option></select></div></div>
       <div class="fr"><div class="fg"><label>Canal de llegada</label><select id="rn-canal"><option>Instagram</option><option>WhatsApp</option><option>Referido</option><option>Reserva Web</option><option>Directo</option><option>Otro</option></select></div><div class="fg"></div></div>
       <div class="fg"><label>Notas del cliente</label><textarea id="rn-notas" rows="2" placeholder="Observaciones..."></textarea></div>
+    </div>
+    <!-- Ficha del cliente de ESTA reserva: un toque abre su historial completo. -->
+    <div id="r-ficha-bar" style="display:none;margin:-2px 0 14px">
+      <button type="button" class="btn btn-ghost btn-sm" id="r-ficha-btn" onclick="abrirFichaDesdeReserva()" style="max-width:100%;white-space:normal;text-align:left"></button>
+      <div id="r-ficha-resumen" style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"></div>
+      <div id="r-ficha-nota" style="display:none;font-size:12px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--bg2);border-left:3px solid var(--p1)"></div>
     </div>
     <div class="fr"><div class="fg"><label>Fecha *</label><input id="r-fecha" type="date"></div><div class="fg"><label>Hora *</label><input id="r-hora" type="time"></div></div>
     <div class="fr"><div class="fg"><label>Servicio</label><select id="r-servicio"><option value="">Seleccionar...</option></select></div><div class="fg"><label>Profesional</label><select id="r-profesional"><option value="">Seleccionar...</option></select></div></div>
@@ -2899,6 +2905,7 @@ function initModal(id){
     document.getElementById('r-buscar').value='';
     document.getElementById('r-notas').value='';
     document.getElementById('r-estado').value='Pendiente';
+    reservaFichaActualizar();
     sel('r-profesional',S.barberos.map(b=>({v:b.nombre,t:b.nombre})),true);
     sel('r-servicio',S.servicios.map(s=>({v:s.nombre,t:s.nombre})),true);
     document.getElementById('rm-tabs').style.display='';
@@ -6047,6 +6054,8 @@ function verCliente(id){
   const vis=getCitas(id); const nv=getNivel(vis); const uv=getUltCita(id);
   const histVis=S.visitas.filter(v=>v.cliente_id===id).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   const totalVal=histVis.reduce((s,v)=>s+(v.valor||0),0);
+  const hist=historialDeCliente(c);
+  const resumenFicha=resumenDeCliente(c,hist);
   const next=vis<5?5:vis<10?10:vis<20?20:20;
   const pct=Math.min(100,(vis/next*100));
   // "Bienvenida" está acá porque hasta ahora era la única plantilla sin forma de
@@ -6073,8 +6082,11 @@ function verCliente(id){
   if(c.cumpleanos)msgs.unshift({l:'Cumpleaños',ev:'Cumpleaños',v:{nombre:c.nombre}});
   const overlay=document.createElement('div');
   overlay.className='overlay open';
-  overlay.innerHTML=`<div class="modal" style="max-width:600px">
-    <div class="modal-hdr"><span class="modal-title">${c.nombre} ${c.apellido||''}</span><button class="xbtn" onclick="this.closest('.overlay').remove()">×</button></div>
+  // Si se abre desde el modal de una reserva, tiene que quedar ENCIMA de él.
+  overlay.style.zIndex=String(MODAL_Z_TOPE+MODAL_Z_PASO);
+  overlay.id='m-ficha-cliente';
+  overlay.innerHTML=`<div class="modal" style="max-width:640px">
+    <div class="modal-hdr"><span class="modal-title">${escHtml(c.nombre)} ${escHtml(c.apellido||'')}</span><button class="xbtn" onclick="this.closest('.overlay').remove()">×</button></div>
     <div class="g2" style="margin-bottom:14px">
       <div><label>WhatsApp</label><a class="btn-wa" onclick="abrirWA('${c.whatsapp}','Hola ${c.nombre}')" style="display:inline-flex">${c.whatsapp}</a></div>
       <div><label>Correo</label><span style="font-size:12px;color:var(--text2)">${c.email||'—'}</span></div>
@@ -6096,15 +6108,94 @@ function verCliente(id){
         ${msgs.map(m=>{const msg=buildMsg(m.ev,m.v);return msg?`<button class="btn-wa" onclick="abrirWA('${c.whatsapp}',\`${msg.replace(/`/g,"'")}\`)">📱 ${m.l}</button>`:''}).join('')}
       </div>
     </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.4px">Notas del cliente</div>
+      <textarea id="fc-notas" rows="3" placeholder="Ej: alérgico a tal producto, le gusta el corte bajo, prefiere silencio…" style="width:100%">${escHtml(c.notas||'')}</textarea>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="guardarNotaCliente('${c.id}')">Guardar nota</button><span id="fc-notas-msg" style="font-size:11px;color:var(--text3)"></span></div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px">${resumenFicha.html}</div>
     <div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">Historial</div>
-      <div style="max-height:180px;overflow-y:auto">
-        ${histVis.length?`<table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Valor</th></tr></thead><tbody>${histVis.map(v=>`<tr><td>${v.fecha}</td><td>${v.servicio||'—'}</td><td>${v.barbero_nombre||'—'}</td><td>${fmt(v.valor)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Sin citas.</div>'}
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">Historial completo</div>
+      <div style="max-height:260px;overflow-y:auto">
+        ${hist.length?`<table><thead><tr><th>Fecha</th><th>Servicio</th><th>Profesional</th><th>Estado</th><th>Notas</th></tr></thead><tbody>${hist.map(h=>`<tr><td style="white-space:nowrap">${escHtml(h.fecha)}${h.hora?' '+escHtml(String(h.hora).slice(0,5)):''}</td><td>${escHtml(h.servicio||'—')}</td><td>${escHtml(h.barbero||'—')}</td><td>${escHtml(h.estado)}${h.valor!=null?' · '+fmt(h.valor):''}</td><td style="font-size:11px;color:var(--text2);max-width:200px">${escHtml(h.notas||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Sin historial.</div>'}
       </div>
     </div>
   </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
+
+// ─── Ficha del cliente dentro de la reserva ─────────────────────────────────
+// Historial completo = atenciones cobradas (visitas) + reservas que NO terminaron
+// en una atención: pendientes, confirmadas, canceladas, "no asistió". Una reserva ya
+// cobrada se cuenta una sola vez, por su visita (mismo criterio que la agenda).
+// A las reservas se las vincula por WhatsApp (últimos 9 dígitos) o, si no hay,
+// por nombre exacto: guardan el nombre como texto, no el id de la ficha.
+function historialDeCliente(c){
+  const w=normWsp9(c.whatsapp);
+  const nombre=((c.nombre||'')+' '+(c.apellido||'')).trim().toLowerCase();
+  const filas=S.visitas.filter(v=>v.cliente_id===c.id).map(v=>({
+    fecha:v.fecha,hora:v.hora,servicio:v.servicio,barbero:v.barbero_nombre,
+    estado:v.estado||'Atendida',valor:v.valor,notas:v.notas,tipo:'visita'}));
+  S.reservas.filter(r=>!r.procesado).forEach(r=>{
+    const mismoWsp=w.length>=9&&normWsp9(r.whatsapp_cliente)===w;
+    const mismoNombre=!w&&nombre&&(r.nombre_cliente||'').trim().toLowerCase()===nombre;
+    if(mismoWsp||mismoNombre) filas.push({
+      fecha:r.fecha,hora:r.hora,servicio:r.servicio,barbero:r.barbero_nombre,
+      estado:r.estado||'Pendiente',valor:null,notas:r.notas,tipo:'reserva'});
+  });
+  return filas.sort((a,b)=>((b.fecha||'')+(b.hora||'')).localeCompare((a.fecha||'')+(a.hora||'')));
+}
+function resumenDeCliente(c,hist){
+  const hoyISO=new Date().toISOString().slice(0,10);
+  const hechas=hist.filter(h=>h.tipo==='visita'&&h.estado==='Atendida');
+  const porProf={}; hechas.forEach(h=>{ if(h.barbero) porProf[h.barbero]=(porProf[h.barbero]||0)+1; });
+  const top=Object.entries(porProf).sort((a,b)=>b[1]-a[1])[0]||null;
+  const prox=hist.filter(h=>h.tipo==='reserva'&&(h.fecha||'')>=hoyISO&&!['Cancelada','No asistió','Atendida'].includes(h.estado))
+    .sort((a,b)=>((a.fecha||'')+(a.hora||'')).localeCompare((b.fecha||'')+(b.hora||'')))[0]||null;
+  const noAsistio=hist.filter(h=>h.estado==='No asistió').length;
+  const cancel=hist.filter(h=>h.estado==='Cancelada').length;
+  const partes=[];
+  partes.push(`<strong>${hechas.length}</strong> ${hechas.length===1?'atención':'atenciones'}`);
+  if(hechas.length) partes.push('última: '+escHtml(hechas[0].fecha));
+  if(top) partes.push(`se atiende más con <strong>${escHtml(top[0])}</strong> (${top[1]} de ${hechas.length})`);
+  else if(c.barbero_preferido) partes.push('prefiere a <strong>'+escHtml(c.barbero_preferido)+'</strong>');
+  if(prox) partes.push('próxima reserva: '+escHtml(prox.fecha)+(prox.hora?' '+escHtml(String(prox.hora).slice(0,5)):''));
+  if(noAsistio) partes.push(noAsistio+' '+(noAsistio===1?'falta':'faltas'));
+  if(cancel) partes.push(cancel+' '+(cancel===1?'cancelación':'cancelaciones'));
+  return {html:partes.join(' · '),top:top?top[0]:null,hechas:hechas.length,ultima:hechas[0]?.fecha||null,proxima:prox};
+}
+function clienteDeReservaAbierta(){
+  const id=document.getElementById('r-cliente-id').value;
+  if(id){ const c=S.clientes.find(x=>x.id===id); if(c) return c; }
+  const w=normWsp9(document.getElementById('r-wsp').value);
+  if(w.length>=9){ const c=S.clientes.find(x=>normWsp9(x.whatsapp)===w); if(c) return c; }
+  return null;
+}
+function reservaFichaActualizar(){
+  const bar=document.getElementById('r-ficha-bar'); if(!bar) return;
+  const c=clienteDeReservaAbierta();
+  if(!c){ bar.style.display='none'; return; }
+  const hist=historialDeCliente(c), r=resumenDeCliente(c,hist);
+  bar.style.display='';
+  document.getElementById('r-ficha-btn').innerHTML='📋 <strong>'+escHtml(c.nombre)+' '+escHtml(c.apellido||'')+'</strong> — ver ficha e historial';
+  document.getElementById('r-ficha-resumen').innerHTML=hist.length?r.html:'Primera vez: todavía no tiene historial.';
+  const nota=document.getElementById('r-ficha-nota');
+  nota.style.display=(c.notas||'').trim()?'':'none';
+  nota.innerHTML='📝 '+escHtml((c.notas||'').trim());
+}
+function abrirFichaDesdeReserva(){
+  const c=clienteDeReservaAbierta(); if(c) verCliente(c.id);
+}
+async function guardarNotaCliente(id){
+  const c=S.clientes.find(x=>x.id===id); if(!c) return;
+  const txt=(document.getElementById('fc-notas').value||'').trim();
+  const msg=document.getElementById('fc-notas-msg');
+  const {error}=await sb.from('clientes').update({notas:txt||null}).eq('id',id).eq('barberia_id',S.barberia.id);
+  if(error){ msg.textContent='No se pudo guardar'; notify('No se pudo guardar la nota: '+error.message,'err'); return; }
+  c.notas=txt||null;
+  msg.textContent='Guardada ✓';
+  reservaFichaActualizar();
 }
 
 // ═══ BORRADO DE CLIENTES ═══
@@ -7459,6 +7550,7 @@ function abrirEditarReserva(id){
   const og=origenDe(r.fuente), ogEl=document.getElementById('r-origen');
   ogEl.innerHTML=og?`${iconoOrigenHtml(r.fuente)}<span>${og.t}</span>`:'';
   ogEl.style.display=og?'flex':'none';
+  reservaFichaActualizar();
 }
 
 function abrirEditarCita(id){
@@ -9313,6 +9405,7 @@ function selClienteReserva(id){
   document.getElementById('r-cliente-id').value=c.id;
   document.getElementById('r-buscar').value=c.nombre+' '+(c.apellido||'');
   document.getElementById('r-sugerencias').style.display='none';
+  reservaFichaActualizar();
   if(c.barbero_preferido){
     const sel=document.getElementById('r-profesional');
     for(let o of sel.options){if(o.value===c.barbero_preferido)o.selected=true;}
