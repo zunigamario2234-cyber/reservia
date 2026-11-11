@@ -118,7 +118,7 @@ async function sesion(rol,signupFalla){
  await p.fill('#r-wsp','+56 9 1111 2222'); await p.evaluate(()=>{document.getElementById('r-cliente-id').value='';reservaFichaActualizar();});
  ok('si cambia el WhatsApp, la ficha pasa al cliente que corresponde',/Pedro/.test(await p.textContent('#r-ficha-btn')),await p.textContent('#r-ficha-btn'));
  await p.fill('#r-wsp','+56 9 0000 0000'); await p.evaluate(()=>{document.getElementById('r-cliente-id').value='';reservaFichaActualizar();});
- ok('WhatsApp desconocido: se oculta',!(await vis('r-ficha-bar')),null);
+ ok('WhatsApp desconocido: sin botón de ficha (solo el aviso de cliente nuevo)',!(await vis('r-ficha-btn'))&&await vis('r-ficha-nuevo'),null);
  await p.evaluate(()=>closeM('m-reserva'));
 
  // XSS en notas

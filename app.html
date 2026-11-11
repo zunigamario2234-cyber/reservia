@@ -223,6 +223,9 @@ body.modo-recepcion .topbar button[onclick*="m-cita"]{display:none}
 .cal-block:hover{box-shadow:0 4px 14px rgba(0,0,0,0.5)}
 .cal-block.dragging{opacity:0.8;cursor:grabbing;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
 .cal-block .cb-t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Marca de «primera vez»: toma el color del texto de cada bloque para leerse en cualquier tema. */
+.tag-nuevo{display:inline-block;font-size:9px;font-weight:700;line-height:1.5;padding:0 6px;margin-right:5px;border-radius:999px;border:1px solid currentColor;vertical-align:1px;letter-spacing:.2px}
+.tag-nuevo.solido{background:var(--p1);border-color:var(--p1);color:#fff}
 .cal-block .cb-s{opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
 .cal-block .cb-badge{position:absolute;top:3px;right:5px;font-size:9px}
 .cal-now{position:absolute;left:0;right:0;height:1px;background:#ff5555;z-index:4;pointer-events:none}
@@ -1448,7 +1451,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         <input id="r-buscar" type="text" placeholder="Escribe nombre o WhatsApp..." oninput="buscarClienteReserva(this.value)" autocomplete="off">
         <div id="r-sugerencias" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:0.5px solid #d4a853;border-radius:8px;z-index:100;max-height:180px;overflow-y:auto;margin-top:2px"></div>
       </div>
-      <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX" oninput="reservaFichaActualizar()"></div></div>
+      <div class="fr"><div class="fg"><label>Nombre *</label><input id="r-nombre" type="text" placeholder="Juan Perez" oninput="reservaFichaActualizar()"></div><div class="fg"><label>WhatsApp *</label><input id="r-wsp" type="text" placeholder="+56 9 XXXX XXXX" oninput="reservaFichaActualizar()"></div></div>
       <div class="fr"><div class="fg"><label>Correo (opcional — le llega la confirmación)</label><input id="r-email" type="email" placeholder="juan@correo.com" autocomplete="off"></div><div class="fg"></div></div>
       <!-- Ficha del cliente elegido en el autocompletar. Identifica de quién se
            prellenó el correo y a quién se le puede rellenar el suyo si estaba
@@ -1465,6 +1468,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     </div>
     <!-- Ficha del cliente de ESTA reserva: un toque abre su historial completo. -->
     <div id="r-ficha-bar" style="display:none;margin:-2px 0 14px">
+      <div id="r-ficha-nuevo" style="display:none;font-size:12px;font-weight:600;margin-bottom:8px;padding:7px 10px;border-radius:8px;background:var(--bg2);border-left:3px solid var(--p1)">🆕 Cliente nuevo: es la primera vez que reserva. Todavía no lo conocemos.</div>
       <button type="button" class="btn btn-ghost btn-sm" id="r-ficha-btn" onclick="abrirFichaDesdeReserva()" style="max-width:100%;white-space:normal;text-align:left"></button>
       <div id="r-ficha-resumen" style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"></div>
       <div id="r-ficha-nota" style="display:none;font-size:12px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--bg2);border-left:3px solid var(--p1)"></div>
@@ -2142,7 +2146,8 @@ function avisarReservaNueva(r){
   const quien=(r.nombre_cliente||'Un cliente'), cuando=(r.fecha||'')+(r.hora?' '+String(r.hora).slice(0,5):'');
   const el=document.getElementById('aviso-reserva');
   if(el){
-    el.innerHTML='<strong>'+(r.estado==='Pendiente de abono'?'Reserva a la espera del abono':'Nueva reserva')+'</strong><br>'+escapeHtml(quien)+(r.servicio?' · '+escapeHtml(r.servicio):'')+'<br><span style="opacity:.8">'+escapeHtml(cuando)+(r.fuente?' · '+escapeHtml(r.fuente):'')+'</span>';
+    const nuevoAviso=clienteNuevoPorDatos(r.whatsapp_cliente,r.nombre_cliente,r.id);
+    el.innerHTML='<strong>'+(r.estado==='Pendiente de abono'?'Reserva a la espera del abono':'Nueva reserva')+(nuevoAviso?' · cliente nuevo 🆕':'')+'</strong><br>'+escapeHtml(quien)+(r.servicio?' · '+escapeHtml(r.servicio):'')+'<br><span style="opacity:.8">'+escapeHtml(cuando)+(r.fuente?' · '+escapeHtml(r.fuente):'')+'</span>';
     el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),12000);
   }
   // Pestaña en segundo plano: el título parpadea hasta que vuelvan a ella.
@@ -6125,6 +6130,53 @@ function verCliente(id){
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
 }
 
+// ─── Cliente nuevo (primera vez que reserva) ────────────────────────────────
+// Sirve para detectar a alguien que nadie conoce. «Nuevo» = esa persona no tiene
+// ninguna atención cobrada y esta es su primera reserva vigente (pendiente o
+// confirmada). Se la identifica por WhatsApp (últimos 9 dígitos) o, si no hay,
+// por nombre: las reservas guardan el nombre como texto. Una reserva cancelada,
+// con falta o ya atendida no se marca: ya no hay a quién identificar.
+let _NUEVOS=null;
+function claveClienteReserva(wsp,nombre){
+  const w=normWsp9(wsp);
+  if(w.length>=9) return 'w'+w;
+  const n=(nombre||'').trim().toLowerCase();
+  return n?'n'+n:'';
+}
+function reservasNuevasSet(){
+  const k=_NUEVOS;
+  if(k&&k.r===S.reservas&&k.v===S.visitas&&k.c===S.clientes&&k.n===S.reservas.length) return k.set;
+  const wDe={}; S.clientes.forEach(c=>{wDe[c.id]=normWsp9(c.whatsapp);});
+  const conVisita=new Set();
+  S.visitas.forEach(v=>{
+    if((v.estado||'Atendida')!=='Atendida') return;
+    const w=wDe[v.cliente_id]; if(w&&w.length>=9) conVisita.add('w'+w);
+  });
+  const porClave={};
+  S.reservas.forEach(r=>{ const c=claveClienteReserva(r.whatsapp_cliente,r.nombre_cliente); if(c)(porClave[c]=porClave[c]||[]).push(r); });
+  const set=new Set();
+  const terminadas=['Cancelada','No asistió','Atendida'];
+  Object.entries(porClave).forEach(([c,lista])=>{
+    if(conVisita.has(c)) return;
+    if(lista.some(r=>r.procesado||r.estado==='Atendida')) return;
+    const activas=lista.filter(r=>!terminadas.includes(r.estado))
+      .sort((a,b)=>((a.fecha||'')+(a.hora||'')).localeCompare((b.fecha||'')+(b.hora||''))||String(a.created_at||'').localeCompare(String(b.created_at||'')));
+    if(activas[0]) set.add(activas[0].id);
+  });
+  _NUEVOS={r:S.reservas,v:S.visitas,c:S.clientes,n:S.reservas.length,set};
+  return set;
+}
+// Para una reserva que todavía no está en la lista (aviso en vivo, formulario sin guardar).
+function clienteNuevoPorDatos(wsp,nombre,excluirId){
+  const c=claveClienteReserva(wsp,nombre); if(!c) return false;
+  const w=c[0]==='w'?c.slice(1):'';
+  if(w&&S.clientes.some(x=>normWsp9(x.whatsapp)===w&&S.visitas.some(v=>v.cliente_id===x.id&&(v.estado||'Atendida')==='Atendida'))) return false;
+  return !S.reservas.some(r=>r.id!==excluirId&&claveClienteReserva(r.whatsapp_cliente,r.nombre_cliente)===c&&!['Cancelada'].includes(r.estado));
+}
+function tagNuevo(r,solido){
+  return reservasNuevasSet().has(r.id)?`<span class="tag-nuevo${solido?' solido':''}" title="Primera vez que reserva: todavía no lo conocemos">Nuevo</span>`:'';
+}
+
 // ─── Ficha del cliente dentro de la reserva ─────────────────────────────────
 // Historial completo = atenciones cobradas (visitas) + reservas que NO terminaron
 // en una atención: pendientes, confirmadas, canceladas, "no asistió". Una reserva ya
@@ -6175,11 +6227,26 @@ function clienteDeReservaAbierta(){
 function reservaFichaActualizar(){
   const bar=document.getElementById('r-ficha-bar'); if(!bar) return;
   const c=clienteDeReservaAbierta();
-  if(!c){ bar.style.display='none'; return; }
+  const rid=document.getElementById('r-id').value;
+  const wsp=document.getElementById('r-wsp').value, nom=document.getElementById('r-nombre').value;
+  const nuevo=rid?reservasNuevasSet().has(rid):clienteNuevoPorDatos(wsp,nom,'');
+  const marca=document.getElementById('r-ficha-nuevo');
+  if(!c){
+    // Sin ficha: si hay un WhatsApp completo es alguien que el negocio no conoce.
+    const hayDatos=normWsp9(wsp).length>=9;
+    bar.style.display=(nuevo&&hayDatos)?'':'none';
+    document.getElementById('r-ficha-btn').style.display='none';
+    document.getElementById('r-ficha-resumen').innerHTML='';
+    document.getElementById('r-ficha-nota').style.display='none';
+    marca.style.display=(nuevo&&hayDatos)?'':'none';
+    return;
+  }
   const hist=historialDeCliente(c), r=resumenDeCliente(c,hist);
   bar.style.display='';
-  document.getElementById('r-ficha-btn').innerHTML='📋 <strong>'+escHtml(c.nombre)+' '+escHtml(c.apellido||'')+'</strong> — ver ficha e historial';
-  document.getElementById('r-ficha-resumen').innerHTML=hist.length?r.html:'Primera vez: todavía no tiene historial.';
+  const btn=document.getElementById('r-ficha-btn'); btn.style.display='';
+  btn.innerHTML='📋 <strong>'+escHtml(c.nombre)+' '+escHtml(c.apellido||'')+'</strong> — ver ficha e historial';
+  marca.style.display=nuevo?'':'none';
+  document.getElementById('r-ficha-resumen').innerHTML=hist.length?r.html:'Todavía no tiene historial.';
   const nota=document.getElementById('r-ficha-nota');
   nota.style.display=(c.notas||'').trim()?'':'none';
   nota.innerHTML='📝 '+escHtml((c.notas||'').trim());
@@ -6400,7 +6467,7 @@ function renderReservas(){
   document.getElementById('e-reservas').style.display=S.reservas.length?'none':'';
   tb.innerHTML=S.reservas.map(r=>`<tr>
     <td>${iconoOrigenHtml(r.fuente)}${r.fecha} ${fmtHora(r.hora)}</td>
-    <td>${r.nombre_cliente}</td>
+    <td>${r.nombre_cliente} ${tagNuevo(r,true)}</td>
     <td><a class="btn-wa" onclick="abrirWA('${r.whatsapp_cliente}','Hola ${r.nombre_cliente}')">${r.whatsapp_cliente}</a></td>
     <td>${r.servicio||'—'}</td><td>${r.barbero_nombre||'—'}</td>
     <td><span class="badge ${r.estado==='Pendiente de abono'?'b-orange':'b-green'}">${r.estado}</span>${abonoBadge(r)}</td>
@@ -6598,7 +6665,7 @@ function renderMensajes(){
   const pend=S.reservas.filter(r=>!r.procesado);
   document.getElementById('l-confirm').innerHTML=pend.length?pend.map(r=>`
     <div class="card" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div><strong style="color:var(--text)">${r.nombre_cliente}</strong><br><span style="font-size:11px;color:var(--text3)">📅 ${r.fecha} ${fmtHora(r.hora)} · ${r.whatsapp_cliente}</span></div>
+      <div><strong style="color:var(--text)">${r.nombre_cliente}</strong> ${tagNuevo(r,true)}<br><span style="font-size:11px;color:var(--text3)">📅 ${r.fecha} ${fmtHora(r.hora)} · ${r.whatsapp_cliente}</span></div>
       <button class="btn-wa" onclick="enviarConfirm('${r.id}')">📱 Confirmar</button>
     </div>`).join(''):'<div class="empty">Todas las reservas confirmadas ✓</div>';
 
@@ -7431,7 +7498,7 @@ function renderAgenda(){
       const extraClass=(estado==='En curso'?' estado-curso':'')+(estado==='Cancelada'?' estado-cancelada':'');
       return `<div class="cal-block${extraClass}" data-tipo="${it._tipo}" data-id="${it.id}" style="top:${top}px;height:${height}px;background:${ecolor.bg};border-color:${ecolor.border};color:${ecolor.text}" title="${fmtHora(it.hora)} · ${label} · ${info.nombre} · ${estado}">
         <button class="cb-menu-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();toggleAgendaMenu(event,'${it._tipo}','${it.id}')">⋮</button>
-        <div class="cb-t">${it._tipo==='reserva'?iconoOrigenHtml(it.fuente):''}${fmtHora(it.hora)} · ${label}</div>
+        <div class="cb-t">${it._tipo==='reserva'?iconoOrigenHtml(it.fuente)+tagNuevo(it):''}${fmtHora(it.hora)} · ${label}</div>
         <div class="cb-s">${info.nombre} · <span class="cb-estado">${estado}</span></div>
       </div>`;
     }).join('');
@@ -7462,7 +7529,7 @@ function renderAgenda(){
         const abrir=it._tipo==='reserva'?`abrirEditarReserva('${it.id}')`:`abrirEditarCita('${it.id}')`;
         return `<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:0.5px solid #1a1a1a;cursor:pointer" onclick="${abrir}">
           <span style="width:8px;height:8px;border-radius:50%;background:${ecolor.border};flex-shrink:0"></span>
-          <div style="flex:1"><div style="font-size:12px;font-weight:600">${it._tipo==='reserva'?iconoOrigenHtml(it.fuente):''}${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.barbero_nombre||'Sin asignar'}</div></div>
+          <div style="flex:1"><div style="font-size:12px;font-weight:600">${it._tipo==='reserva'?iconoOrigenHtml(it.fuente)+tagNuevo(it,true):''}${label}</div><div style="font-size:11px;color:var(--text3)">${info.nombre} · ${estado} · ${it.barbero_nombre||'Sin asignar'}</div></div>
         </div>`;
       }).join('')}
     </div>`;
