@@ -22,6 +22,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
+<script src="fotos-cortes.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 /* TEMA: valores por defecto = los colores de siempre; aplicarTema() (tema.js) los
@@ -648,6 +649,7 @@ function renderCalendario(lista){
   const sel=lista.find(c=>c.id===CITA_SEL);
   if(sel) html+='<div id="cal-detalle">'+citaCardHtml(sel)+'</div>';
   cont.innerHTML=html;
+  montarFotosAbiertas();
 }
 function selCitaCal(id){ CITA_SEL=CITA_SEL===id?null:id; renderCalendario(CITAS_ACTUALES); if(CITA_SEL){ const d=document.getElementById('cal-detalle'); if(d&&d.scrollIntoView) d.scrollIntoView({block:'nearest',behavior:'smooth'}); } }
 
@@ -660,6 +662,7 @@ function renderCitas(lista){
   const cont=document.getElementById('citas-lista');
   if(!lista.length){ cont.innerHTML='<div class="card"><div class="empty">Sin citas para este día.</div></div>'; return; }
   cont.innerHTML=lista.map(citaCardHtml).join('');
+  montarFotosAbiertas();
 }
 // Tarjeta de una cita (con todas sus acciones). La usan la vista Lista y el
 // detalle de la vista Calendario, así no hay dos formas de cobrar o cancelar.
@@ -674,7 +677,9 @@ function citaCardHtml(c){
       ${c.cliente_notas?`<div class="cita-nota-cliente"><b>Del cliente:</b> ${escapeHtml(c.cliente_notas)}</div>`:''}
       <div class="cita-detalle">${escapeHtml(c.servicio)||'—'} · <span class="badge ${estadoBadge(c.estado)}">${escapeHtml(c.estado)}</span>${c.valor?' · '+fmt(c.valor):''}</div>
       ${c.notas?`<div class="cita-detalle">📝 ${escapeHtml(c.notas)}</div>`:''}
+      ${FOTOS_ABIERTAS.has(c.id)?`<div class="fotos-cita" data-id="${c.id}"></div>`:''}
       <div class="cita-acciones">
+        ${c.estado!=='Cancelada'?`<button class="btn btn-ghost btn-sm" onclick="toggleFotosCita('${c.id}')">📷 ${FOTOS_ABIERTAS.has(c.id)?'Ocultar fotos':'Fotos del corte'}</button>`:''}
         ${c.whatsapp_cliente?`<a class="btn-wa" onclick='enviarWhatsAppCita(${jsonAttr(c)})'>📱 ${c.tipo==='reserva'&&c.estado!=='Cancelada'?'Enviar confirmación':'WhatsApp'}</a>`:''}
         ${puedePagar&&pagoAbierto?METODOS_PAGO_MIAGENDA.map(m=>`<button class="btn btn-primary btn-sm" onclick="pagarCitaMiAgenda('${c.id}','${m}')">${m}</button>`).join('')+`<button class="btn btn-ghost btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Cancelar</button>`+`<div class="gift-fila"><input id="gift-${c.id}" type="text" placeholder="Código gift card" autocomplete="off"><button class="btn btn-primary btn-sm" onclick="pagarGiftMiAgenda('${c.id}')">Canjear gift card</button></div>`:''}
         ${puedePagar&&!pagoAbierto?`<button class="btn btn-primary btn-sm" onclick="togglePagoMiAgenda('${c.id}')">Pagar</button>`:''}
@@ -684,6 +689,19 @@ function citaCardHtml(c){
       </div>
     </div>`;
   }
+}
+
+// Fotos del corte: panel dentro de la cita (ver fotos-cortes.js).
+const FOTOS_ABIERTAS=new Set();
+function toggleFotosCita(id){
+  if(FOTOS_ABIERTAS.has(id)) FOTOS_ABIERTAS.delete(id); else FOTOS_ABIERTAS.add(id);
+  renderAgendaActual(CITAS_ACTUALES);
+}
+function montarFotosAbiertas(){
+  document.querySelectorAll('.fotos-cita').forEach(el=>{
+    const c=(CITAS_ACTUALES||[]).find(x=>x.id===el.dataset.id); if(!c) return;
+    FotosCortes.montar(el,{sb,tipo:c.tipo==='reserva'?'reserva':'visita',id:c.id,barberiaId:PERFIL.barberia_id});
+  });
 }
 
 function togglePagoMiAgenda(id){

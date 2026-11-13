@@ -13,6 +13,7 @@
 <link rel="apple-touch-icon" id="apple-touch-icon-link" href="/mi-agenda-icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
+<script src="fotos-cortes.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 /* TEMA PÚBLICO. Los valores por defecto son EXACTAMENTE los colores que esta
@@ -192,6 +193,7 @@ label{font-size:11px;color:var(--texto-debil);display:block;margin-bottom:4px}
        lo único que muestra es lo que quien coordinó la reserva ya sabe. -->
   <div id="tab-mis" style="display:none">
     <div id="mis-reservas"><div class="msg-full">Cargando tus reservas...</div></div>
+    <div id="mis-cortes"></div>
   </div>
 
   <div id="tab-reservar" style="display:none">
@@ -453,7 +455,27 @@ function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&
 // teléfono, ni montos, ni ids.
 let MIS_RESERVAS = [];
 let RMOD = null; // {id, orig:{fecha,hora,servicio,profesional}} mientras se modifica una reserva
+// Fotos de los cortes del cliente: miniaturas, y al tocar una se ve grande con
+// botón Descargar. Ver fotos-cortes.js y get_club_fotos_cortes().
+async function cargarMisCortes(){
+  const cont=document.getElementById('mis-cortes'); if(!cont) return;
+  const {data,error}=await sb.rpc('get_club_fotos_cortes',{p_barberia_id:BARBERIA_ID,p_cliente_id:CLIENTE_ID});
+  if(error||!data||!data.length){ cont.innerHTML=''; return; }
+  cont.innerHTML='<div class="card"><div class="card-title">✂️ Mis cortes</div><div id="mis-cortes-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px"></div></div>';
+  const grid=document.getElementById('mis-cortes-grid');
+  data.forEach(f=>{
+    const d=document.createElement('div');
+    const img=document.createElement('img'); img.src=f.url; img.loading='lazy'; img.alt='Mi corte';
+    img.style.cssText='width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;cursor:pointer;background:var(--borde)';
+    const pie=FotosCortes.fechaCorta(f.fecha)+(f.servicio?' · '+f.servicio:'')+(f.profesional?' · '+f.profesional:'');
+    img.onclick=()=>FotosCortes.abrirVisor(f.url,pie,'mi-corte-'+f.fecha+'.jpg');
+    const t=document.createElement('div'); t.style.cssText='font-size:11px;color:var(--texto-apagado);margin-top:4px;line-height:1.3';
+    t.textContent=FotosCortes.fechaCorta(f.fecha)+(f.profesional?' · '+f.profesional:'');
+    d.append(img,t); grid.appendChild(d);
+  });
+}
 async function cargarMisReservas(){
+  cargarMisCortes();
   const cont = document.getElementById('mis-reservas');
   cont.innerHTML = '<div class="msg-full">Cargando tus reservas...</div>';
   const {data, error} = await sb.rpc('get_proximas_reservas_club',

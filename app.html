@@ -13,6 +13,7 @@
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
 <script src="wsp.js"></script>
+<script src="fotos-cortes.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
@@ -1427,6 +1428,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="fr"><div class="fg"><label>Método pago</label><select id="v-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option><option>Gift card</option></select></div><div class="fg"><label>Fuente</label><select id="v-fuente"><option>Presencial</option><option>Reserva Web</option><option>WhatsApp</option><option>Instagram</option><option value="Setmore">Setmore (antiguo)</option></select></div></div>
     <div class="fg"><label>Estado</label><select id="v-estado"><option>Pendiente</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="v-notas" rows="2"></textarea></div>
+    <div id="v-fotos" style="display:none;margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarCita()">Registrar</button>
       <button class="btn btn-ghost" onclick="closeM('m-cita')">Cancelar</button>
@@ -1478,6 +1480,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="fg"><label>Estado</label><select id="r-estado"><option>Pendiente</option><option>Pendiente de abono</option><option>Confirmada</option><option>En curso</option><option>Atendida</option><option>No asistió</option><option>Cancelada</option></select></div>
     <div class="fg"><label>Notas</label><textarea id="r-notas" rows="2"></textarea></div>
     <input type="hidden" id="r-procesado" value="0">
+    <div id="r-fotos" style="display:none;margin-bottom:10px"></div>
     <div class="rm-footer" id="rm-footer-normal" style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-primary" onclick="guardarReserva()">Guardar reserva</button>
       <button class="btn btn-ghost" onclick="closeM('m-reserva')">Cancelar</button>
@@ -2883,7 +2886,7 @@ function setModoClienteReserva(modo){
 }
 function initModal(id){
   const hoy=ahoraEnChile().fecha;
-  if(id==='m-cita'){
+  if(id==='m-cita'){ { const f=document.getElementById('v-fotos'); if(f){ f.style.display='none'; f.innerHTML=''; } }
     document.getElementById('v-id').value='';
     document.getElementById('m-cita-title').textContent='Registrar cita';
     document.getElementById('v-btn-wa').style.display='none';
@@ -2899,6 +2902,7 @@ function initModal(id){
     sel('v-servicio',S.servicios.map(s=>({v:s.id+'|'+s.precio,t:s.nombre+' ('+fmt(s.precio)+')'+((sucActivas().length>1&&!S.sucFiltro&&s.sucursal_id)?' · '+sucNombre(s.sucursal_id):'')})),true);
   }
   if(id==='m-reserva'){
+    { const f=document.getElementById('r-fotos'); if(f){ f.style.display='none'; f.innerHTML=''; } }
     document.getElementById('r-id').value='';
     document.getElementById('m-reserva-title').textContent='Nueva reserva';
     document.getElementById('r-fecha').value=hoy;
@@ -7621,6 +7625,13 @@ function abrirEditarReserva(id){
   ogEl.innerHTML=og?`${iconoOrigenHtml(r.fuente)}<span>${og.t}</span>`:'';
   ogEl.style.display=og?'flex':'none';
   reservaFichaActualizar();
+  montarFotosCorte('r-fotos','reserva',r.id);
+}
+// Fotos del corte (máx. 2 por cita) + cortes anteriores del cliente. Ver fotos-cortes.js.
+function montarFotosCorte(elId,tipo,id){
+  const el=document.getElementById(elId); if(!el||!window.FotosCortes) return;
+  el.style.display='';
+  FotosCortes.montar(el,{sb,tipo,id,barberiaId:S.barberia.id});
 }
 
 function abrirEditarCita(id){
@@ -7643,6 +7654,7 @@ function abrirEditarCita(id){
     for(let o of selS.options){if(o.value.split('|')[0]===v.servicio){o.selected=true;break;}}
   }
   calcIvaV();
+  montarFotosCorte('v-fotos','visita',v.id);
 }
 
 // ─── Drag & drop de bloques de agenda ───
