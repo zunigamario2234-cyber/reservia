@@ -51,11 +51,11 @@ function tablaCambio(a, n) {
     </td></tr></table>`;
 }
 
-function contenidoProfesional({ nombreProfesional, reserva, a, n }) {
+function contenidoProfesional({ nombreProfesional, reserva, a, n, origen }) {
   return `
     <p style="margin:0 0 12px;font-size:16px;color:#111">Hola ${esc(nombreProfesional)} 👋</p>
     <p style="margin:0 0 16px;font-size:14px;color:#444;line-height:1.6">
-      <strong>${esc(reserva.nombre_cliente || 'Un cliente')}</strong> modificó su cita desde el Club. Quedó así:
+      ${origen === 'agenda' ? `Se modificó en la agenda la cita de <strong>${esc(reserva.nombre_cliente || 'un cliente')}</strong>. Quedó así:` : `<strong>${esc(reserva.nombre_cliente || 'Un cliente')}</strong> modificó su cita desde el Club. Quedó así:`}
     </p>
     ${tablaCambio(a, n)}
     ${reserva.whatsapp_cliente ? `<p style="margin:0 0 8px;font-size:13px;color:#555">📱 ${esc(reserva.whatsapp_cliente)}</p>` : ''}
@@ -134,7 +134,7 @@ module.exports = async function handler(req, res) {
         await enviarConReintento({
           to: rNuevo.profesional.email,
           subject: `Una cita fue modificada — ${nombreNegocio}`,
-          html: shell(contenidoProfesional({ nombreProfesional: rNuevo.profesional.nombre, reserva, a, n }))
+          html: shell(contenidoProfesional({ nombreProfesional: rNuevo.profesional.nombre, reserva, a, n, origen: cambio.origen }))
         });
         out.profesional.sent = true;
       } catch (e) { out.profesional.motivo = 'error_envio'; out.profesional.error = e.message; }

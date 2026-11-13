@@ -3465,6 +3465,9 @@ async function guardarReserva(){
   // nuevo no corresponde: esa ficha se acaba de crear con el correo adentro.
   const avisoFicha=(!id&&cid&&em)?await completarEmailFicha(cid,w,em):'';
   await loadReservas();closeM('m-reserva');notify((id?'Reserva actualizada ✓':'Reserva guardada ✓')+avisoFicha);
+  // Edición: si cambió día, hora, servicio o profesional, la base registró el cambio
+  // (trigger) y el servidor avisa al profesional. Sin cambios, no manda nada.
+  if(id)fetch('/api/avisar-modificacion-reserva',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:id})}).catch(()=>{});
   if(!id){
     // Aviso por correo al profesional. SOLO en el alta: en una edición volvería
     // a avisar por una cita que ya conoce, y cualquier corrección de notas
