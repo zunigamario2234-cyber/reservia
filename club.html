@@ -483,7 +483,9 @@ async function cargarMisReservas(){
       <div style="font-size:22px;font-weight:700;color:var(--texto);margin:4px 0 8px">${escapeHtml((r.hora||'').slice(0,5))}</div>
       <div style="font-size:13px;color:var(--texto)">${escapeHtml(r.servicio||'Servicio')}</div>
       ${r.profesional?`<div style="font-size:12px;color:var(--texto-apagado);margin-top:2px">con ${escapeHtml(r.profesional)}</div>`:''}
-      <button class="btn btn-ghost" style="margin-top:12px" onclick="iniciarModificacion('${r.id}')">✏️ Modificar día, hora o profesional</button>
+      ${puedeModificarReserva(r)
+        ?`<button class="btn btn-ghost" style="margin-top:12px" onclick="iniciarModificacion('${r.id}')">✏️ Modificar día, hora o profesional</button>`
+        :`<div style="margin-top:12px;font-size:12px;color:var(--texto-apagado);line-height:1.5">Ya no se puede modificar: solo hasta 2 horas antes de la cita. Si necesitas cambiarla, escríbele al negocio.</div>`}
     </div>`;
   }).join('');
 }
@@ -693,6 +695,25 @@ function rRenderResumen(){
     <div class="resumen-row"><span class="resumen-label">Cliente</span><span class="resumen-val">${CLIENTE_NOMBRE}</span></div>`;
 }
 
+// Aviso por correo: con keepalive (sigue aunque cierren la pestaña) y hasta 3
+// intentos si el servidor responde mal. El servidor no repite correos.
+async function avisarModificacion(rid){
+  for(let i=0;i<3;i++){
+    try{
+      const r=await fetch('/api/avisar-modificacion-reserva',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:rid})});
+      if(r.ok) return;
+    }catch(e){}
+    await new Promise(x=>setTimeout(x,1500*(i+1)));
+  }
+}
+// Las reservas se pueden modificar hasta 2 horas antes (la base lo valida igual).
+function puedeModificarReserva(r){
+  const ahoraSt=new Date(new Date().toLocaleString('en-US',{timeZone:'America/Santiago'}));
+  const [h,m]=String(r.hora||'00:00').split(':');
+  const ini=new Date(r.fecha+'T'+String(h).padStart(2,'0')+':'+String(m||'00').padStart(2,'0')+':00');
+  return ini.getTime()-ahoraSt.getTime()>=2*3600*1000;
+}
+
 async function rConfirmarReserva(){
   const btn=document.getElementById('r-btn-confirmar');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Confirmando...';
@@ -720,7 +741,7 @@ async function rConfirmarReserva(){
       if(em)throw em;
       // Aviso por correo a los profesionales (y confirmación al cliente). El
       // servidor lee QUÉ cambió desde la base; esto solo le dice cuál reserva.
-      fetch('/api/avisar-modificacion-reserva',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reservaId:rid})}).catch(()=>{});
+      avisarModificacion(rid);
       document.querySelectorAll('#tab-reservar .step-content').forEach(s=>s.classList.remove('active'));
       document.getElementById('r-sc-exito').classList.add('active');
       document.getElementById('r-success-title').textContent='¡Reserva modificada!';

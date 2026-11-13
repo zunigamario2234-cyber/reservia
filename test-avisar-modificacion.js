@@ -26,7 +26,7 @@ const call=async(body,method='POST')=>{ let out={}; await h({method,body},{setHe
  ok('el correo muestra antes y ahora',/line-through/.test(mMario.html)&&/viernes|jueves|miércoles/.test(mMario.html)&&/11:00/.test(mMario.html));
  ok('escapa el nombre del cliente',!/Ana <b>/.test(mMario.html)&&/Ana &lt;b&gt;/.test(mMario.html));
  ok('el profesional anterior recibe "ya no está en tu agenda"',/ya no est/i.test(mails.find(m=>m.to[0]==='felipe@x.cl').subject));
- ok('reclama el aviso con filtro condicional',patches.length===1&&/avisado_at=is\.null/.test(patches[0]),patches);
+ ok('reclama el aviso con filtro condicional',patches.length>=1&&/avisado_at=is\.null/.test(patches[0]),patches);
  mails=[]; claimable=false; r=await call({reservaId:RID});
  ok('una segunda llamada no reenvía nada',mails.length===0&&r.body.motivo,r);
  r=await call({reservaId:'no-es-uuid'}); ok('rechaza ids inválidos',r.code===400);

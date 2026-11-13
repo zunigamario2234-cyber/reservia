@@ -112,6 +112,9 @@ begin
   if (v_r.fecha + v_r.hora) < v_ahora then
     raise exception 'Esta reserva ya pasó';
   end if;
+  if (v_r.fecha + v_r.hora) < v_ahora + interval '2 hours' then
+    raise exception 'Las reservas solo se pueden modificar hasta 2 horas antes de la hora agendada. Escríbele al negocio por WhatsApp';
+  end if;
   if (p_fecha + p_hora) < v_ahora then
     raise exception 'Esa hora ya pasó. Vuelve a cargar la página y elige otra';
   end if;
@@ -172,3 +175,7 @@ end;
 $function$;
 revoke all on function public.modificar_reserva_club(uuid,uuid,uuid,date,time without time zone,text,text,text) from public;
 grant execute on function public.modificar_reserva_club(uuid,uuid,uuid,date,time without time zone,text,text,text) to anon, authenticated;
+
+
+-- Resultado del aviso por correo (qué se envió y qué falló), para poder auditarlo.
+alter table public.reserva_cambios add column if not exists aviso_resultado jsonb;

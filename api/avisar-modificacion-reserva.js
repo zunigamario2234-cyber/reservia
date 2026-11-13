@@ -23,6 +23,11 @@ function fechaLarga(f) {
   if (isNaN(d)) return String(f || '');
   return `${DIAS[d.getUTCDay()]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}`;
 }
+// Un reintento si Resend falla de forma pasajera.
+async function enviarConReintento(datos) {
+  try { await enviarEmail(datos); }
+  catch (e) { await new Promise(r => setTimeout(r, 1200)); await enviarEmail(datos); }
+}
 const hhmm = (h) => String(h || '').slice(0, 5);
 
 // Fila "Antes → Ahora" solo para lo que realmente cambió.
@@ -126,7 +131,7 @@ module.exports = async function handler(req, res) {
     out.profesional.motivo = rNuevo.motivo;
     if (rNuevo.motivo === 'ok') {
       try {
-        await enviarEmail({
+        await enviarConReintento({
           to: rNuevo.profesional.email,
           subject: `Una cita fue modificada — ${nombreNegocio}`,
           html: shell(contenidoProfesional({ nombreProfesional: rNuevo.profesional.nombre, reserva, a, n }))
@@ -141,7 +146,7 @@ module.exports = async function handler(req, res) {
       out.anterior.motivo = rAnt.motivo;
       if (rAnt.motivo === 'ok') {
         try {
-          await enviarEmail({
+          await enviarConReintento({
             to: rAnt.profesional.email,
             subject: `Una cita ya no está en tu agenda — ${nombreNegocio}`,
             html: shell(contenidoProfesionalAnterior({ nombreProfesional: rAnt.profesional.nombre, reserva, a, n }))
@@ -154,7 +159,7 @@ module.exports = async function handler(req, res) {
     // Cliente.
     if (reserva.email_cliente) {
       try {
-        await enviarEmail({
+        await enviarConReintento({
           to: reserva.email_cliente,
           subject: `Modificamos tu reserva en ${nombreNegocio}`,
           html: shell(contenidoCliente({ reserva, a, n, nombreNegocio }))
@@ -167,7 +172,7 @@ module.exports = async function handler(req, res) {
     const mismoDestino = rNuevo.profesional?.email && normalizar(rNuevo.profesional.email) === normalizar(barberia?.email);
     if (!out.profesional.sent && barberia?.email && !mismoDestino) {
       try {
-        await enviarEmail({
+        await enviarConReintento({
           to: barberia.email,
           subject: `Reserva modificada sin avisar al profesional — ${nombreNegocio}`,
           html: shell(contenidoDueno({ motivo: out.profesional.motivo, barbero: n.barbero, reserva, a, n }))
@@ -176,6 +181,8 @@ module.exports = async function handler(req, res) {
       } catch (e) { out.dueno.motivo = 'error_envio'; out.dueno.error = e.message; }
     }
 
+    if (!out.profesional.sent) console.error('avisar-modificacion: profesional sin aviso', JSON.stringify(out));
+    try { await supabasePatch(`reserva_cambios?id=eq.${cambio.id}`, { aviso_resultado: out }); } catch (_) {}
     res.status(200).json({ ok: true, ...out });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message || 'Error interno' });
