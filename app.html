@@ -5396,6 +5396,10 @@ async function confirmarCobro(){
   if(cobroId){
     fetch('/api/enviar-encuesta',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({cobroId})}).catch(()=>{});
+    // Bienvenida al Club (link para instalarlo): el servidor solo la manda si es
+    // la primera visita del cliente, el negocio tiene el Club activo y hay correo.
+    fetch('/api/enviar-club-bienvenida',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({cobroId})}).catch(()=>{});
   }
 
   // loadCobroProductos también: si no, S.ventas queda sin la venta recién

@@ -730,6 +730,9 @@ async function pagarCitaMiAgenda(id,metodo,giftCodigo){
   if(visitaId){
     fetch('/api/enviar-encuesta',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({visitaId})}).catch(()=>{});
+    // Bienvenida al Club en la primera visita del cliente (la decide el servidor).
+    fetch('/api/enviar-club-bienvenida',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({visitaId})}).catch(()=>{});
   }
   PAGO_ABIERTO_MIAGENDA=null;
   cargarAgenda();
