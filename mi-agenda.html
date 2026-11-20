@@ -733,6 +733,11 @@ async function pagarCitaMiAgenda(id,metodo,giftCodigo){
     // Bienvenida al Club en la primera visita del cliente (la decide el servidor).
     fetch('/api/enviar-club-bienvenida',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({visitaId})}).catch(()=>{});
+    // Boletas electrónicas, sin await: el servidor revisa si el negocio las
+    // tiene activas. Si el proveedor falla, quedan pendientes y se reintentan.
+    sb.auth.getSession().then(({data:ses})=>fetch('/api/boletas',{method:'POST',keepalive:true,
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+(ses?.session?.access_token||'')},
+      body:JSON.stringify({accion:'emitir',visitaId})})).catch(()=>{});
   }
   PAGO_ABIERTO_MIAGENDA=null;
   cargarAgenda();

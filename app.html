@@ -739,6 +739,40 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div class="g3" id="imp-renta-cards"></div>
     <div id="imp-renta-detalle" style="margin-top:10px"></div>
   </div>
+  <div class="card" id="bol-card">
+    <div class="card-hdr"><span class="card-title">Boletas electrónicas automáticas</span>
+      <button class="btn btn-ghost btn-sm" id="bol-btn-reintentar" onclick="bolReintentar()">Reintentar pendientes</button></div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px">Al registrar un cobro, Reservia pide las boletas al proveedor que elijas y se las manda al cliente por correo. El cobro nunca espera: si el proveedor o el SII fallan, la boleta queda pendiente y se reintenta sola.</div>
+    <div class="fr">
+      <div class="fg"><label>Proveedor</label>
+        <select id="bol-proveedor" onchange="bolGuardar()">
+          <option value="ninguno">Desactivado — no emitir boletas</option>
+          <option value="simulado">Modo prueba — no llega al SII, folios de mentira</option>
+          <option value="emisso">Emisso</option>
+          <option value="boleteados">Boleteados</option>
+        </select></div>
+      <div class="fg"><label>Boletas por atención (lo define tu contador)</label>
+        <select id="bol-modo" onchange="bolGuardar()">
+          <option value="una">Una — el local emite por el total</option>
+          <option value="dos">Dos — cada profesional emite su parte y el local el resto</option>
+        </select></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Tipo de boleta del local</label>
+        <select id="bol-tipo" onchange="bolGuardar()">
+          <option value="39">Boleta electrónica, con IVA (39)</option>
+          <option value="41">Boleta exenta (41)</option>
+        </select></div>
+      <div class="fg"><label>Id del local en el proveedor</label><input id="bol-ref" type="text" maxlength="80" placeholder="Ej: conn_9tKfR2mQx4Vb" onchange="bolGuardar()"><div style="font-size:11px;color:var(--text3);margin-top:4px">En Emisso es la conexión de tu negocio; en Boleteados, el id del emisor. No es una clave.</div></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin:4px 0 12px"><input type="checkbox" id="bol-correo" style="width:auto" onchange="bolGuardar()"> Enviar las boletas al cliente por correo</label>
+    <div id="bol-profes" style="display:none;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Profesionales que emiten su propia boleta. Si dejas el id vacío, su parte va en la boleta del local.</div>
+      <div class="tbl-wrap"><table><thead><tr><th>Profesional</th><th>Id en el proveedor</th><th>Tipo de boleta</th></tr></thead><tbody id="bol-profes-filas"></tbody></table></div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin:6px 0 8px">Últimas boletas</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Emisor</th><th>Monto</th><th>Estado</th><th>Folio</th><th></th></tr></thead><tbody id="bol-lista"></tbody></table></div>
+  </div>
 </div>
 
 <div id="p-caja" class="page">
@@ -5400,6 +5434,9 @@ async function confirmarCobro(){
     // la primera visita del cliente, el negocio tiene el Club activo y hay correo.
     fetch('/api/enviar-club-bienvenida',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({cobroId})}).catch(()=>{});
+    // Boletas electrónicas: mismo criterio, sin await. Si el proveedor falla,
+    // quedan pendientes en el servidor y se reintentan solas.
+    emitirBoletas({cobroId});
   }
 
   // loadCobroProductos también: si no, S.ventas queda sin la venta recién
@@ -8538,6 +8575,98 @@ function renderImpuestos(sinCampos){
     fila(p.aPagar>=0?'Saldo a pagar en abril':'Saldo a favor (devolución)',fmt(Math.abs(p.aPagar)),true)+
     `<div class="alert al-info" style="margin-top:10px;font-size:12px;line-height:1.6">💡 Para llegar tranquilo a abril, aparta <strong>${fmt(p.mensual)}</strong> al mes.${c.regimen==='persona_natural'?'':' Además, los socios pagan Global Complementario por lo que retiren, con crédito por este impuesto.'}</div>
      <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6">Estimación: no considera sueldos ni gastos que no estén cargados, pérdidas de años anteriores, ni otros créditos. Confírmala con tu contador.</div>`;
+  bolRender(sinCampos);
+}
+
+// ── Boletas electrónicas ─────────────────────────────────────────────────────
+// La emisión la hace /api/boletas (servidor). Acá solo se configura el
+// proveedor y se muestran las boletas: el navegador nunca escribe en `boletas`.
+const BOL_ESTADOS={emitida:['Emitida','b-green'],en_proceso:['En proceso','b-blue'],enviando:['Enviando','b-blue'],pendiente:['Pendiente','b-orange'],error:['Reintentando','b-orange'],desconocido:['Verificando','b-orange'],rechazada:['Rechazada','b-red']};
+async function bolApi(accion,datos){
+  const {data:ses}=await sb.auth.getSession();
+  const r=await fetch('/api/boletas',{method:'POST',keepalive:true,
+    headers:{'Content-Type':'application/json',Authorization:'Bearer '+(ses?.session?.access_token||'')},
+    body:JSON.stringify({accion,...(datos||{})})});
+  let j=null; try{j=await r.json();}catch(e){}
+  if(!r.ok||!j||j.ok===false) throw new Error((j&&j.error)||'No pudimos comunicarnos con el servidor.');
+  return j;
+}
+// Se llama SIN await después de un cobro ya registrado: si falla, la boleta
+// queda pendiente en el servidor y se reintenta; el cobro no se entera.
+function emitirBoletas(origen){
+  if(!S.barberia||!S.barberia.boletas_proveedor||S.barberia.boletas_proveedor==='ninguno') return;
+  bolApi('emitir',origen).catch(()=>{});
+}
+async function bolGuardar(){
+  const payload={
+    boletas_proveedor:document.getElementById('bol-proveedor').value,
+    boletas_modo:document.getElementById('bol-modo').value,
+    boletas_tipo_dte:parseInt(document.getElementById('bol-tipo').value,10),
+    boletas_emisor_ref:(document.getElementById('bol-ref').value||'').trim()||null,
+    boletas_enviar_correo:document.getElementById('bol-correo').checked
+  };
+  const {error}=await sb.from('barberias').update(payload).eq('id',S.barberia.id);
+  if(error){ notify(error.message,'err'); return; }
+  Object.assign(S.barberia,payload);
+  notify(payload.boletas_proveedor==='emisso'?'Guardado ✓ Ojo: con Emisso cada boleta es real, no hay modo de prueba.':'Guardado ✓');
+  bolRender(true);
+}
+async function bolGuardarProfe(id){
+  const ref=(document.getElementById('bol-pref-'+id).value||'').trim()||null;
+  const t=document.getElementById('bol-ptipo-'+id).value;
+  const payload={boletas_emisor_ref:ref,boletas_tipo_dte:t?parseInt(t,10):null};
+  const {error}=await sb.from('barberos').update(payload).eq('id',id).eq('barberia_id',S.barberia.id);
+  if(error){ notify(error.message,'err'); return; }
+  const b=(S.barberos||[]).find(x=>x.id===id); if(b) Object.assign(b,payload);
+  notify('Guardado ✓');
+}
+async function bolReintentar(){
+  const btn=document.getElementById('bol-btn-reintentar');
+  btn.disabled=true;
+  try{ const j=await bolApi('reintentar'); notify(j.procesadas?`Reintentadas: ${j.procesadas}`:'No hay boletas pendientes'); }
+  catch(e){ notify(e.message,'err'); }
+  btn.disabled=false; bolCargarLista();
+}
+let BOL_REINTENTO_AUTO=0;
+async function bolCargarLista(){
+  const el=document.getElementById('bol-lista'); if(!el) return;
+  const {data,error}=await sb.from('boletas').select('id,fecha,emisor,barbero_id,monto_total,estado,folio,pdf_url,error,tipo_dte').eq('barberia_id',S.barberia.id).order('created_at',{ascending:false}).limit(30);
+  if(error){ el.innerHTML='<tr><td colspan="6" class="empty">Las boletas aún no están activadas en la base.</td></tr>'; return; }
+  const nom=id=>((S.barberos||[]).find(b=>b.id===id)||{}).nombre||'Profesional';
+  el.innerHTML=(data||[]).map(b=>{
+    const [txt,cls]=BOL_ESTADOS[b.estado]||[b.estado,'b-orange'];
+    const pdf=b.pdf_url&&/^https?:\/\//i.test(b.pdf_url)?`<a class="btn btn-ghost btn-sm" href="${escHtml(b.pdf_url)}" target="_blank" rel="noopener">PDF</a>`:'';
+    return `<tr><td data-label="Fecha">${escHtml(b.fecha)}</td><td data-label="Emisor">${b.emisor==='local'?escHtml(S.barberia.nombre):escHtml(nom(b.barbero_id))}</td><td data-label="Monto">${fmt(b.monto_total)}</td><td data-label="Estado"><span class="badge ${cls}" title="${escHtml(b.error||'')}">${txt}</span></td><td data-label="Folio">${escHtml(b.folio||'—')}</td><td data-label="">${pdf}</td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty">Todavía no hay boletas</td></tr>';
+  // Al abrir la pantalla, una vez cada 5 minutos, se empujan las pendientes.
+  const hayPend=(data||[]).some(b=>['pendiente','error','desconocido','en_proceso'].includes(b.estado));
+  if(hayPend&&Date.now()-BOL_REINTENTO_AUTO>300000&&['dueno','recepcion'].includes(S.perfil?.rol)){
+    BOL_REINTENTO_AUTO=Date.now();
+    bolApi('reintentar').then(j=>{ if(j.procesadas) bolCargarLista(); }).catch(()=>{});
+  }
+}
+function bolRender(sinCampos){
+  if(!document.getElementById('bol-card')) return;
+  const b=S.barberia||{};
+  if(!sinCampos){
+    document.getElementById('bol-proveedor').value=b.boletas_proveedor||'ninguno';
+    document.getElementById('bol-modo').value=b.boletas_modo||'una';
+    document.getElementById('bol-tipo').value=String(b.boletas_tipo_dte||39);
+    document.getElementById('bol-ref').value=b.boletas_emisor_ref||'';
+    document.getElementById('bol-correo').checked=b.boletas_enviar_correo!==false;
+  }
+  const dos=(b.boletas_modo||'una')==='dos';
+  document.getElementById('bol-profes').style.display=dos?'':'none';
+  if(dos){
+    document.getElementById('bol-profes-filas').innerHTML=(S.barberos||[]).filter(p=>p.activo!==false).map(p=>`<tr>
+      <td data-label="Profesional">${escHtml(p.nombre)}</td>
+      <td data-label="Id en el proveedor"><input id="bol-pref-${p.id}" type="text" maxlength="80" value="${escHtml(p.boletas_emisor_ref||'')}" placeholder="Vacío = no emite" onchange="bolGuardarProfe('${p.id}')"></td>
+      <td data-label="Tipo de boleta"><select id="bol-ptipo-${p.id}" onchange="bolGuardarProfe('${p.id}')">
+        <option value=""${p.boletas_tipo_dte?'':' selected'}>Igual que el local</option>
+        <option value="39"${p.boletas_tipo_dte===39?' selected':''}>Con IVA (39)</option>
+        <option value="41"${p.boletas_tipo_dte===41?' selected':''}>Exenta (41)</option></select></td></tr>`).join('')||'<tr><td colspan="3" class="empty">Sin profesionales</td></tr>';
+  }
+  bolCargarLista();
 }
 
 function renderReporteCliente(){
