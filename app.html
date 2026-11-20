@@ -1623,6 +1623,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
     <div id="cob-point" style="display:none;background:var(--bg2);border-radius:10px;padding:12px;margin-bottom:14px">
       <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Terminal Point: <strong id="cob-point-nombre"></strong></div>
       <button type="button" class="btn btn-primary" id="cob-point-btn" onclick="cobrarConPoint()">Cobrar con Point</button>
+      <div id="cob-point-propina" style="display:none;font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5"></div>
       <div id="cob-point-estado" style="display:none;font-size:13px;line-height:1.5;margin-top:10px">
         <div id="cob-point-msg"></div>
         <button type="button" class="btn btn-ghost btn-sm" id="cob-point-cancel" style="margin-top:8px" onclick="pointCancelarCobro()">Cancelar cobro</button>
@@ -5548,9 +5549,13 @@ async function pointDesconectar(){
 }
 
 // Caja: botón «Cobrar con Point»
+// La propina NO pasa por la terminal: Mercado Pago cobra comisión sobre todo
+// lo que pasa por la máquina, y la propina no es una venta del negocio (no va
+// en la boleta). Se cobra aparte, en efectivo o transferencia. Decisión del
+// dueño (2026-11-20).
 function cobroPointMonto(rep){
   rep=rep||cobroProrratear();
-  return Math.round(Math.max(rep.totalCobro-cobroAbonoTotal(rep),0));
+  return Math.round(Math.max(rep.totalCobro-(rep.propinaTotal||0)-cobroAbonoTotal(rep),0));
 }
 function cobroPointActualizar(rep){
   const box=document.getElementById('cob-point'); if(!box) return;
@@ -5563,6 +5568,10 @@ function cobroPointActualizar(rep){
   const pagado=!!(COBRO_CTX.point&&COBRO_CTX.point.pagado);
   btn.style.display=(POINT_RUN||pagado)?'none':'';
   btn.textContent='Cobrar '+fmt(monto)+' con Point';
+  const nota=document.getElementById('cob-point-propina');
+  if(nota){ const pr=(rep||cobroProrratear()).propinaTotal||0;
+    nota.style.display=pr>0?'':'none';
+    nota.textContent=pr>0?'La propina ('+fmt(pr)+') no va por la máquina: cóbrala aparte, en efectivo o transferencia.':''; }
 }
 function pointMsg(html,{cancelar=false,visible=true}={}){
   document.getElementById('cob-point-estado').style.display=visible?'':'none';
