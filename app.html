@@ -2327,6 +2327,10 @@ async function loadAll(){
   const {data:b,error:eb} = await sb.from('barberias').select('*').eq('id',p.barberia_id).single();
   if(eb||!b) throw new Error('No encontramos el negocio asociado a tu cuenta. Contacta al soporte.');
   S.barberia = b;
+  // App instalada con el nombre y el logo del negocio (manifest dinámico).
+  try{ const ml=document.querySelector('link[rel="manifest"]'); if(ml&&b&&b.id) ml.href='/api/manifest?app=panel&b='+encodeURIComponent(b.id);
+    const ai=document.querySelector('link[rel="apple-touch-icon"]'); if(ai&&b&&/^https:\/\//.test(b.logo_url||'')) ai.href=b.logo_url;
+    const at=document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(at&&b&&b.nombre) at.content=b.nombre; }catch(e){}
   await loadSucursales();
   aplicarTemaPanel();
   VIP_HABILITADO = calcularVipHabilitado();

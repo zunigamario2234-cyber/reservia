@@ -1,0 +1,45 @@
+// Mi Agenda: imagen "Compartir horas disponibles". node test-compartir-horas.js
+const { chromium } = require('playwright'); const fs=require('fs');
+const res=[]; const ok=(n,c,x)=>res.push((c?'OK    ':'FALLO ')+n+(c?'':'  -> '+JSON.stringify(x)));
+const SHOT='/tmp/claude-0/-home-claude/4d67f6db-2749-5f27-9259-d200e700f3a0/scratchpad/';
+const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+(async()=>{
+ const b=await chromium.launch(); const p=await b.newPage({viewport:{width:390,height:900}}); const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+ await p.route(/^https:\/\/(cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com|unpkg\.com)\//, r=>{const m='/tmp/cdn/node_modules/@supabase/supabase-js/dist/umd/supabase.js';return /supabase-js/.test(r.request().url())&&fs.existsSync(m)?r.fulfill({status:200,contentType:'application/javascript',body:fs.readFileSync(m)}):r.fulfill({status:200,contentType:'application/javascript',body:''});});
+ await p.route(/supabase\.co\//, r=>{const u=r.request().url(); const json=o=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(o)});
+   if(/reservas_disponibilidad/.test(u)) return json([{hora:'10:00:00',barbero_nombre:'FELIPE',duracion_min:60},{hora:'15:00:00',barbero_nombre:'FELIPE',duracion_min:30},{hora:'12:00:00',barbero_nombre:'OTRO',duracion_min:30}]);
+   json([]);});
+ await p.goto('http://localhost:8765/mi-agenda.html'); await p.waitForTimeout(700);
+ const man=await p.getAttribute('#manifest-link','href');
+ ok('sin login usa el manifest de siempre',man==='/mi-agenda-manifest.json',man);
+ const out=await p.evaluate(async(PNG)=>{
+   document.getElementById('login-view').style.display='none'; document.getElementById('app-view').style.display='';
+   PERFIL={barberia_id:'1f97f706-4fcc-4965-a49c-9d29c2b94bbe'}; NEGOCIO_ID=PERFIL.barberia_id;
+   BARBERO={id:'p1',nombre:'FELIPE',slug:'felipe'}; NEGOCIO={nombre:'Essentials Studio',slug:'essentials-studio',intervalo_min:30,logo_url:null};
+   SERVICIOS=[{nombre:'Corte',duracion_min:30},{nombre:'Barba',duracion_min:45}];
+   HORARIO_NEGOCIO=[0,1,2,3,4,5,6].map(i=>({dia_semana:i,cerrado:i===0,hora_apertura:'10:00',hora_cierre:'19:00',hora_colacion_inicio:'14:00',hora_colacion_fin:'15:00'}));
+   BLOQUEOS=[{activo:true,tipo:'recurrente',dia_semana:null,hora_inicio:'18:00',hora_fin:'19:00'}];
+   marcarAppNegocio(NEGOCIO_ID,NEGOCIO);
+   // próximo martes
+   const d=new Date(); d.setDate(d.getDate()+((2-d.getDay()+7)%7||7));
+   const f=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+   BLOQUEOS[0].dia_semana=2;
+   const r=await horasLibres(f);
+   document.getElementById('ag-fecha').value=f;
+   await abrirCompartirHoras();
+   const a1=document.getElementById('hs-canvas').toDataURL('image/png');
+   document.getElementById('hs-estilo').value='noche'; await generarImagenHoras();
+   const a2=document.getElementById('hs-canvas').toDataURL('image/png');
+   const dom=new Date(d); dom.setDate(d.getDate()+5); const fd=dom.getFullYear()+'-'+String(dom.getMonth()+1).padStart(2,'0')+'-'+String(dom.getDate()).padStart(2,'0');
+   const rc=await horasLibres(fd);
+   return {libres:r.libres,a1,a2,man:document.getElementById('manifest-link').getAttribute('href'),info:document.getElementById('hs-info').textContent,cerrado:rc.cerrado};
+ },PNG);
+ ok('horas libres excluyen reservas con su duración, colación y bloqueos',JSON.stringify(out.libres)===JSON.stringify(['11:00','11:30','12:00','12:30','13:00','13:30','15:30','16:00','16:30','17:00','17:30']),out.libres);
+ ok('el domingo sale cerrado',out.cerrado===true);
+ ok('al entrar, el manifest pasa a ser el del negocio',/\/api\/manifest\?app=agenda&b=1f97f706/.test(out.man),out.man);
+ ok('informa cuántas horas hay',/11 horas libres/.test(out.info),out.info);
+ fs.writeFileSync(SHOT+'horas-afiche.png',Buffer.from(out.a1.split(',')[1],'base64'));
+ fs.writeFileSync(SHOT+'horas-noche.png',Buffer.from(out.a2.split(',')[1],'base64'));
+ ok('sin errores de página',errs.length===0,errs);
+ console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length+' fallos de '+res.length); await b.close();
+})();

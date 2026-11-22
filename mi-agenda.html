@@ -9,16 +9,23 @@
      mi-agenda-manifest.json y mi-agenda-sw.js). No se referencian desde
      app.html/reservar.html/club.html/index.html/ingresar.html — esas páginas siguen
      sirviéndose frescas del servidor, sin manifest ni service worker. -->
-<link rel="manifest" href="/mi-agenda-manifest.json">
+<link rel="manifest" id="manifest-link" href="/mi-agenda-manifest.json">
 <meta name="theme-color" content="#08090d">
 
 <!-- "Agregar a inicio" en iOS/Safari no sigue el estándar de manifest.json
      de Chrome/Android — necesita estos meta tags propios. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Mi Agenda">
-<link rel="apple-touch-icon" href="/mi-agenda-icon-192.png">
+<meta name="apple-mobile-web-app-title" id="apple-title" content="Mi Agenda">
+<link rel="apple-touch-icon" id="apple-icon" href="/mi-agenda-icon-192.png">
+<script>
+// Si ya entró antes, el ícono y el nombre del negocio se ponen al tiro, antes
+// del login: así "Agregar a inicio" toma el logo del local desde el primer momento.
+try{var _n=JSON.parse(localStorage.getItem('ma_negocio')||'null');if(_n&&_n.b){document.getElementById('manifest-link').href='/api/manifest?app=agenda&b='+encodeURIComponent(_n.b);if(_n.logo)document.getElementById('apple-icon').href=_n.logo;}}catch(e){}
+</script>
 
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
@@ -42,6 +49,27 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--fondo);colo
 .header{padding:24px;text-align:center}
 .header h1{font-size:15px;font-weight:600;color:var(--texto-suave);letter-spacing:0.3px}
 .container{max-width:560px;margin:0 auto;padding:0 16px 40px}
+body.con-nav .container{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+.header{display:flex;align-items:center;justify-content:center;gap:10px}
+#h-logo{width:34px;height:34px;border-radius:9px;object-fit:cover;background:var(--tarjeta);border:0.5px solid var(--borde)}
+/* Barra de navegación abajo, como app. */
+.bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;justify-content:center;gap:4px;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--tarjeta) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:0.5px solid var(--borde)}
+.bn{flex:1;max-width:150px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;border:0;background:none;color:var(--texto-apagado);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;border-radius:12px}
+.bn svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.bn.active{color:var(--acento);background:var(--chip-fondo)}
+/* Pantalla Métricas */
+.met-hero{display:flex;align-items:center;gap:18px;background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:18px;padding:18px;margin-bottom:14px}
+.met-hero .txt{flex:1;min-width:0}
+.met-hero .t1{font-size:12px;color:var(--texto-suave)}
+.met-hero .t2{font-size:15px;font-weight:700;color:var(--texto-fuerte);margin:2px 0 6px}
+.met-hero .t3{font-size:12px;color:var(--texto-suave);line-height:1.5}
+.met-sec{font-size:12px;font-weight:600;color:var(--texto-suave);margin:18px 2px 8px}
+.met-bars{display:flex;align-items:flex-end;gap:10px;height:120px;padding-top:6px}
+.met-bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+.met-bars .bar{width:100%;max-width:44px;border-radius:8px 8px 4px 4px;background:var(--acento);opacity:.85;min-height:3px}
+.met-bars .bar.act{opacity:1;background:linear-gradient(180deg,var(--acento),var(--acento-2))}
+.met-bars .n{font-size:12px;font-weight:700;color:var(--texto-fuerte)}
+.met-bars .l{font-size:10px;color:var(--texto-suave)}
 .card{background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;padding:20px;margin-bottom:14px}
 .card-title{font-size:13px;font-weight:600;color:var(--texto);margin-bottom:14px}
 .empty{text-align:center;color:var(--texto-tenue);font-size:12px;padding:16px 0}
@@ -174,7 +202,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 </head>
 <body>
 
-<div class="header"><h1 id="h-nombre">Mi Agenda</h1></div>
+<div class="header"><img id="h-logo" alt="" hidden><h1 id="h-nombre">Mi Agenda</h1></div>
 <div class="container">
 
   <div id="login-view">
@@ -206,10 +234,13 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
   </div>
 
   <div id="app-view" style="display:none">
-    <div class="tabs-top">
-      <button class="tab-btn active" id="tab-btn-agenda" onclick="cambiarTab('agenda')">📅 Agenda</button>
-      <button class="tab-btn" id="tab-btn-comisiones" onclick="cambiarTab('comisiones')">💰 Mis ventas</button>
-    </div>
+    <nav class="bottom-nav" aria-label="Secciones">
+      <button class="bn active" id="tab-btn-agenda" onclick="cambiarTab('agenda')"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Agenda</button>
+      <button class="bn" id="tab-btn-metricas" onclick="cambiarTab('metricas')"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Métricas</button>
+      <button class="bn" id="tab-btn-comisiones" onclick="cambiarTab('comisiones')"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M2 10h20M16 15h2"/></svg>Mis ventas</button>
+    </nav>
+
+    <div id="tab-metricas" style="display:none"><div id="met-full"><div class="msg-full">Cargando...</div></div></div>
 
     <div id="tab-agenda">
       <div id="metricas-cuadros"></div>
@@ -218,6 +249,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
           <div class="form-group"><label>Fecha</label><input type="date" id="ag-fecha" onchange="cargarAgenda()"></div>
           <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="abrirNuevaReserva()">+ Reservar</button></div>
         </div>
+        <button class="btn btn-ghost" style="margin-top:10px;width:100%" onclick="abrirCompartirHoras()">📲 Compartir horas disponibles</button>
       </div>
       <div class="vista-toggle" role="tablist" aria-label="Forma de ver la agenda">
         <button type="button" id="vista-lista" class="vista-btn" role="tab" onclick="setVistaAgenda('lista')">☰ Lista</button>
@@ -247,6 +279,22 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 </div>
 
 <!-- Modal: nueva reserva -->
+<div class="overlay" id="m-horas">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hdr"><span class="modal-title">Compartir horas disponibles</span><button class="xbtn" onclick="document.getElementById('m-horas').classList.remove('open')">×</button></div>
+    <div class="fr" style="margin-bottom:10px">
+      <div class="form-group"><label>Día</label><input type="date" id="hs-fecha" onchange="generarImagenHoras()"></div>
+      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
+    </div>
+    <div id="hs-info" class="ayuda" style="margin-bottom:8px"></div>
+    <canvas id="hs-canvas" width="1080" height="1920" style="width:100%;max-width:300px;display:block;margin:0 auto 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35)"></canvas>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="compartirImagenHoras()">Compartir</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="guardarImagenHoras()">Guardar imagen</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="m-reserva">
   <div class="modal">
     <div class="modal-hdr"><span class="modal-title">Nueva reserva</span><button class="xbtn" onclick="cerrarModal()">×</button></div>
@@ -465,7 +513,9 @@ async function afterLogin(){
   // reservar.html usa para leer B.barberia. Nombre y dirección, una vez
   // al loguear (no en cada mensaje de WhatsApp) — dirección hace falta
   // para {direccion} si la plantilla "Confirmación reserva" la usa.
-  const {data:negocio}=await sb.from('barberias').select('nombre,direccion,color_marca,color_fondo_logo,modo_tema,color_fondo_marca').eq('id',perfil.barberia_id).single();
+  const {data:negocio}=await sb.from('barberias').select('nombre,direccion,color_marca,color_fondo_logo,modo_tema,color_fondo_marca,logo_url,slug,intervalo_min').eq('id',perfil.barberia_id).single();
+  NEGOCIO=negocio||{};
+  marcarAppNegocio(perfil.barberia_id,negocio);
   aplicarTemaAgenda(negocio);
   NEGOCIO_NOMBRE=negocio?.nombre||'';
   NEGOCIO_DIRECCION=negocio?.direccion||'';
@@ -475,6 +525,7 @@ async function afterLogin(){
   document.title='Mi Agenda — '+barbero.nombre;
   document.getElementById('login-view').style.display='none';
   document.getElementById('app-view').style.display='';
+  document.body.classList.add('con-nav');
   document.getElementById('ag-fecha').value=hoyStr();
   setVistaAgenda(leerVistaAgenda(),true);
   cargarContextoAgenda();
@@ -508,14 +559,286 @@ function aplicarTemaAgenda(barb){
 }
 
 function cambiarTab(tab){
-  document.getElementById('tab-agenda').style.display=tab==='agenda'?'':'none';
-  document.getElementById('tab-comisiones').style.display=tab==='comisiones'?'':'none';
-  document.getElementById('tab-btn-agenda').classList.toggle('active',tab==='agenda');
-  document.getElementById('tab-btn-comisiones').classList.toggle('active',tab==='comisiones');
+  ['agenda','metricas','comisiones'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display=tab===t?'':'none';
+    document.getElementById('tab-btn-'+t).classList.toggle('active',tab===t);
+  });
+  window.scrollTo(0,0);
   if(tab==='comisiones') comCargar();
+  if(tab==='metricas') cargarMetricasFull();
 }
 
 // ─── Agenda ───
+
+// La app instalada lleva el nombre y el logo del negocio (manifest dinámico en
+// /api/manifest). Se recuerda en este teléfono para ponerlo antes del login.
+function marcarAppNegocio(barberiaId,neg){
+  if(!barberiaId) return;
+  const logo=neg&&/^https:\/\//i.test(neg.logo_url||'')?neg.logo_url:null;
+  document.getElementById('manifest-link').href='/api/manifest?app=agenda&b='+encodeURIComponent(barberiaId);
+  if(logo){ document.getElementById('apple-icon').href=logo; const h=document.getElementById('h-logo'); h.src=logo; h.hidden=false; }
+  if(neg&&neg.nombre) document.getElementById('apple-title').content=neg.nombre;
+  try{ localStorage.setItem('ma_negocio',JSON.stringify({b:barberiaId,logo,nombre:neg&&neg.nombre})); }catch(e){}
+}
+
+// ─── Pantalla Métricas ───
+async function cargarMetricasFull(){
+  const cont=document.getElementById('met-full');
+  if(!MT) cont.innerHTML='<div class="msg-full">Cargando...</div>';
+  const [Y,M,D]=hoyStr().split('-').map(Number);
+  const dp=new Date(Y,M-1,0).getDate();
+  const ini=_iso(new Date(Y,M-1,1)), iniAnt=_iso(new Date(Y,M-2,1)), finAnt=_iso(new Date(Y,M-2,Math.min(D,dp)));
+  const [{data:j},{data:mes},{data:ant}]=await Promise.all([
+    sb.rpc('mi_agenda_metricas'),
+    sb.rpc('mi_agenda_comisiones_detalle',{p_desde:ini,p_hasta:hoyStr()}),
+    sb.rpc('mi_agenda_comisiones_detalle',{p_desde:iniAnt,p_hasta:finAnt})]);
+  if(!j){ cont.innerHTML='<div class="msg-full">No pudimos cargar tus métricas.</div>'; return; }
+  const hoyF=(mes||[]).filter(f=>f.fecha===hoyStr());
+  MT=calcularMetricas(j,hoyF); MT.j=j;
+  pintarMetricasFull(j,(mes||[]).filter(f=>f.estado!=='Cancelada'),(ant||[]).filter(f=>f.estado!=='Cancelada'));
+}
+function _anillo(hechas,meta,cls){
+  const c={verde:'#22a35a',amarillo:'#e0a800',rojo:'#e5484d'}[cls]||'var(--acento)';
+  const r=42, L=2*Math.PI*r, f=Math.min(1,hechas/(meta||1));
+  return `<svg viewBox="0 0 100 100" width="104" height="104" style="flex-shrink:0" role="img" aria-label="${hechas} de ${meta} citas">
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--borde)" stroke-width="9"/>
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="${c}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(L*f).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 50 50)"/>
+    <text x="50" y="49" text-anchor="middle" font-size="22" font-weight="700" fill="var(--texto-fuerte)">${hechas}</text>
+    <text x="50" y="66" text-anchor="middle" font-size="11" fill="var(--texto-suave)">de ${meta}</text></svg>`;
+}
+function pintarMetricasFull(j,mes,ant){
+  const m=MT, cont=document.getElementById('met-full');
+  const [Y,M,D]=String(j.hoy).split('-').map(Number);
+  const c=j.citas||{}, n=d=>Number(c[_iso(d)]||0);
+  const P=sumarPlata(mes), A=sumarPlata(ant);
+  const tk=P.n?Math.round(mes.filter(f=>(f.tipo||'servicio')==='servicio').reduce((s,f)=>s+(Number(f.valor)||0),0)/P.n):0;
+  const tkA=A.n?Math.round(ant.filter(f=>(f.tipo||'servicio')==='servicio').reduce((s,f)=>s+(Number(f.valor)||0),0)/A.n):0;
+  const tile=(cls,lbl,val,sub)=>`<div class="mt-tile ${cls}" style="cursor:default"><span class="mt-lbl"><span class="mt-dot"></span>${lbl}</span><span class="mt-val" style="font-size:20px">${val}</span><span class="mt-sub">${sub}</span></div>`;
+  const estadoTxt={verde:m.hechas>=m.meta?'¡Meta cumplida!':'Vas en camino',amarillo:'Un poco atrás',rojo:'Vas atrasado'}[m.est];
+  // Gráfico acumulado: este mes vs el anterior vs el ritmo de la meta.
+  const dm=new Date(Y,M,0).getDate(), dp=new Date(Y,M-1,0).getDate();
+  const ser=[],serA=[]; let a=0,b=0;
+  for(let d=1;d<=D;d++){ a+=n(new Date(Y,M-1,d)); ser.push(a); }
+  for(let d=1;d<=dp;d++){ b+=n(new Date(Y,M-2,d)); serA.push(b); }
+  const W=320,H=110,pd=6,maxY=Math.max(m.meta,b,a,1), dx=Math.max(dm,dp);
+  const X=d=>pd+(d-1)/(dx-1)*(W-2*pd), Yv=v=>H-pd-(v/maxY)*(H-2*pd);
+  const path=arr=>arr.map((v,i)=>`${i?'L':'M'}${X(i+1).toFixed(1)},${Yv(v).toFixed(1)}`).join('');
+  const col={verde:'#22a35a',amarillo:'#e0a800',rojo:'#e5484d'}[m.est];
+  const grafico=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:120px;display:block">
+    <line x1="${X(1)}" y1="${Yv(0)}" x2="${X(dm)}" y2="${Yv(m.meta)}" stroke="var(--texto-suave)" stroke-width="1" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>
+    <path d="${path(serA)}" fill="none" stroke="var(--texto-suave)" stroke-width="1.6" stroke-dasharray="6 5" vector-effect="non-scaling-stroke" opacity=".8"/>
+    <path d="${path(ser)}" fill="none" stroke="${col}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--texto-suave);margin-top:6px">
+      <span><span style="display:inline-block;width:14px;height:3px;background:${col};vertical-align:middle;border-radius:2px"></span> Este mes</span>
+      <span><span style="display:inline-block;width:14px;border-top:1.6px dashed var(--texto-suave);vertical-align:middle"></span> Mes anterior</span>
+      <span><span style="display:inline-block;width:14px;border-top:1px dotted var(--texto-suave);vertical-align:middle"></span> Ritmo meta</span></div>`;
+  // Últimas 4 semanas (lunes a domingo).
+  const dow=(new Date(Y,M-1,D).getDay()+6)%7, sem=[];
+  for(let k=3;k>=0;k--){ const ini=new Date(Y,M-1,D-dow-7*k); let t=0; for(let i=0;i<7;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); if(d<=new Date(Y,M-1,D)) t+=n(d); } sem.push({t,ini,act:k===0}); }
+  const maxS=Math.max(...sem.map(x=>x.t),1);
+  const barras=`<div class="met-bars">${sem.map(x=>`<div class="b"><span class="n">${x.t}</span><div class="bar${x.act?' act':''}" style="height:${Math.round(x.t/maxS*80)}%"></div><span class="l">${x.act?'Esta':x.ini.getDate()+'/'+(x.ini.getMonth()+1)}</span></div>`).join('')}</div>`;
+  // Mejor día de la semana (promedio en los dos meses).
+  const NOM=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'], tot=[0,0,0,0,0,0,0], cnt=[0,0,0,0,0,0,0];
+  Object.keys(c).forEach(k=>{ const [y,mm,dd]=k.split('-').map(Number); const w=new Date(y,mm-1,dd).getDay(); tot[w]+=Number(c[k]); cnt[w]++; });
+  let mejor=-1,mv=0; tot.forEach((t,i)=>{ const pr=cnt[i]?t/cnt[i]:0; if(pr>mv){mv=pr;mejor=i;} });
+  // Servicios del mes.
+  const srv={}; mes.filter(f=>(f.tipo||'servicio')==='servicio').forEach(f=>{ const k=f.servicio||'—'; srv[k]=(srv[k]||0)+1; });
+  const top=Object.entries(srv).sort((x,y)=>y[1]-x[1]).slice(0,4);
+  const maxT=top.length?top[0][1]:1;
+  cont.innerHTML=`
+    <div class="met-hero">${_anillo(m.hechas,m.meta,m.est)}
+      <div class="txt"><div class="t1">Meta del mes</div><div class="t2">${estadoTxt}</div>
+      <div class="t3">${m.faltan?`Deberías llevar ~${Math.round(m.esperado)}. Te faltan <strong>${m.faltan}</strong>: ${m.porDia} por día en ${m.quedan} días.`:`Superaste la meta por ${m.hechas-m.meta}.`} Agendadas: ${m.agendadas}.</div></div></div>
+    <div class="met-sec">Citas</div>
+    <div class="mt-grid">
+      ${tile(_color(m.hechas,m.mesAnt),'Este mes',m.hechas,'vs '+m.mesAnt+' · '+_pct(m.hechas,m.mesAnt))}
+      ${tile(_color(m.semana,m.semanaAnt),'Esta semana',m.semana,'vs '+m.semanaAnt+' · '+_pct(m.semana,m.semanaAnt))}
+      ${tile(_color(m.ayer,m.ayerAnt),'Ayer',m.ayer,'vs '+m.ayerAnt+' · '+_pct(m.ayer,m.ayerAnt))}
+      ${tile('','Agendadas',m.agendadas,'lo que queda del mes')}
+    </div>
+    <div class="card" style="padding:16px"><div class="card-title" style="margin-bottom:8px">Avance del mes</div>${grafico}</div>
+    <div class="met-sec">Plata del mes (vs mes anterior a esta altura)</div>
+    <div class="mt-grid">
+      ${tile(_color(P.ventas,A.ventas),'Ventas',fmt(P.ventas),'vs '+fmt(A.ventas))}
+      ${tile(_color(P.recibe,A.recibe),'Recibes',fmt(P.recibe),'vs '+fmt(A.recibe))}
+      ${tile(_color(tk,tkA),'Ticket promedio',fmt(tk),'vs '+fmt(tkA))}
+      ${tile('','Comisión',fmt(P.com),m.hon?'retención − '+fmt(P.ret):(P.prop?'propinas + '+fmt(P.prop):'del mes'))}
+    </div>
+    <div class="card" style="padding:16px"><div class="card-title" style="margin-bottom:4px">Últimas 4 semanas</div>${barras}</div>
+    <div class="card" style="padding:16px">
+      <div class="card-title">Lo que más haces este mes</div>
+      ${top.length?top.map(([k,v])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>${escapeHtml(k)}</span><strong>${v}</strong></div><div style="height:6px;border-radius:4px;background:var(--borde)"><div style="height:100%;width:${Math.round(v/maxT*100)}%;border-radius:4px;background:var(--acento)"></div></div></div>`).join(''):'<div class="empty">Todavía no hay servicios este mes.</div>'}
+      ${mejor>=0?`<div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Tu mejor día suele ser el <strong style="color:var(--texto)">${NOM[mejor]}</strong> (~${mv.toFixed(1).replace('.',',')} citas).</div>`:''}
+    </div>`;
+}
+
+// ─── Compartir horas disponibles (imagen para historias) ───────────────────
+// Calcula las horas libres del profesional con el mismo criterio que la página
+// de reservas (horario del negocio, intervalo, reservas con su duración y
+// bloqueos) y dibuja una imagen 1080×1920 lista para historias/estados.
+const HS_MIN=s=>{ if(!s) return null; const [a,b]=String(s).split(':').map(Number); return a*60+(b||0); };
+const HS_HM=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+function linkReservaPropio(){
+  const o=location.origin;
+  return NEGOCIO.slug&&BARBERO.slug ? o+'/reservar/'+NEGOCIO.slug+'/'+BARBERO.slug : o+'/reservar.html?id='+NEGOCIO_ID+'&profesional='+BARBERO.id;
+}
+async function horasLibres(fecha){
+  const paso=(n=>Number.isFinite(n)&&n>=5&&n<=120?n:30)(Math.round(Number(NEGOCIO.intervalo_min)));
+  const dur=Math.min(...(SERVICIOS.map(s=>Number(s.duracion_min)).filter(n=>n>0)),30)||30;
+  const dow=new Date(fecha+'T12:00:00').getDay();
+  const h=HORARIO_NEGOCIO.find(x=>x.dia_semana===dow);
+  let ini,fin,c1=null,c2=null;
+  if(h){ if(h.cerrado) return {cerrado:true,libres:[]}; ini=HS_MIN(h.hora_apertura); fin=HS_MIN(h.hora_cierre); c1=HS_MIN(h.hora_colacion_inicio); c2=HS_MIN(h.hora_colacion_fin); }
+  else { if(dow===0) return {cerrado:true,libres:[]}; ini=9*60; fin=19*60; }
+  const {data:ocup}=await sb.from('reservas_disponibilidad').select('hora,barbero_nombre,duracion_min').eq('barberia_id',NEGOCIO_ID).eq('fecha',fecha);
+  const mias=(ocup||[]).filter(r=>r.barbero_nombre===BARBERO.nombre);
+  const choca=(a,da,b,db)=>a<b+db&&b<a+da;
+  const ahora=new Date(), hoy=hoyStr(), minAhora=ahora.getHours()*60+ahora.getMinutes()+30;
+  const libres=[];
+  for(let m=ini;m+dur<=fin;m+=paso){
+    if(c1!=null&&c2!=null&&choca(m,dur,c1,c2-c1)) continue;
+    if(fecha===hoy&&m<minAhora) continue;
+    if(mias.some(r=>{ const rm=HS_MIN(r.hora); return rm!=null&&choca(m,dur,rm,r.duracion_min||30); })) continue;
+    if((BLOQUEOS||[]).some(b=>{ if(b.activo===false) return false;
+      if(b.tipo==='dia_completo') return b.fecha===fecha;
+      if(b.tipo==='puntual'&&b.fecha!==fecha) return false;
+      if(b.tipo==='recurrente'&&b.dia_semana!==dow) return false;
+      if(b.tipo!=='puntual'&&b.tipo!=='recurrente') return false;
+      const bi=HS_MIN(b.hora_inicio), bf=HS_MIN(b.hora_fin); return bi!=null&&bf!=null&&choca(m,dur,bi,bf-bi); })) continue;
+    libres.push(HS_HM(m));
+  }
+  return {cerrado:false,libres};
+}
+let HS_LOGO=null;
+function cargarLogoHs(){
+  return new Promise(res=>{
+    const url=NEGOCIO.logo_url; if(!url||!/^https:/.test(url)) return res(null);
+    if(HS_LOGO&&HS_LOGO.src===url) return res(HS_LOGO);
+    const im=new Image(); im.crossOrigin='anonymous';
+    im.onload=()=>{ HS_LOGO=im; res(im); }; im.onerror=()=>res(null); im.src=url;
+  });
+}
+async function abrirCompartirHoras(){
+  document.getElementById('hs-fecha').value=document.getElementById('ag-fecha').value||hoyStr();
+  document.getElementById('m-horas').classList.add('open');
+  await generarImagenHoras();
+}
+const HS_DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const HS_MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function hsAcento(){ const v=getComputedStyle(document.documentElement).getPropertyValue('--acento').trim(); return /^#[0-9a-f]{6}$/i.test(v)?v:'#7c6af7'; }
+function hsCorto(u){ return u.replace(/^https?:\/\//,''); }
+async function generarImagenHoras(){
+  const fecha=document.getElementById('hs-fecha').value||hoyStr();
+  const estilo=document.getElementById('hs-estilo').value;
+  const info=document.getElementById('hs-info'); info.textContent='Calculando horas…';
+  try{ await document.fonts.load('900 100px "Big Shoulders Display"'); await document.fonts.load('700 40px "Big Shoulders Display"'); }catch(e){}
+  const [{cerrado,libres},logo]=await Promise.all([horasLibres(fecha),cargarLogoHs()]);
+  HS_ULTIMO={fecha,libres};
+  info.textContent=cerrado?'Ese día el negocio está cerrado.':libres.length?`${libres.length} hora${libres.length===1?'':'s'} libre${libres.length===1?'':'s'}. Toca Compartir para subirla a tu historia o estado.`:'No te quedan horas libres ese día.';
+  const cv=document.getElementById('hs-canvas'), x=cv.getContext('2d');
+  const d=new Date(fecha+'T12:00:00'), diaTxt=HS_DIAS[d.getDay()], fechaTxt=d.getDate()+' de '+HS_MESES[d.getMonth()];
+  (estilo==='noche'?dibujarNoche:dibujarAfiche)(x,{libres,cerrado,diaTxt,fechaTxt,logo,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',link:hsCorto(linkReservaPropio()),acento:hsAcento()});
+}
+const HS_F=(w,size)=>`${w} ${size}px "Big Shoulders Display", "Arial Narrow", Impact, sans-serif`;
+function hsTexto(x,t,X,Y,font,color,align){ x.font=font; x.fillStyle=color; x.textAlign=align||'left'; x.fillText(t,X,Y); }
+function hsAjustar(x,t,font,max){ let s=font.size; do{ x.font=HS_F(font.w,s); if(x.measureText(t).width<=max) break; s-=4; }while(s>30); return HS_F(font.w,s); }
+function hsLogo(x,logo,cx,cy,r,fondo){
+  x.save(); x.beginPath(); x.arc(cx,cy,r,0,Math.PI*2); x.fillStyle=fondo; x.fill(); x.clip();
+  if(logo){ const k=Math.max(2*r/logo.width,2*r/logo.height); const w=logo.width*k,h=logo.height*k; x.drawImage(logo,cx-w/2,cy-h/2,w,h); }
+  x.restore();
+}
+// Estilo 1: afiche de pared con tiras para arrancar (como los avisos de papel).
+function dibujarAfiche(x,o){
+  const W=1080,H=1920; const tinta='#16130f', papel='#efe9df';
+  x.fillStyle=o.acento; x.fillRect(0,0,W,H);
+  // franjas diagonales tipo poste de barbería, muy suaves
+  x.save(); x.globalAlpha=.10; x.fillStyle='#fff';
+  for(let i=-H;i<W+H;i+=120){ x.beginPath(); x.moveTo(i,0); x.lineTo(i+60,0); x.lineTo(i+60-H,H); x.lineTo(i-H,H); x.closePath(); x.fill(); }
+  x.restore();
+  // hoja de papel, un poco girada
+  x.save(); x.translate(W/2,H/2+20); x.rotate(-0.025);
+  const pw=900, ph=1560, px=-pw/2, py=-ph/2;
+  x.shadowColor='rgba(0,0,0,.35)'; x.shadowBlur=40; x.shadowOffsetY=18;
+  x.fillStyle=papel; x.fillRect(px,py,pw,ph); x.shadowColor='transparent';
+  // cinta adhesiva
+  x.fillStyle='rgba(255,255,255,.55)'; x.save(); x.translate(0,py+6); x.rotate(0.04); x.fillRect(-110,-28,220,56); x.restore();
+  hsLogo(x,o.logo,px+110,py+140,62,o.acento);
+  if(!o.logo) hsTexto(x,(o.negocio||'?').trim().charAt(0).toUpperCase(),px+110,py+165,HS_F(900,70),'#fff','center');
+  hsTexto(x,o.negocio,px+195,py+128,hsAjustar(x,o.negocio,{w:700,size:46},pw-240),tinta);
+  hsTexto(x,'con '+o.prof,px+195,py+178,HS_F(700,38),'rgba(22,19,15,.6)');
+  hsTexto(x,'HORAS',px+60,py+390,HS_F(900,200),tinta);
+  hsTexto(x,'LIBRES',px+60,py+570,HS_F(900,200),o.acento);
+  hsTexto(x,o.diaTxt+' '+o.fechaTxt,px+64,py+660,HS_F(700,56),tinta);
+  const n=o.libres.length;
+  if(o.cerrado||!n){
+    hsTexto(x,o.cerrado?'Hoy cerramos.':'Agenda llena.',px+64,py+860,HS_F(900,96),tinta);
+    hsTexto(x,'Reserva otro día en el link.',px+64,py+940,HS_F(700,46),'rgba(22,19,15,.65)');
+  } else {
+    hsTexto(x,'Arranca la tuya ✂',px+64,py+780,HS_F(700,46),'rgba(22,19,15,.65)');
+    // tiras para arrancar: una o dos filas
+    const filas=n>10?2:1, porFila=Math.ceil(n/filas), tw=(pw-80)/porFila, th=filas===2?300:400;
+    const top0=py+ph-60-filas*th-(filas-1)*30;
+    for(let f=0;f<filas;f++){
+      const y0=top0+f*(th+30);
+      x.setLineDash([10,9]); x.strokeStyle='rgba(22,19,15,.45)'; x.lineWidth=3;
+      x.beginPath(); x.moveTo(px+40,y0); x.lineTo(px+pw-40,y0); x.stroke();
+      for(let i=0;i<porFila;i++){
+        const k=f*porFila+i; if(k>=n) break;
+        const xi=px+40+i*tw;
+        if(i>0){ x.beginPath(); x.moveTo(xi,y0); x.lineTo(xi,y0+th); x.stroke(); }
+        x.save(); x.translate(xi+tw/2,y0+th/2); x.rotate(-Math.PI/2);
+        const fs=Math.min(tw*0.62,92);
+        hsTexto(x,o.libres[k],0,fs*0.35,HS_F(900,fs),k%3===1?o.acento:tinta,'center');
+        x.restore();
+      }
+      x.setLineDash([]);
+    }
+  }
+  x.restore();
+  hsTexto(x,'Reserva en '+o.link,W/2,H-74,hsAjustar(x,'Reserva en '+o.link,{w:700,size:40},W-120),'#fff','center');
+  hsTexto(x,'Agenda online con Reservia',W/2,H-28,HS_F(700,26),'rgba(255,255,255,.7)','center');
+}
+// Estilo 2: letrero luminoso de noche, horas como un tablero de turnos.
+function dibujarNoche(x,o){
+  const W=1080,H=1920; x.fillStyle='#0b0a10'; x.fillRect(0,0,W,H);
+  const g=x.createRadialGradient(W*0.8,220,40,W*0.8,220,900); g.addColorStop(0,o.acento+'66'); g.addColorStop(1,'transparent'); x.fillStyle=g; x.fillRect(0,0,W,H);
+  hsLogo(x,o.logo,140,170,70,'#1b1a22');
+  if(!o.logo) hsTexto(x,(o.negocio||'?').trim().charAt(0).toUpperCase(),140,198,HS_F(900,76),'#fff','center');
+  hsTexto(x,o.negocio,235,160,hsAjustar(x,o.negocio,{w:700,size:50},W-290),'#fff');
+  hsTexto(x,'con '+o.prof,235,212,HS_F(700,38),'rgba(255,255,255,.6)');
+  x.save(); x.shadowColor=o.acento; x.shadowBlur=40;
+  hsTexto(x,'Hay horas',80,470,HS_F(900,170),'#fff'); x.restore();
+  hsTexto(x,o.diaTxt+' '+o.fechaTxt,84,560,HS_F(700,60),o.acento);
+  const n=o.libres.length;
+  if(o.cerrado||!n){
+    hsTexto(x,o.cerrado?'Hoy cerramos.':'Agenda llena.',84,780,HS_F(900,110),'#fff');
+  } else {
+    const cols=n>12?3:2, filas=Math.ceil(n/cols), gw=W-160, cw=gw/cols, ch=Math.min(150,(H-820-260)/filas);
+    for(let k=0;k<n;k++){
+      const c=k%cols, r=Math.floor(k/cols), X=80+c*cw, Y=680+r*ch;
+      x.strokeStyle='rgba(255,255,255,.14)'; x.lineWidth=2; x.beginPath(); x.moveTo(X,Y+ch-14); x.lineTo(X+cw-30,Y+ch-14); x.stroke();
+      x.fillStyle=o.acento; x.beginPath(); x.arc(X+16,Y+ch/2-6,9,0,Math.PI*2); x.fill();
+      hsTexto(x,o.libres[k],X+44,Y+ch/2+22,HS_F(900,Math.min(ch*0.62,92)),'#fff');
+    }
+  }
+  hsTexto(x,'Reserva en '+o.link,W/2,H-80,hsAjustar(x,'Reserva en '+o.link,{w:700,size:40},W-120),'#fff','center');
+  hsTexto(x,'Agenda online con Reservia',W/2,H-34,HS_F(700,26),'rgba(255,255,255,.55)','center');
+}
+let HS_ULTIMO=null;
+function hsBlob(){ return new Promise(r=>document.getElementById('hs-canvas').toBlob(r,'image/jpeg',0.92)); }
+async function compartirImagenHoras(){
+  try{
+    const b=await hsBlob(); const file=new File([b],'horas-'+(HS_ULTIMO?.fecha||hoyStr())+'.jpg',{type:'image/jpeg'});
+    const texto='Horas disponibles. Reserva aquí: '+linkReservaPropio();
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text:texto}); return; }
+    guardarImagenHoras();
+  }catch(e){ if(e&&e.name!=='AbortError') guardarImagenHoras(); }
+}
+async function guardarImagenHoras(){
+  const b=await hsBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download='horas-'+(HS_ULTIMO?.fecha||hoyStr())+'.jpg'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
 
 // ─── Cuadros de ritmo y plata del día ───
 // Salen de mi_agenda_metricas() (citas por día, meta, días cerrados, agendadas)
@@ -526,7 +849,7 @@ async function cargarMetricas(){
   const cont=document.getElementById('metricas-cuadros'); if(!cont) return;
   const [{data:j},hoyRes]=await Promise.all([sb.rpc('mi_agenda_metricas'),sb.rpc('mi_agenda_comisiones_detalle',{p_desde:hoyStr(),p_hasta:hoyStr()})]);
   if(!j){ cont.innerHTML=''; return; }
-  MT=calcularMetricas(j, (hoyRes&&hoyRes.data)||[]);
+  MT=calcularMetricas(j, (hoyRes&&hoyRes.data)||[]); MT.j=j;
   pintarMetricas();
 }
 function _color(cur,prev){ if(!prev) return cur>0?'verde':''; const r=cur/prev; return r>=1?'verde':r>=0.85?'amarillo':'rojo'; }
@@ -646,6 +969,7 @@ async function mensajeWhatsAppCita(c){
 // ─── Vista de la agenda: Lista o Calendario por horas ─────────────────────
 // Cada profesional elige la suya; queda guardada en este dispositivo.
 let VISTA_AGENDA='lista';
+let NEGOCIO={};
 let HORARIO_NEGOCIO=[];
 let BLOQUEOS=[];
 let CITA_SEL=null;

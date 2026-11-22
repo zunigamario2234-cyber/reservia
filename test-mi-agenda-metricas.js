@@ -38,6 +38,7 @@ const det=[
  // Sin honorarios: no aparece retención
  met.usa_honorarios=false; det.forEach(f=>{f.retencion_profesional=null;});
  await p.evaluate(()=>{ cambiarTab('agenda'); MT_SEL=null; return cargarMetricas(); }); await p.waitForTimeout(300);
+ await p.evaluate(()=>cambiarTab('metricas')); await p.waitForTimeout(600); await p.screenshot({path:SHOT+'miagenda-metricas.png',fullPage:true}); ok('pantalla Métricas carga',/Meta del mes/.test(await p.textContent('#met-full')));
  ok('sin modo honorarios no muestra retención',!/Retención/.test(await p.textContent('.mt-plata')));
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length+' fallos de '+res.length); await b.close();
