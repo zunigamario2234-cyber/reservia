@@ -7208,6 +7208,118 @@ function renderCostos(){
   }).join('')||`<tr><td colspan="10" class="empty">Sin ventas en ${nombreMesLargo(mf)}.</td></tr>`;
 }
 
+// ═══ RITMO DE CADA PROFESIONAL CONTRA SU META ═══
+// Todo sale solo de lo que ya está en Reservia (visitas cobradas y reservas
+// agendadas): nadie tiene que cargar nada. El "ritmo esperado" reparte la meta
+// en los días que el negocio abre (S.horario[día].cerrado), así un domingo
+// cerrado no cuenta como día perdido.
+function _fechaISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _abreElDia(d){ const h=(S.horario||[])[d.getDay()]; return !(h&&h.cerrado); }
+function metricasProfesional(b){
+  const hoyS=ahoraEnChile().fecha, [Y,M,D]=hoyS.split('-').map(Number);
+  const hoy=new Date(Y,M-1,D), diasMes=new Date(Y,M,0).getDate();
+  const meta=b.meta_citas||80, mes=hoyS.slice(0,7);
+  const mias=S.visitas.filter(v=>v.barbero_nombre===b.nombre&&v.fecha);
+  const cuenta=(desde,hasta)=>mias.filter(v=>v.fecha>=desde&&v.fecha<=hasta).length;
+  const hechas=mias.filter(v=>v.fecha.startsWith(mes)).length;
+  // Días hábiles del mes: pasados (antes de hoy), hoy cuenta medio, y restantes.
+  let total=0,pasados=0,restantes=0;
+  for(let d=1;d<=diasMes;d++){ const f=new Date(Y,M-1,d); if(!_abreElDia(f)) continue; total++; if(d<D) pasados++; else if(d>D) restantes++; }
+  const hoyAbre=_abreElDia(hoy);
+  const transcurrido=total?(pasados+(hoyAbre?0.5:0))/total:0;
+  const esperado=meta*transcurrido;
+  const agendadas=S.reservas.filter(r=>r.barbero_nombre===b.nombre&&r.fecha&&r.fecha.startsWith(mes)&&r.fecha>=hoyS&&!r.procesado&&r.estado!=='Cancelada').length;
+  const faltan=Math.max(0,meta-hechas);
+  const diasQuedan=restantes+(hoyAbre?1:0);
+  const porDia=diasQuedan?Math.ceil(faltan/diasQuedan):faltan;
+  const ritmo=(pasados+(hoyAbre?0.5:0))>0?hechas/(pasados+(hoyAbre?0.5:0)):0;
+  const proyeccion=Math.round(hechas+ritmo*(restantes+(hoyAbre?0.5:0)));
+  // Comparaciones "a la misma altura": el mes anterior hasta el mismo día, la
+  // semana anterior hasta el mismo día de la semana, y ayer contra el mismo día
+  // de la semana pasada (un sábado se compara con un sábado).
+  const mPrevIni=new Date(Y,M-2,1), diasPrev=new Date(Y,M-1,0).getDate();
+  const mesAnt=cuenta(_fechaISO(mPrevIni),_fechaISO(new Date(Y,M-2,Math.min(D,diasPrev))));
+  const dow=(hoy.getDay()+6)%7; // lunes=0
+  const lunes=new Date(Y,M-1,D-dow), lunesAnt=new Date(Y,M-1,D-dow-7), mismoAnt=new Date(Y,M-1,D-7);
+  const semana=cuenta(_fechaISO(lunes),hoyS), semanaAnt=cuenta(_fechaISO(lunesAnt),_fechaISO(mismoAnt));
+  const ayer=new Date(Y,M-1,D-1), ayerAnt=new Date(Y,M-1,D-8);
+  const nAyer=cuenta(_fechaISO(ayer),_fechaISO(ayer)), nAyerAnt=cuenta(_fechaISO(ayerAnt),_fechaISO(ayerAnt));
+  // Clientes de este profesional que no vuelven: su última visita fue con él y
+  // hace entre 30 y 90 días. Son los primeros a quienes escribirles.
+  const ult={};
+  S.visitas.forEach(v=>{ if(!v.cliente_id||!v.fecha) return; if(!ult[v.cliente_id]||v.fecha>ult[v.cliente_id].fecha) ult[v.cliente_id]=v; });
+  const perdidos=Object.values(ult).filter(v=>v.barbero_nombre===b.nombre&&diasDesde(v.fecha)>=30&&diasDesde(v.fecha)<=90).length;
+  let estado;
+  if(hechas>=meta) estado='cumplida';
+  else if(hechas>=esperado) estado='bien';
+  else if(hechas>=esperado*0.8&&!(transcurrido>=0.5&&hechas<meta*0.5)) estado='atras';
+  else estado='alerta';
+  // Serie acumulada por día para el gráfico (este mes y el anterior).
+  const acum=(yy,mm,hasta)=>{ const pref=yy+'-'+String(mm).padStart(2,'0'); const porDiaN=new Array(32).fill(0);
+    mias.forEach(v=>{ if(v.fecha.startsWith(pref)) porDiaN[Number(v.fecha.slice(8,10))]++; });
+    const out=[]; let c=0; for(let d=1;d<=hasta;d++){ c+=porDiaN[d]; out.push(c); } return out; };
+  const serie=acum(Y,M,D), seriePrev=acum(mPrevIni.getFullYear(),mPrevIni.getMonth()+1,diasPrev);
+  return {meta,hechas,faltan,esperado,transcurrido,agendadas,porDia,diasQuedan,proyeccion,mesAnt,semana,semanaAnt,nAyer,nAyerAnt,perdidos,estado,serie,seriePrev,diasMes};
+}
+// "▲ 20%" / "▼ 15%" / "=" contra el período anterior, en texto corto.
+function _delta(cur,prev){
+  if(!prev&&!cur) return '<span style="color:var(--text3)">—</span>';
+  if(!prev) return '<span class="up">▲ nuevo</span>';
+  const p=Math.round((cur-prev)/prev*100);
+  if(p===0) return '<span style="color:var(--text3)">= igual</span>';
+  return `<span class="${p>0?'up':'down'}">${p>0?'▲':'▼'} ${Math.abs(p)}%</span>`;
+}
+// Gráfico acumulado: este mes (línea llena), el mes anterior (punteada) y el
+// ritmo que lleva a la meta (fina). Se ve de un vistazo si va arriba o abajo.
+function graficoRitmo(m){
+  const W=300,H=72,pad=4, maxY=Math.max(m.meta,m.seriePrev[m.seriePrev.length-1]||0,m.hechas,1);
+  const x=d=>pad+(d-1)/(Math.max(m.diasMes,m.seriePrev.length)-1||1)*(W-2*pad), y=v=>H-pad-(v/maxY)*(H-2*pad);
+  const linea=arr=>arr.map((v,i)=>`${i?'L':'M'}${x(i+1).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const color=m.estado==='alerta'?'#ff5555':m.estado==='atras'?'#ff9944':'var(--p1)';
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:72px;display:block;margin:8px 0 2px" role="img" aria-label="Citas acumuladas este mes contra el mes anterior y la meta">
+    <line x1="${x(1)}" y1="${y(0)}" x2="${x(m.diasMes)}" y2="${y(m.meta)}" stroke="var(--text3)" stroke-width="1" stroke-dasharray="2 3" vector-effect="non-scaling-stroke" opacity=".7"/>
+    <path d="${linea(m.seriePrev)}" fill="none" stroke="var(--text3)" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" opacity=".8"/>
+    <path d="${linea(m.serie)}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+  </svg>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--text3);margin-bottom:6px">
+    <span><span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle"></span> Este mes</span>
+    <span><span style="display:inline-block;width:14px;border-top:1.5px dashed var(--text3);vertical-align:middle"></span> Mes anterior</span>
+    <span><span style="display:inline-block;width:14px;border-top:1px dotted var(--text3);vertical-align:middle"></span> Ritmo para la meta</span>
+  </div>`;
+}
+// Bloque de ritmo + alerta para la tarjeta del profesional.
+function bloqueRitmo(b){
+  const m=metricasProfesional(b);
+  const chip={cumplida:['b-green','🏆 Meta cumplida'],bien:['b-green','✅ Vas en camino'],atras:['b-orange','⚠️ Un poco atrás'],alerta:['b-red','🚨 Alerta']}[m.estado];
+  const fila=(et,val)=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">${et}</span><span>${val}</span></div>`;
+  let acciones='';
+  if(m.estado==='atras'||m.estado==='alerta'){
+    const items=[];
+    items.push(`Necesita <strong>${m.porDia} cita${m.porDia===1?'':'s'} por día</strong> en los ${m.diasQuedan} días que quedan para llegar a ${m.meta}.`);
+    items.push('Publicar contenido hoy: historias con cortes recientes y sus horas libres de la semana, con su link individual.');
+    if(m.perdidos>0) items.push(`Escribirles a sus <strong>${m.perdidos} cliente${m.perdidos===1?'':'s'}</strong> que no vuelven hace más de 30 días.`);
+    if(m.estado==='alerta') items.push('Evaluar una promoción corta para los días con menos reservas.');
+    acciones=`<div class="${m.estado==='alerta'?'b-red':'b-orange'}" style="border-radius:8px;padding:10px 12px;margin-top:8px;font-size:12px;line-height:1.5">
+      <div style="font-weight:600;margin-bottom:4px">${m.estado==='alerta'?'Va muy por debajo del ritmo. Qué hacer ahora:':'Qué hacer para recuperar:'}</div>
+      <ul style="margin:0;padding-left:18px">${items.map(t=>`<li>${t}</li>`).join('')}</ul>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="copiarLinkProfesional('${b.id}')">🔗 Copiar link para publicar</button>
+    </div>`;
+  }
+  return `<div style="margin-top:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="badge ${chip[0]}">${chip[1]}</span>
+      <span style="font-size:11px;color:var(--text3)">${m.faltan>0?`Faltan ${m.faltan} · debería llevar ~${Math.round(m.esperado)}`:`Superó la meta por ${m.hechas-m.meta}`}</span>
+    </div>
+    ${graficoRitmo(m)}
+    ${fila('Este mes vs mes anterior (mismo día)',`${m.hechas} vs ${m.mesAnt} ${_delta(m.hechas,m.mesAnt)}`)}
+    ${fila('Esta semana vs la anterior',`${m.semana} vs ${m.semanaAnt} ${_delta(m.semana,m.semanaAnt)}`)}
+    ${fila('Ayer vs mismo día semana pasada',`${m.nAyer} vs ${m.nAyerAnt} ${_delta(m.nAyer,m.nAyerAnt)}`)}
+    ${fila('Ya agendadas para lo que queda del mes',`${m.agendadas}`)}
+    ${fila('Al ritmo actual cierra el mes en',`~${m.proyeccion} de ${m.meta}`)}
+    ${acciones}
+  </div>`;
+}
+
 function renderProfesionals(){
   const mes=mesActual();
   document.getElementById('cards-profesionals').innerHTML=S.barberos.map(b=>{
@@ -7241,6 +7353,7 @@ function renderProfesionals(){
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Citas este mes</span><span style="font-weight:600">${vs.length}/${meta}</span></div>
       <div class="bar-h"><div class="bar-fill" style="width:${pct.toFixed(0)}%"></div></div>
+      ${b.activo?bloqueRitmo(b):''}
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Ventas cobradas</span><span>${fmt(ventas)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text3)">Comisión</span><span class="gold">${fmt(com)}</span></div>
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
