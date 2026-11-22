@@ -595,6 +595,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 <div class="m-sheet" id="m-sheet-nuevo" onclick="if(event.target===this)mCerrar(this.id)"><div class="hoja"><div class="asa"></div>
   <button class="m-accion" onclick="mCerrar('m-sheet-nuevo');openM('m-reserva')"><span style="font-size:20px">📅</span><span><strong>Nueva reserva</strong><br><span style="font-size:12px;color:var(--text3)">Agendar a un cliente</span></span></button>
   <button class="m-accion" onclick="mCerrar('m-sheet-nuevo');openM('m-cita')"><span style="font-size:20px">✂️</span><span><strong>Registrar atención</strong><br><span style="font-size:12px;color:var(--text3)">Una atención sin reserva previa</span></span></button>
+  <button class="m-accion" onclick="mCerrar('m-sheet-nuevo');abrirAppMovil()"><span style="font-size:20px">📱</span><span><strong>Mandar la app al equipo</strong><br><span style="font-size:12px;color:var(--text3)">Link de Mi Agenda por WhatsApp</span></span></button>
   <button class="m-accion" onclick="mCerrar('m-sheet-nuevo');copiarAlPortapapeles(linkReserva())"><span style="font-size:20px">🔗</span><span><strong>Copiar link de reservas</strong><br><span style="font-size:12px;color:var(--text3)">Para pegarlo en Instagram o WhatsApp</span></span></button>
 </div></div>
 <div class="topbar">
@@ -602,6 +603,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
   <div class="topbar-right">
     <select id="suc-switch" onchange="cambiarSucursal(this.value)" title="Sucursal" style="display:none;max-width:210px"></select>
     <span id="suc-etiqueta" style="display:none;font-size:12px;color:var(--text2);white-space:nowrap"></span>
+    <button class="btn btn-ghost btn-sm" id="btn-app-movil" onclick="abrirAppMovil()" title="Links para instalar la app en el celular">📱 App móvil</button>
     <button class="btn btn-ghost btn-sm" onclick="openM('m-reserva')">+ Reserva</button>
     <button class="btn btn-primary btn-sm" onclick="openM('m-cita')">+ Cita</button>
     <button class="m-plus m-solo" onclick="mAbrir('m-sheet-nuevo')" aria-label="Nuevo">+</button>
@@ -1520,6 +1522,13 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 </div>
 
 <!-- Cita -->
+<div class="overlay" id="m-app-movil">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-hdr"><span class="modal-title">App móvil</span><button class="xbtn" onclick="closeM('m-app-movil')">×</button></div>
+    <div id="am-cuerpo"></div>
+  </div>
+</div>
+
 <div class="overlay" id="m-cita">
   <div class="modal">
     <div class="modal-hdr"><span class="modal-title" id="m-cita-title">Registrar cita</span><button class="xbtn" onclick="closeM('m-cita')">×</button></div>
@@ -2168,6 +2177,55 @@ function pintarEstadoClubVip(){
   const aplica=(S.barberia?.rubro || RUBRO_VIP) === RUBRO_VIP;
   card.style.display=aplica?'':'none';
   document.getElementById('cfg-club-vip').checked=S.barberia?.club_vip_activo!==false;
+}
+
+// ═══ LINKS DE LA APP MÓVIL (para mandar por WhatsApp) ═══
+// La app del dueño es el panel (entra por ingresar.html) y la del equipo es Mi
+// Agenda. Las dos quedan instaladas con el logo del local.
+function linkAppDueno(){ return location.origin+'/ingresar.html'; }
+function linkAppEquipo(){ return location.origin+'/mi-agenda.html'; }
+const AM_PASOS='\n\nÁbrelo, inicia sesión y déjala en tu pantalla de inicio:\n• iPhone: en Safari toca Compartir → «Agregar a inicio».\n• Android: en Chrome toca ⋮ → «Instalar aplicación».';
+function msgAppDueno(){ return `📱 App de ${S.barberia?.nombre||'mi negocio'} en el celular: ${linkAppDueno()}`+AM_PASOS; }
+function msgAppEquipo(nombre){ return `Hola${nombre?' '+nombre:''} 👋 Esta es tu app de ${S.barberia?.nombre||'la barbería'} para ver tu agenda, tus métricas y tus ventas: ${linkAppEquipo()}`+AM_PASOS; }
+function waSinNumero(msg){ return 'https://wa.me/?text='+encodeURIComponent(msg); }
+function abrirAppMovil(){
+  const filaLink=(id,url,msg)=>`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px">
+      <input readonly value="${escHtml(url)}" style="flex:1;min-width:180px" onclick="this.select()">
+      <button class="btn btn-ghost btn-sm" onclick="copiarAlPortapapeles('${url}')">Copiar link</button>
+      <a class="btn-wa" href="${waSinNumero(msg)}" target="_blank" rel="noopener">📱 Enviar por WhatsApp</a></div>`;
+  const equipo=S.barberos.filter(b=>b.activo).map(b=>{
+    const wa=b.whatsapp&&wspLink(b.whatsapp,msgAppEquipo(b.nombre));
+    const accion=!b.auth_user_id
+      ? `<button class="btn btn-ghost btn-sm" onclick="closeM('m-app-movil');abrirInvitarProfesional('${b.id}')" title="Todavía no tiene usuario para entrar">👤 Crearle cuenta</button>`
+      : (wa?`<a class="btn-wa" href="${wa}" target="_blank" rel="noopener">📱 Enviarle</a>`:`<a class="btn-wa" href="${waSinNumero(msgAppEquipo(b.nombre))}" target="_blank" rel="noopener">📱 Enviar</a>`);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+      <span style="font-size:13px;color:var(--text)">${escHtml(b.nombre)}${b.auth_user_id?'':' <span style="font-size:11px;color:var(--text3)">· sin cuenta</span>'}</span>${accion}</div>`;
+  }).join('');
+  document.getElementById('am-cuerpo').innerHTML=`
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:600;color:var(--text);font-size:14px">Tu app (dueño)</div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-top:4px">El panel en versión celular: ventas del día, agenda, cobrar y tu equipo. Queda con el logo del local.</div>
+        ${filaLink('am-d',linkAppDueno(),msgAppDueno())}
+      </div>
+      <div style="text-align:center"><div id="am-qr" style="width:132px;height:132px;background:#fff;border-radius:10px;padding:8px;display:flex;align-items:center;justify-content:center"></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Escanéalo con tu celular</div></div>
+    </div>
+    <div style="height:1px;background:var(--border2);margin:16px 0"></div>
+    <div style="font-weight:600;color:var(--text);font-size:14px">App de tu equipo (Mi Agenda)</div>
+    <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-top:4px">Cada profesional ve su agenda, sus métricas, sus ventas y comparte sus horas libres.</div>
+    ${filaLink('am-e',linkAppEquipo(),msgAppEquipo(''))}
+    ${equipo?`<div style="margin-top:6px">${equipo}</div>`:''}
+    <div style="font-size:11px;color:var(--text3);margin-top:12px;line-height:1.5">El mensaje ya lleva los pasos para instalarla en iPhone y Android.</div>`;
+  openM('m-app-movil');
+  pintarQrAppMovil();
+}
+function pintarQrAppMovil(){
+  const el=document.getElementById('am-qr'); if(!el) return;
+  const dibujar=()=>{ try{ el.innerHTML=''; new QRCode(el,{text:linkAppDueno(),width:116,height:116,correctLevel:QRCode.CorrectLevel.M}); }catch(e){ el.textContent=''; } };
+  if(window.QRCode) return dibujar();
+  const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+  sc.onload=dibujar; sc.onerror=()=>{ el.parentElement.style.display='none'; }; document.head.appendChild(sc);
 }
 
 // ═══ PANEL EN EL CELULAR ═══

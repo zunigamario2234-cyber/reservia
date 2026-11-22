@@ -71,6 +71,10 @@ async function sesion(rol,signupFalla){
  for(const pg of ['agenda','reservas','clientes','caja','dashboard']){ await p.evaluate(x=>nav(x),pg); await p.waitForTimeout(300); const w=await p.evaluate(()=>document.documentElement.scrollWidth); ok('sin scroll horizontal en '+pg,w<=392,w); await p.screenshot({path:'/tmp/claude-0/-home-claude/4d67f6db-2749-5f27-9259-d200e700f3a0/scratchpad/panel-movil-'+pg+'.png'}); }
  await p.setViewportSize({width:1360,height:900}); await p.waitForTimeout(200);
  ok('en computador sigue la barra lateral y no aparece la de abajo',await p.evaluate(()=>getComputedStyle(document.querySelector('.sidebar')).display!=='none'&&getComputedStyle(document.getElementById('mnav')).display==='none'));
+ await p.click('#btn-app-movil'); await p.waitForTimeout(300);
+ const am=await p.evaluate(()=>({txt:document.getElementById('am-cuerpo').innerText,was:[...document.querySelectorAll('#am-cuerpo a.btn-wa')].map(a=>decodeURIComponent(a.href))}));
+ ok('en computador, App móvil muestra los dos links con WhatsApp',/ingresar\.html/.test(am.was[0])&&/mi-agenda\.html/.test(am.was[1])&&am.was.length>=2&&/Agregar a inicio/.test(am.was[0]),am);
+ await p.screenshot({path:'/tmp/claude-0/-home-claude/4d67f6db-2749-5f27-9259-d200e700f3a0/scratchpad/app-movil-links.png'});
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length+' fallos de '+res.length); await b.close();
 })();
