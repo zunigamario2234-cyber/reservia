@@ -177,6 +177,15 @@ async function sesion(rol,signupFalla){
  ok('recepción no ve datos del token en la pantalla',(await p.textContent('#pt-cuenta')).trim()===''&&await p.evaluate(()=>POINT.token_final===null),null);
  await s.b.close();
 
+ // Tasas de la máquina y comisión en la Caja
+ s=await nueva('dueno'); p=s.p;
+ await p.evaluate(()=>{ POINT={conectado:true,activo:true,terminal_elegida:true,terminal_nombre:'N950',token_final:'ABCD',tasa_debito:1.49,tasa_credito:2.89,tasa_mas_iva:true}; nav('config'); pintarPointConfig(); });
+ const tz=await p.evaluate(()=>({d:document.getElementById('pt-tasa-deb').value,c:document.getElementById('pt-tasa-cre').value,ej:document.getElementById('pt-tasa-ej').textContent}));
+ ok('config muestra las tasas y un ejemplo de descuento',tz.d==='1.49'&&tz.c==='2.89'&&/débito −\$266/.test(tz.ej)&&/crédito −\$516/.test(tz.ej),tz);
+ await p.evaluate(()=>{ const h=ahoraEnChile().fecha; S.costos=[{fecha:h,categoria:'Comisión máquina',total:213},{fecha:h,categoria:'Comisión máquina',total:100},{fecha:h,categoria:'Arriendo',total:999}]; nav('caja'); });
+ const cj=await p.textContent('#caja-cards');
+ ok('la Caja muestra la comisión de la máquina del día',/Comisión máquina/.test(cj)&&/−\$313/.test(cj)&&/2 pagos con Point/.test(cj),cj);
+ await s.b.close();
  console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length?'HAY FALLOS':'TODO OK ('+res.length+')');
  process.exit(res.some(r=>r.startsWith('FALLO'))?1:0);
 })().catch(e=>{console.error('ERROR',e);process.exit(1);});

@@ -105,6 +105,37 @@ function interpretarOrden(o) {
   return { estado, metodo, pagado, detalle: String((o && o.status_detail) || ''), forma: formaDelPago(o, pago) };
 }
 
+// ── Comisión de la máquina ─────────────────────────────────────────────────
+// Con la tasa que anotó el dueño (débito o crédito; si Mercado Pago no informa
+// el tipo se usa la de crédito, la más alta) se calcula la comisión y se anota
+// como gasto en Costos. Devuelve null si no hay tasa configurada.
+function calcularComision(monto, metodo, c) {
+  const tasa = Number(metodo === 'Débito' ? c.tasa_debito : c.tasa_credito);
+  if (!Number.isFinite(tasa) || tasa <= 0 || tasa >= 20) return null;
+  const base = monto * tasa / 100;
+  let neto, iva;
+  if (c.tasa_mas_iva !== false) { neto = Math.round(base); iva = Math.round(base * 0.19); }
+  else { const total = Math.round(base); neto = Math.round(total / 1.19); iva = total - neto; }
+  return { tasa, neto, iva, total: neto + iva };
+}
+function fechaChile() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santiago' }); }
+async function anotarComision(barberiaId, orderId, monto, metodo) {
+  const c = await configDe(barberiaId);
+  if (!c) return null;
+  const com = calcularComision(monto, metodo, c);
+  if (!com) return null;
+  const tipoTxt = metodo || 'tarjeta, tipo no informado';
+  const fila = await supabasePost('costos', {
+    barberia_id: barberiaId, fecha: fechaChile(),
+    descripcion: `Comisión Point (${tipoTxt}) ${String(com.tasa).replace('.', ',')}% · venta $${Number(monto).toLocaleString('es-CL')}`,
+    tipo: 'variable', categoria: 'Comisión máquina',
+    monto_neto: com.neto, iva: com.iva, total: com.total
+  });
+  const costoId = Array.isArray(fila) && fila[0] ? fila[0].id : null;
+  await supabasePatch(`mp_point_ordenes?order_id=eq.${orderId}`, { comision_monto: com.total, costo_id: costoId });
+  return com.total;
+}
+
 // ── Sesión y permisos ────────────────────────────────────────────────────────
 async function usuario(req) {
   const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
@@ -164,7 +195,8 @@ const acciones = {
       activo: !!c.activo && !!c.terminal_id,
       terminal_elegida: !!c.terminal_id,
       terminal_nombre: c.terminal_nombre || null,
-      token_final: u.rol === 'dueno' ? String(c.access_token).slice(-4) : null
+      token_final: u.rol === 'dueno' ? String(c.access_token).slice(-4) : null,
+      tasa_debito: c.tasa_debito, tasa_credito: c.tasa_credito, tasa_mas_iva: c.tasa_mas_iva !== false
     };
   },
 
@@ -227,6 +259,17 @@ const acciones = {
     return { activo: !!b.activo };
   },
 
+  async guardar_tasas(u, b) {
+    soloDueno(u);
+    const c = await configDe(u.barberia_id);
+    if (!c) throw new Falla(400, 'Primero conecta tu cuenta de Mercado Pago.');
+    const num = v => (v === '' || v == null) ? null : Number(String(v).replace(',', '.'));
+    const deb = num(b.tasa_debito), cre = num(b.tasa_credito);
+    for (const t of [deb, cre]) if (t != null && !(Number.isFinite(t) && t >= 0 && t < 20)) throw new Falla(400, 'La tasa debe ser un porcentaje entre 0 y 20.');
+    await supabasePatch(`mp_config?barberia_id=eq.${u.barberia_id}`, { tasa_debito: deb, tasa_credito: cre, tasa_mas_iva: b.tasa_mas_iva !== false, updated_at: new Date().toISOString() });
+    return { tasa_debito: deb, tasa_credito: cre, tasa_mas_iva: b.tasa_mas_iva !== false };
+  },
+
   async desconectar(u) {
     soloDueno(u);
     await supabaseDelete(`mp_config?barberia_id=eq.${u.barberia_id}`);
@@ -277,13 +320,20 @@ const acciones = {
     if (i.estado === 'pagado' && i.pagado != null && i.pagado !== f[0].monto) {
       return { estado: 'revisar', mensaje: `Mercado Pago cobró $${i.pagado} y se esperaba $${f[0].monto}. Revisa el pago en tu cuenta de Mercado Pago.` };
     }
+    let comision = null;
     if (i.estado !== f[0].estado) {
-      await supabasePatch(`mp_point_ordenes?order_id=eq.${orderId}`, {
+      // Al pasar a pagado el cambio es condicional (estado distinto de pagado):
+      // si dos consultas llegan a la vez, solo una anota la comisión.
+      const ganado = await supabasePatch(`mp_point_ordenes?order_id=eq.${orderId}&estado=neq.pagado`, {
         estado: i.estado, ...(i.metodo ? { metodo: i.metodo } : {}),
         ...(i.estado === 'pagado' ? { pagado_at: new Date().toISOString(), pago_detalle: i.forma } : {})
       });
+      if (i.estado === 'pagado' && Array.isArray(ganado) && ganado.length) {
+        try { comision = await anotarComision(u.barberia_id, orderId, f[0].monto, i.metodo); }
+        catch (e) { console.error('mp-point comision', e.message); }
+      }
     }
-    return { estado: i.estado, metodo: i.metodo, monto: f[0].monto };
+    return { estado: i.estado, metodo: i.metodo, monto: f[0].monto, comision };
   },
 
   async cancelar(u, b) {

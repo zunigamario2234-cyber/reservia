@@ -9,7 +9,7 @@ const PERFIL = { [U_DUENO]: { barberia_id: B1, rol: 'dueno' }, [U_PROF]: { barbe
 
 let DB, MPLOG, MP;
 function reset() {
-  DB = { mp_config: [], mp_point_ordenes: [] }; MPLOG = [];
+  DB = { mp_config: [], mp_point_ordenes: [], costos: [] }; MPLOG = [];
   MP = { me: { status: 200, body: { id: 777, nickname: 'ESSENTIALS' } }, terminales: { status: 200, body: { data: { terminals: [{ id: 'NEWLAND_N950__N950NCB801293324', operating_mode: 'STANDALONE' }] } } },
          crear: { status: 201, body: { id: 'ORD00001111222233334444555566', status: 'created' } },
          orden: { status: 200, body: { id: 'ORD00001111222233334444555566', status: 'created' } },
@@ -34,11 +34,11 @@ global.fetch = async (url, opt = {}) => {
     const p = url.split('/rest/v1/')[1]; const tabla = p.split('?')[0]; const q = new URLSearchParams(p.split('?')[1] || '');
     if (tabla === 'perfiles') { const id = (q.get('id') || '').replace('eq.', ''); return json(PERFIL[id] ? [PERFIL[id]] : []); }
     if (tabla === 'barberos') { const id = (q.get('auth_user_id') || '').replace('eq.', ''); return json(id === U_PROF_OK ? [{ puede_procesar_pagos: true }] : [{ puede_procesar_pagos: false }]); }
-    const filtros = [...q.entries()].filter(([k, v]) => /^(eq)\./.test(v));
-    const coincide = r => filtros.every(([k, v]) => String(r[k]) === v.replace('eq.', ''));
+    const filtros = [...q.entries()].filter(([k, v]) => /^(eq|neq)\./.test(v));
+    const coincide = r => filtros.every(([k, v]) => v.startsWith('neq.') ? String(r[k]) !== v.slice(4) : String(r[k]) === v.replace('eq.', ''));
     if (m === 'GET') return json(DB[tabla].filter(coincide));
-    if (m === 'POST') { DB[tabla].push(body); return json([body], 201); }
-    if (m === 'PATCH') { DB[tabla].filter(coincide).forEach(r => Object.assign(r, body)); return json([]); }
+    if (m === 'POST') { const fila = { id: tabla + '-' + (DB[tabla].length + 1), ...body }; DB[tabla].push(fila); return json([fila], 201); }
+    if (m === 'PATCH') { const f = DB[tabla].filter(coincide); f.forEach(r => Object.assign(r, body)); return json(f); }
     if (m === 'DELETE') { DB[tabla] = DB[tabla].filter(r => !coincide(r)); return json([]); }
   }
   throw new Error('fetch no simulado: ' + url);
@@ -163,6 +163,26 @@ const pagoOk = (extra = {}) => ({ id: ORD, status: 'processed', transactions: { 
 
   // Activar/apagar y desconectar
   r = await llamar(U_DUENO, { accion: 'activo', activo: false }); ok('dueño apaga Point', r.out.activo === false && DB.mp_config[0].activo === false, r);
+  // Comisión de la máquina
+  ok('sin tasas configuradas no se anota comisión', DB.costos.length === 0, DB.costos);
+  r = await llamar(U_PROF, { accion: 'guardar_tasas', tasa_debito: '1,49', tasa_credito: 2.89 }); ok('profesional no guarda tasas', r.st === 403, r);
+  r = await llamar(U_DUENO, { accion: 'guardar_tasas', tasa_debito: 25 }); ok('tasa fuera de rango: 400', r.st === 400, r);
+  r = await llamar(U_DUENO, { accion: 'guardar_tasas', tasa_debito: '1,49', tasa_credito: 2.89, tasa_mas_iva: true });
+  ok('dueño guarda tasas (acepta coma)', r.st === 200 && DB.mp_config[0].tasa_debito === 1.49 && DB.mp_config[0].tasa_credito === 2.89, [r, DB.mp_config[0]]);
+  r = await llamar(U_DUENO, { accion: 'estado_config' }); ok('estado_config devuelve las tasas', r.out.tasa_debito === 1.49 && r.out.tasa_mas_iva === true, r);
+  DB.mp_point_ordenes[0].estado = 'created'; MP.orden.body = pagoOk();
+  r = await llamar(U_REC, { accion: 'estado', orderId: ORD });
+  const c1 = DB.costos[0];
+  ok('pago con débito anota comisión en Costos: 1,49% de 12.000 + IVA', c1 && c1.monto_neto === 179 && c1.iva === 34 && c1.total === 213 && c1.categoria === 'Comisión máquina' && c1.tipo === 'variable' && /débito/i.test(c1.descripcion) && r.out.comision === 213, [c1, r]);
+  ok('la orden guarda su comisión', DB.mp_point_ordenes[0].comision_monto === 213 && DB.mp_point_ordenes[0].costo_id === c1.id, DB.mp_point_ordenes[0]);
+  r = await llamar(U_REC, { accion: 'estado', orderId: ORD }); ok('consultar de nuevo no duplica la comisión', DB.costos.length === 1, DB.costos);
+  DB.mp_point_ordenes[0].estado = 'created'; MP.orden.body = pagoOk({ payment_method: { type: 'credit_card' } });
+  r = await llamar(U_REC, { accion: 'estado', orderId: ORD });
+  ok('pago con crédito usa la tasa de crédito', DB.costos.length === 2 && DB.costos[1].total === Math.round(12000 * 0.0289) + Math.round(12000 * 0.0289 * 0.19), DB.costos[1]);
+  await llamar(U_DUENO, { accion: 'guardar_tasas', tasa_debito: 1.49, tasa_credito: 2.89, tasa_mas_iva: false });
+  DB.mp_point_ordenes[0].estado = 'created'; MP.orden.body = pagoOk({ payment_method: {} });
+  r = await llamar(U_REC, { accion: 'estado', orderId: ORD });
+  ok('sin tipo informado usa crédito; tasa con IVA incluido separa neto e IVA', DB.costos.length === 3 && DB.costos[2].total === 347 && DB.costos[2].monto_neto + DB.costos[2].iva === 347 && /no informado/.test(DB.costos[2].descripcion), DB.costos[2]);
   r = await llamar(U_PROF, { accion: 'desconectar' }); ok('profesional no desconecta', r.st === 403 && DB.mp_config.length === 1, r);
   r = await llamar(U_DUENO, { accion: 'desconectar' }); ok('dueño desconecta: se borra el token', DB.mp_config.length === 0, DB.mp_config);
   r = await llamar(U_DUENO, { accion: 'terminales' }); ok('sin config no lista terminales', r.st === 400, r);
