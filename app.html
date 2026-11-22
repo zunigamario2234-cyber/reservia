@@ -1251,10 +1251,10 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
         <div id="pt-aviso" style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:14px"></div>
         <div style="border-top:0.5px solid var(--border);padding-top:14px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Comisión de la máquina</div>
-          <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:10px">Anota la tasa que te cobra Mercado Pago (la ves en tu cuenta: Tu negocio → Costos). Cada pago con Point anota sola su comisión como gasto en <strong>Costos</strong> (categoría «Comisión máquina») y se descuenta de la parte del local, no de la del profesional.</div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:10px">Anota la tasa que te cobra Mercado Pago. Las de la página de Mercado Pago para Point Smart 2 son <strong>débito 2,19% + IVA</strong> y <strong>crédito 2,69% + IVA</strong> (ventas bajo $2 millones al mes); si tu plan es otro, revisa tu cuenta (Tu negocio → Costos). Cada pago con Point anota sola su comisión como gasto en <strong>Costos</strong> (categoría «Comisión máquina») y se descuenta de la parte del local, no de la del profesional.</div>
           <div class="fr" style="max-width:420px">
-            <div class="fg"><label>Débito (%)</label><input id="pt-tasa-deb" oninput="pointEjemploTasa()" type="number" step="0.01" min="0" max="20" placeholder="Ej: 1,49"></div>
-            <div class="fg"><label>Crédito (%)</label><input id="pt-tasa-cre" oninput="pointEjemploTasa()" type="number" step="0.01" min="0" max="20" placeholder="Ej: 2,89"></div>
+            <div class="fg"><label>Débito (%)</label><input id="pt-tasa-deb" oninput="pointEjemploTasa()" type="number" step="0.01" min="0" max="20" placeholder="2,19"></div>
+            <div class="fg"><label>Crédito (%)</label><input id="pt-tasa-cre" oninput="pointEjemploTasa()" type="number" step="0.01" min="0" max="20" placeholder="2,69"></div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:10px"><input type="checkbox" id="pt-tasa-iva" style="width:auto" checked onchange="pointEjemploTasa()"> La tasa es «+ IVA» (Mercado Pago le suma IVA)</label>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
