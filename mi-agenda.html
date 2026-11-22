@@ -100,6 +100,28 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 .com-hero-label{font-size:11px;color:var(--texto-bio);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
 .com-hero-row{display:flex;gap:16px}
 .com-hero-item{flex:1}
+/* Cuadros de ritmo (Agenda): verde va bien, amarillo más o menos, rojo mal. */
+.com-hero-2 .val{font-size:19px!important;white-space:nowrap}
+.com-hero-2 .lbl{font-size:10px}
+.mt-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px}
+@media(min-width:620px){.mt-grid{grid-template-columns:repeat(4,1fr)}}
+.mt-tile{--c:#8a8f98;text-align:left;border-radius:14px;padding:12px 12px 10px;border:1px solid color-mix(in srgb,var(--c) 45%,transparent);background:color-mix(in srgb,var(--c) 14%,var(--tarjeta));color:var(--texto);cursor:pointer;font-family:inherit;display:flex;flex-direction:column;gap:2px;min-width:0;transition:transform .12s}
+.mt-tile:active{transform:scale(.97)}
+.mt-tile.sel{outline:2px solid var(--c);outline-offset:1px}
+.mt-tile.verde{--c:#22a35a}.mt-tile.amarillo{--c:#e0a800}.mt-tile.rojo{--c:#e5484d}
+.mt-lbl{font-size:11px;color:var(--texto-suave);display:flex;align-items:center;gap:6px}
+.mt-dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex-shrink:0}
+.mt-val{font-size:26px;font-weight:700;line-height:1.1;color:var(--texto-fuerte)}
+.mt-sub{font-size:11px;color:var(--texto-suave);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mt-detalle{border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:12px;line-height:1.55;background:var(--tarjeta);border:0.5px solid var(--borde)}
+.mt-detalle ul{margin:6px 0 0;padding-left:18px}
+.mt-plata{display:flex;gap:8px;align-items:stretch;margin-bottom:14px;cursor:pointer;background:var(--tarjeta);border:0.5px solid var(--borde);border-radius:14px;padding:10px 12px;flex-wrap:wrap}
+.mt-plata>div{flex:1;min-width:84px}
+.mt-plata .v{font-size:15px;font-weight:700;color:var(--texto-fuerte)}
+.mt-plata .l{font-size:10px;color:var(--texto-suave)}
+.dia-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:0.5px solid var(--borde);font-size:12px}
+.dia-row:last-child{border-bottom:0}
+.dia-row .dl{color:var(--texto-suave);font-size:11px}
 .com-hero-item .val{font-size:24px;font-weight:700;color:var(--texto);line-height:1.2}
 .com-hero-item .val.comision{color:var(--acento)}
 .com-hero-item .lbl{font-size:11px;color:var(--texto-bio);margin-top:6px}
@@ -190,6 +212,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
     </div>
 
     <div id="tab-agenda">
+      <div id="metricas-cuadros"></div>
       <div class="card">
         <div class="fr">
           <div class="form-group"><label>Fecha</label><input type="date" id="ag-fecha" onchange="cargarAgenda()"></div>
@@ -494,6 +517,77 @@ function cambiarTab(tab){
 
 // ─── Agenda ───
 
+// ─── Cuadros de ritmo y plata del día ───
+// Salen de mi_agenda_metricas() (citas por día, meta, días cerrados, agendadas)
+// y de mi_agenda_comisiones_detalle() de hoy. El profesional no carga nada.
+let MT=null, MT_SEL=null;
+const _iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+async function cargarMetricas(){
+  const cont=document.getElementById('metricas-cuadros'); if(!cont) return;
+  const [{data:j},hoyRes]=await Promise.all([sb.rpc('mi_agenda_metricas'),sb.rpc('mi_agenda_comisiones_detalle',{p_desde:hoyStr(),p_hasta:hoyStr()})]);
+  if(!j){ cont.innerHTML=''; return; }
+  MT=calcularMetricas(j, (hoyRes&&hoyRes.data)||[]);
+  pintarMetricas();
+}
+function _color(cur,prev){ if(!prev) return cur>0?'verde':''; const r=cur/prev; return r>=1?'verde':r>=0.85?'amarillo':'rojo'; }
+function _pct(cur,prev){ if(!prev) return cur>0?'nuevo':'—'; const p=Math.round((cur-prev)/prev*100); return p===0?'igual':(p>0?'▲ ':'▼ ')+Math.abs(p)+'%'; }
+function calcularMetricas(j,filasHoy){
+  const [Y,M,D]=String(j.hoy).split('-').map(Number);
+  const c=j.citas||{}, n=d=>Number(c[_iso(d)]||0);
+  const rango=(a,b)=>{ let t=0; for(let d=new Date(a);d<=b;d.setDate(d.getDate()+1)) t+=n(d); return t; };
+  const hoy=new Date(Y,M-1,D), cerr=new Set(j.cerrados||[]);
+  const diasMes=new Date(Y,M,0).getDate(), diasPrev=new Date(Y,M-1,0).getDate();
+  const hechas=rango(new Date(Y,M-1,1),hoy);
+  const mesAnt=rango(new Date(Y,M-2,1),new Date(Y,M-2,Math.min(D,diasPrev)));
+  const dow=(hoy.getDay()+6)%7;
+  const semana=rango(new Date(Y,M-1,D-dow),hoy), semanaAnt=rango(new Date(Y,M-1,D-dow-7),new Date(Y,M-1,D-7));
+  const ayer=n(new Date(Y,M-1,D-1)), ayerAnt=n(new Date(Y,M-1,D-8));
+  let total=0,pas=0,rest=0;
+  for(let d=1;d<=diasMes;d++){ if(cerr.has(new Date(Y,M-1,d).getDay())) continue; total++; if(d<D) pas++; else if(d>D) rest++; }
+  const hoyAbre=!cerr.has(hoy.getDay());
+  const meta=Number(j.meta)||80, esperado=total?meta*(pas+(hoyAbre?.5:0))/total:0;
+  const transc=total?(pas+(hoyAbre?.5:0))/total:0, faltan=Math.max(0,meta-hechas);
+  const quedan=rest+(hoyAbre?1:0), porDia=quedan?Math.ceil(faltan/quedan):faltan;
+  let est; if(hechas>=meta) est='verde'; else if(hechas>=esperado) est='verde';
+  else if(hechas>=esperado*0.8&&!(transc>=0.5&&hechas<meta*0.5)) est='amarillo'; else est='rojo';
+  const ok=filasHoy.filter(f=>f.estado!=='Cancelada');
+  const plata=sumarPlata(ok);
+  return {hechas,mesAnt,semana,semanaAnt,ayer,ayerAnt,meta,esperado,faltan,porDia,quedan,est,agendadas:Number(j.agendadas)||0,hon:!!j.usa_honorarios,plata};
+}
+// Comisión bruta, retención de honorarios (parte del profesional), propinas y
+// lo que recibe. Sin modo honorarios la retención es 0.
+function sumarPlata(filas){
+  let ventas=0,com=0,ret=0,prop=0,n=0;
+  filas.forEach(f=>{ ventas+=Number(f.valor)||0; com+=Number(f.comision_monto)||0; ret+=Number(f.retencion_profesional)||0; prop+=Number(f.propina)||0; if((f.tipo||'servicio')==='servicio') n++; });
+  return {ventas,com,ret,prop,n,recibe:com-ret+prop};
+}
+function pintarMetricas(){
+  const m=MT, cont=document.getElementById('metricas-cuadros'); if(!m||!cont) return;
+  const tile=(id,cls,lbl,val,sub)=>`<button type="button" class="mt-tile ${cls}${MT_SEL===id?' sel':''}" onclick="selMetrica('${id}')"><span class="mt-lbl"><span class="mt-dot"></span>${lbl}</span><span class="mt-val">${val}</span><span class="mt-sub">${sub}</span></button>`;
+  const detalles={
+    mes:`Este mes llevas <strong>${m.hechas} citas</strong>. El mes pasado, a esta misma altura, llevabas <strong>${m.mesAnt}</strong> (${_pct(m.hechas,m.mesAnt)}).`,
+    semana:`Esta semana llevas <strong>${m.semana}</strong>. La semana pasada, hasta el mismo día, llevabas <strong>${m.semanaAnt}</strong> (${_pct(m.semana,m.semanaAnt)}).`,
+    ayer:`Ayer atendiste <strong>${m.ayer}</strong>. El mismo día de la semana pasada fueron <strong>${m.ayerAnt}</strong> (${_pct(m.ayer,m.ayerAnt)}).`,
+    meta:(m.faltan?`Llevas <strong>${m.hechas} de ${m.meta}</strong>; a esta altura deberías llevar ~${Math.round(m.esperado)}. Te faltan ${m.faltan}: son <strong>${m.porDia} por día</strong> en los ${m.quedan} días que quedan. Ya tienes ${m.agendadas} agendada${m.agendadas===1?'':'s'}.`:`¡Meta cumplida! Llevas ${m.hechas} de ${m.meta}.`)
+      +(m.est==='rojo'?`<ul><li>Publica hoy historias con tus últimos cortes y tus horas libres.</li><li>Comparte tu link de reservas en tus estados.</li><li>Escríbeles a tus clientes que hace rato no vienen.</li></ul>`:m.est==='amarillo'?`<ul><li>Un empujón: publica tus horas libres de esta semana.</li></ul>`:'')
+  };
+  const P=m.plata;
+  cont.innerHTML=`<div class="mt-grid">
+    ${tile('mes',_color(m.hechas,m.mesAnt),'Este mes',m.hechas,'vs '+m.mesAnt+' · '+_pct(m.hechas,m.mesAnt))}
+    ${tile('semana',_color(m.semana,m.semanaAnt),'Esta semana',m.semana,'vs '+m.semanaAnt+' · '+_pct(m.semana,m.semanaAnt))}
+    ${tile('ayer',_color(m.ayer,m.ayerAnt),'Ayer',m.ayer,'vs '+m.ayerAnt+' · '+_pct(m.ayer,m.ayerAnt))}
+    ${tile('meta',m.est,'Meta del mes',`${m.hechas}<span style="font-size:14px;font-weight:600;color:var(--texto-suave)">/${m.meta}</span>`,m.faltan?'faltan '+m.faltan:'¡cumplida!')}
+  </div>
+  ${MT_SEL?`<div class="mt-detalle">${detalles[MT_SEL]}</div>`:''}
+  <div class="mt-plata" onclick="cambiarTab('comisiones');comSetRango('hoy')" title="Ver detalle en Mis ventas">
+    <div><div class="v">${fmt(P.com)}</div><div class="l">Comisión hoy</div></div>
+    ${m.hon?`<div><div class="v" style="color:#e5484d">− ${fmt(P.ret)}</div><div class="l">Retención honorarios</div></div>`:''}
+    ${P.prop?`<div><div class="v">+ ${fmt(P.prop)}</div><div class="l">Propinas</div></div>`:''}
+    <div><div class="v" style="color:#22a35a">${fmt(P.recibe)}</div><div class="l">Recibes hoy</div></div>
+  </div>`;
+}
+function selMetrica(id){ MT_SEL=MT_SEL===id?null:id; pintarMetricas(); }
+
 async function cargarAgenda(){
   const fecha=document.getElementById('ag-fecha').value||hoyStr();
   const cont=document.getElementById('citas-lista');
@@ -502,6 +596,7 @@ async function cargarAgenda(){
   if(error){ cont.innerHTML='<div class="msg-full">Error al cargar la agenda: '+escapeHtml(error.message)+'</div>'; return; }
   CITAS_ACTUALES=data||[];
   renderAgendaActual(CITAS_ACTUALES);
+  cargarMetricas();
 }
 
 function estadoBadge(estado){
@@ -958,54 +1053,62 @@ async function comCargar(){
   }
   const cont=document.getElementById('com-resumen');
   cont.innerHTML='<div class="msg-full">Cargando...</div>';
-  const {data,error}=await sb.rpc('mi_agenda_comisiones',{p_desde:desde,p_hasta:hasta});
+  const {data,error}=await sb.rpc('mi_agenda_comisiones_detalle',{p_desde:desde,p_hasta:hasta});
   if(error){ cont.innerHTML='<div class="msg-full">Error: '+escapeHtml(error.message)+'</div>'; return; }
   renderComisionResumen(data||[],desde,hasta);
 }
 
-function renderComisionResumen(filas,desde,hasta){
+function renderComisionResumen(todas,desde,hasta){
   const cont=document.getElementById('com-resumen');
-  const ventas=filas.reduce((s,f)=>s+(f.valor||0),0);
-  const comision=filas.reduce((s,f)=>s+(f.comision_monto||0),0);
-  // Agrupa por nombre DENTRO de cada tipo. La RPC manda el nombre del
-  // producto en la misma columna `servicio` y los separa con `tipo`, así que
-  // agrupar sin mirar el tipo mezclaría un corte y un shampoo que se llamaran
-  // igual, y sumaría sus comisiones como si fueran lo mismo.
-  //
-  // Las filas viejas (antes de la migración) no traen `tipo`: cuentan como
-  // servicio, que es lo único que había entonces.
+  const filas=todas.filter(f=>f.estado!=='Cancelada');
+  const hon=!!(MT&&MT.hon)||filas.some(f=>f.retencion_profesional!=null);
+  const T=sumarPlata(filas);
+  // Agrupa por nombre DENTRO de cada tipo (un corte y un shampoo con el mismo
+  // nombre no se mezclan). Filas viejas sin `tipo` cuentan como servicio.
   function agrupar(deTipo){
     const acc={};
     filas.filter(f=>(f.tipo||'servicio')===deTipo).forEach(f=>{
       const nombre=f.servicio||'—';
       if(!acc[nombre]) acc[nombre]={cant:0,ventas:0,comision:0};
-      acc[nombre].cant++;
-      acc[nombre].ventas+=f.valor||0;
-      acc[nombre].comision+=f.comision_monto||0;
+      acc[nombre].cant++; acc[nombre].ventas+=f.valor||0; acc[nombre].comision+=f.comision_monto||0;
     });
     return Object.entries(acc).sort((a,b)=>b[1].ventas-a[1].ventas).map(([nombre,d])=>`
-      <div class="serv-row"><span>${escapeHtml(nombre)} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>
-    `).join('');
+      <div class="serv-row"><span>${escapeHtml(nombre)} (${d.cant})</span><span>${fmt(d.ventas)} · <span style="color:#7c6af7">${fmt(d.comision)}</span></span></div>`).join('');
   }
+  // Por día: qué recibe y cuánto se retiene de honorarios ese día.
+  const porDia={};
+  filas.forEach(f=>{ (porDia[f.fecha]=porDia[f.fecha]||[]).push(f); });
+  const DIAS=['dom','lun','mar','mié','jue','vie','sáb'];
+  const diasHtml=Object.keys(porDia).sort().reverse().map(fe=>{
+    const d=sumarPlata(porDia[fe]); const [y,mm,dd]=fe.split('-').map(Number); const dt=new Date(y,mm-1,dd);
+    return `<div class="dia-row">
+      <div><strong>${DIAS[dt.getDay()]} ${dd}/${String(mm).padStart(2,'0')}</strong> <span class="dl">· ${d.n} servicio${d.n===1?'':'s'} · ventas ${fmt(d.ventas)}</span></div>
+      <div style="font-weight:700;color:#22a35a;text-align:right">${fmt(d.recibe)}</div>
+      <div class="dl">Comisión ${fmt(d.com)}${hon?` · retención <span style="color:#e5484d">− ${fmt(d.ret)}</span>`:''}${d.prop?` · propinas + ${fmt(d.prop)}`:''}</div>
+      <div class="dl" style="text-align:right">recibes</div>
+    </div>`;
+  }).join('');
+  const sinDesglose=hon&&filas.some(f=>(f.tipo||'servicio')==='servicio'&&f.retencion_profesional==null);
+  const tasa=(filas.find(f=>f.retencion_pct!=null)||{}).retencion_pct;
   const serviciosHtml=agrupar('servicio')||'<div class="empty">Sin servicios en este período.</div>';
   const productosHtml=agrupar('producto');
-
   cont.innerHTML=`
     <div class="com-hero">
       <div class="com-hero-label">${comEtiquetaRango(desde,hasta)}</div>
-      <div class="com-hero-row">
-        <div class="com-hero-item"><div class="val">${fmt(ventas)}</div><div class="lbl">Ventas</div></div>
-        <div class="com-hero-item"><div class="val comision">${fmt(comision)}</div><div class="lbl">Comisión</div></div>
+      <div class="com-hero-row" style="flex-wrap:wrap">
+        <div class="com-hero-item"><div class="val">${fmt(T.ventas)}</div><div class="lbl">Ventas</div></div>
+        <div class="com-hero-item"><div class="val comision">${fmt(T.com)}</div><div class="lbl">Comisión total</div></div>
       </div>
+      <div class="com-hero-row com-hero-2" style="margin-top:14px">
+        ${hon?`<div class="com-hero-item"><div class="val" style="color:#e5484d">− ${fmt(T.ret)}</div><div class="lbl">Retención honorarios${tasa?' ('+String(tasa).replace('.',',')+'%)':''}</div></div>`:''}
+        ${T.prop?`<div class="com-hero-item"><div class="val">+ ${fmt(T.prop)}</div><div class="lbl">Propinas</div></div>`:''}
+        <div class="com-hero-item"><div class="val" style="color:#22a35a">${fmt(T.recibe)}</div><div class="lbl">Lo que recibes</div></div>
+      </div>
+      ${hon?`<div style="font-size:11px;color:var(--texto-suave);margin-top:12px;line-height:1.5">La retención es lo que se descuenta de tu boleta de honorarios para el SII.${sinDesglose?' Algunos servicios antiguos no tienen desglose y van sin retención.':''}</div>`:''}
     </div>
-    <div class="card">
-      <div class="card-title">Desglose por servicio</div>
-      ${serviciosHtml}
-    </div>
-    ${productosHtml?`<div class="card">
-      <div class="card-title">Productos vendidos</div>
-      ${productosHtml}
-    </div>`:''}`;
+    ${diasHtml?`<div class="card"><div class="card-title">Día a día</div>${diasHtml}</div>`:''}
+    <div class="card"><div class="card-title">Desglose por servicio</div>${serviciosHtml}</div>
+    ${productosHtml?`<div class="card"><div class="card-title">Productos vendidos</div>${productosHtml}</div>`:''}`;
 }
 
 // ─── Init ───
