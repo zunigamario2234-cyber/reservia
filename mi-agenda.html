@@ -149,6 +149,17 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 .mt-plata .l{font-size:10px;color:var(--texto-suave)}
 .dia-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:0.5px solid var(--borde);font-size:12px}
 .dia-row:last-child{border-bottom:0}
+/* Vista Mes */
+.mes-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.mes-cab{margin-bottom:5px}
+.mes-cab span{text-align:center;font-size:10px;font-weight:600;color:var(--texto-suave)}
+.mes-dia{aspect-ratio:1/1.15;min-width:0;border-radius:10px;border:0.5px solid var(--borde);background:var(--tarjeta);color:var(--texto);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px;cursor:pointer;font-family:inherit}
+.mes-dia .md-nom{font-size:9px;color:var(--texto-suave);line-height:1}
+.mes-dia .md-num{font-size:16px;font-weight:700;line-height:1.1;color:var(--texto-fuerte)}
+.mes-dia .md-n{font-size:10px;font-weight:600;line-height:1;min-height:10px;color:var(--texto-fuerte);white-space:nowrap}
+.mes-dia.hoy{outline:2px solid var(--acento);outline-offset:1px}
+.mes-dia.cerrado{opacity:.4}
+.mes-dia:active{transform:scale(.95)}
 .dia-row .dl{color:var(--texto-suave);font-size:11px}
 .com-hero-item .val{font-size:24px;font-weight:700;color:var(--texto);line-height:1.2}
 .com-hero-item .val.comision{color:var(--acento)}
@@ -253,10 +264,12 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
       </div>
       <div class="vista-toggle" role="tablist" aria-label="Forma de ver la agenda">
         <button type="button" id="vista-lista" class="vista-btn" role="tab" onclick="setVistaAgenda('lista')">☰ Lista</button>
-        <button type="button" id="vista-cal" class="vista-btn" role="tab" onclick="setVistaAgenda('calendario')">▦ Calendario</button>
+        <button type="button" id="vista-cal" class="vista-btn" role="tab" onclick="setVistaAgenda('calendario')">▦ Por hora</button>
+        <button type="button" id="vista-mes" class="vista-btn" role="tab" onclick="setVistaAgenda('mes')">📆 Mes</button>
       </div>
       <div id="citas-lista"></div>
       <div id="citas-cal" style="display:none"></div>
+      <div id="citas-mes" style="display:none"></div>
     </div>
 
     <div id="tab-comisiones" style="display:none">
@@ -974,15 +987,77 @@ let HORARIO_NEGOCIO=[];
 let BLOQUEOS=[];
 let CITA_SEL=null;
 const CAL_PX_MIN=1.5, CAL_INI_H=8, CAL_FIN_H=20;
-function leerVistaAgenda(){ try{ return localStorage.getItem('miagenda_vista')==='calendario'?'calendario':'lista'; }catch(e){ return 'lista'; } }
+function leerVistaAgenda(){ try{ const v=localStorage.getItem('miagenda_vista'); return v==='calendario'||v==='mes'?v:'lista'; }catch(e){ return 'lista'; } }
+// VISTA_DIA recuerda si el día se ve en lista o por hora, para volver ahí al
+// tocar un día del mes.
+let VISTA_DIA='lista';
 function setVistaAgenda(v,sinRender){
-  VISTA_AGENDA=v==='calendario'?'calendario':'lista';
+  VISTA_AGENDA=v==='calendario'||v==='mes'?v:'lista';
+  if(VISTA_AGENDA!=='mes') VISTA_DIA=VISTA_AGENDA;
   try{ localStorage.setItem('miagenda_vista',VISTA_AGENDA); }catch(e){}
   document.getElementById('vista-lista').classList.toggle('active',VISTA_AGENDA==='lista');
   document.getElementById('vista-cal').classList.toggle('active',VISTA_AGENDA==='calendario');
+  document.getElementById('vista-mes').classList.toggle('active',VISTA_AGENDA==='mes');
   document.getElementById('citas-lista').style.display=VISTA_AGENDA==='lista'?'':'none';
   document.getElementById('citas-cal').style.display=VISTA_AGENDA==='calendario'?'':'none';
+  document.getElementById('citas-mes').style.display=VISTA_AGENDA==='mes'?'':'none';
+  if(VISTA_AGENDA==='mes'){ if(!sinRender||NEGOCIO_ID) cargarMes(); return; }
   if(!sinRender) renderAgendaActual(CITAS_ACTUALES);
+}
+
+// ─── Vista Mes: cada día con su nombre, número y servicios ───
+// Días pasados y hoy: servicios atendidos. Días que vienen: reservas
+// agendadas. Al tocar un día se abre la agenda de ese día.
+let MES_VER=null; // 'YYYY-MM'
+async function cargarMes(){
+  const cont=document.getElementById('citas-mes');
+  if(!MES_VER) MES_VER=(document.getElementById('ag-fecha').value||hoyStr()).slice(0,7);
+  const [Y,M]=MES_VER.split('-').map(Number), dm=new Date(Y,M,0).getDate();
+  if(!cont.innerHTML) cont.innerHTML='<div class="msg-full">Cargando...</div>';
+  const {data,error}=await sb.rpc('mi_agenda_mes',{p_desde:MES_VER+'-01',p_hasta:MES_VER+'-'+String(dm).padStart(2,'0')});
+  if(error){ cont.innerHTML='<div class="card"><div class="empty">No pudimos cargar el mes.</div></div>'; return; }
+  pintarMes(data||[]);
+}
+function moverMes(n){ const [Y,M]=MES_VER.split('-').map(Number); const d=new Date(Y,M-1+n,1); MES_VER=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); cargarMes(); }
+function pintarMes(filas){
+  const cont=document.getElementById('citas-mes');
+  const [Y,M]=MES_VER.split('-').map(Number), dm=new Date(Y,M,0).getDate(), hoy=hoyStr();
+  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const NOM=['dom','lun','mar','mié','jue','vie','sáb'];
+  const por={}; filas.forEach(f=>{ por[f.fecha]=f; });
+  const cerr=new Set(); [0,1,2,3,4,5,6].forEach(d=>{ const h=HORARIO_NEGOCIO.find(x=>x.dia_semana===d); if(h?h.cerrado:d===0) cerr.add(d); });
+  const max=Math.max(1,...filas.map(f=>(f.fecha<=hoy?f.atendidos:f.agendados)||0));
+  let totA=0,totG=0;
+  const pad=(new Date(Y,M-1,1).getDay()+6)%7; // lunes primero
+  let celdas='<div class="mes-vacia"></div>'.repeat(pad);
+  for(let d=1;d<=dm;d++){
+    const f=MES_VER+'-'+String(d).padStart(2,'0'), r=por[f]||{atendidos:0,agendados:0}, dow=new Date(Y,M-1,d).getDay();
+    const pasado=f<hoy, esHoy=f===hoy;
+    const n=pasado?r.atendidos:(esHoy?r.atendidos+r.agendados:r.agendados);
+    totA+=r.atendidos; if(!pasado) totG+=r.agendados;
+    const int=n?0.12+0.5*(n/max):0;
+    const etiqueta=pasado||esHoy?(n===1?'servicio':'servicios'):(n===1?'agendada':'agendadas');
+    celdas+=`<button type="button" class="mes-dia${esHoy?' hoy':''}${cerr.has(dow)&&!n?' cerrado':''}${pasado?' pasado':''}" style="${n?`background:color-mix(in srgb,var(--acento) ${Math.round(int*100)}%,var(--tarjeta))`:''}" onclick="abrirDiaMes('${f}')" aria-label="${NOM[dow]} ${d}: ${n} ${etiqueta}">
+      <span class="md-nom">${NOM[dow]}</span><span class="md-num">${d}</span><span class="md-n">${n?n+(pasado||esHoy?' ✂':' 📅'):''}</span></button>`;
+  }
+  cont.innerHTML=`<div class="card" style="padding:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <button class="btn btn-ghost btn-sm" onclick="moverMes(-1)" aria-label="Mes anterior">‹</button>
+      <strong style="font-size:15px;color:var(--texto-fuerte)">${MESES[M-1]} ${Y}</strong>
+      <button class="btn btn-ghost btn-sm" onclick="moverMes(1)" aria-label="Mes siguiente">›</button>
+    </div>
+    <div class="mes-grid">${celdas}</div>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--texto-suave);margin-top:12px">
+      <span>✂ <strong style="color:var(--texto)">${totA}</strong> atendidos</span>
+      ${totG?`<span>📅 <strong style="color:var(--texto)">${totG}</strong> agendados por venir</span>`:''}
+    </div></div>
+    <div class="cal-ayuda">Toca un día para abrir su agenda.</div>`;
+}
+function abrirDiaMes(f){
+  document.getElementById('ag-fecha').value=f;
+  setVistaAgenda(VISTA_DIA,true);
+  cargarAgenda();
+  window.scrollTo({top:0,behavior:'smooth'});
 }
 // Horario del negocio y bloqueos: si no se pueden leer, el calendario se ve
 // igual, solo sin franjas bloqueadas.
@@ -996,6 +1071,7 @@ async function cargarContextoAgenda(){
     HORARIO_NEGOCIO=(h.data||[]).filter(r=>!BARBERO.sucursal_id||r.sucursal_id===BARBERO.sucursal_id); BLOQUEOS=(b.data||[]);
   }catch(e){ HORARIO_NEGOCIO=[]; BLOQUEOS=[]; }
   if(VISTA_AGENDA==='calendario') renderAgendaActual(CITAS_ACTUALES);
+  if(VISTA_AGENDA==='mes') cargarMes();
 }
 function hmAMin(h){ if(!h)return null; const [a,b]=String(h).split(':').map(Number); return a*60+(b||0); }
 function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
