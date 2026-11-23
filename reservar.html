@@ -1088,7 +1088,7 @@ async function confirmarReserva(){
     document.getElementById('btn-wa-confirmar').style.display=B.barberia.whatsapp?'':'none';
   }catch(e){
     const al=document.getElementById('alert-confirm');
-    al.textContent='Error al confirmar: '+e.message; al.style.display='';
+    al.textContent=(/ocupad|tomada/i.test(e.message||'')?'⚠️ '+e.message+' Vuelve al paso anterior para ver las horas actualizadas.':'Error al confirmar: '+e.message); al.style.display='';
   }finally{
     // Repone el botón SIEMPRE, salga bien o mal. Antes solo se reponía en el
     // catch: tras una reserva exitosa quedaba en "Confirmando..." y

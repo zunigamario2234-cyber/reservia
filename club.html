@@ -797,7 +797,7 @@ async function rConfirmarReserva(){
     document.getElementById('r-btn-wa-confirmar').style.display=BARBERIA.whatsapp?'':'none';
   }catch(e){
     const al=document.getElementById('r-alert-confirm');
-    al.textContent='Error al confirmar: '+e.message; al.style.display='';
+    al.textContent=(/ocupad|tomada/i.test(e.message||'')?'⚠️ '+e.message+' Vuelve al paso anterior para ver las horas actualizadas.':'Error al confirmar: '+e.message); al.style.display='';
     btn.disabled=false; btn.textContent=RMOD?'✓ Guardar cambios':'✓ Confirmar reserva';
   }
 }
