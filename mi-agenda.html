@@ -724,7 +724,7 @@ async function horasLibres(fecha,opts){
   if(h){ if(h.cerrado) return {cerrado:true,libres:[]}; ini=HS_MIN(h.hora_apertura); fin=HS_MIN(h.hora_cierre); c1=HS_MIN(h.hora_colacion_inicio); c2=HS_MIN(h.hora_colacion_fin); }
   else { if(dow===0) return {cerrado:true,libres:[]}; ini=9*60; fin=19*60; }
   const {data:ocup}=await sb.from('reservas_disponibilidad').select('id,hora,barbero_nombre,duracion_min').eq('barberia_id',NEGOCIO_ID).eq('fecha',fecha);
-  const mias=(ocup||[]).filter(r=>r.barbero_nombre===BARBERO.nombre&&r.id!==opts.excluir);
+  const mias=(ocup||[]).filter(r=>r.barbero_nombre===BARBERO.nombre&&(!opts.excluir||r.id!==opts.excluir));
   const choca=(a,da,b,db)=>a<b+db&&b<a+da;
   const ahora=new Date(), hoy=hoyStr(), minAhora=ahora.getHours()*60+ahora.getMinutes()+30;
   const libres=[];
