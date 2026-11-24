@@ -1,0 +1,9 @@
+-- Mi Agenda: el profesional modifica SUS citas (día, hora y servicio).
+-- · mi_agenda_modificar_reserva(): valida que la cita sea suya, que no esté
+--   cobrada ni cancelada y que el servicio exista. El choque de horarios lo
+--   impide el trigger reservas_sin_choque, como en cualquier otro camino.
+-- · El cambio queda en reserva_cambios con origen 'mi_agenda' (el trigger
+--   lee reservia.origen_cambio); /api/avisar-modificacion-reserva entonces le
+--   escribe al cliente y no al mismo profesional que hizo el cambio.
+-- (Definiciones completas aplicadas en producción; ver historial de migraciones
+--  "mi_agenda_modificar_reserva" en Supabase.)

@@ -126,10 +126,13 @@ module.exports = async function handler(req, res) {
     const barberos = await supabaseGet(`barberos?barberia_id=eq.${encodeURIComponent(reserva.barberia_id)}&select=nombre,email,activo`);
     const out = { profesional: { sent: false }, anterior: { sent: false }, cliente: { sent: false }, dueno: { sent: false } };
 
+    // Si el cambio lo hizo el mismo profesional desde Mi Agenda, no se le
+    // escribe a él (ya lo sabe): solo al cliente.
+    const hechoPorProfesional = cambio.origen === 'mi_agenda';
     // Profesional que ahora tiene la cita.
     const rNuevo = resolverProfesional(barberos, n.barbero);
-    out.profesional.motivo = rNuevo.motivo;
-    if (rNuevo.motivo === 'ok') {
+    out.profesional.motivo = hechoPorProfesional ? 'lo_hizo_el_profesional' : rNuevo.motivo;
+    if (rNuevo.motivo === 'ok' && !hechoPorProfesional) {
       try {
         await enviarConReintento({
           to: rNuevo.profesional.email,
@@ -141,7 +144,7 @@ module.exports = async function handler(req, res) {
     }
 
     // Profesional anterior, si cambió de persona.
-    if (normalizar(a.barbero) !== normalizar(n.barbero)) {
+    if (!hechoPorProfesional && normalizar(a.barbero) !== normalizar(n.barbero)) {
       const rAnt = resolverProfesional(barberos, a.barbero);
       out.anterior.motivo = rAnt.motivo;
       if (rAnt.motivo === 'ok') {
@@ -170,7 +173,7 @@ module.exports = async function handler(req, res) {
 
     // Respaldo al dueño: solo si el profesional nuevo no recibió el aviso.
     const mismoDestino = rNuevo.profesional?.email && normalizar(rNuevo.profesional.email) === normalizar(barberia?.email);
-    if (!out.profesional.sent && barberia?.email && !mismoDestino) {
+    if (!hechoPorProfesional && !out.profesional.sent && barberia?.email && !mismoDestino) {
       try {
         await enviarConReintento({
           to: barberia.email,
@@ -181,7 +184,7 @@ module.exports = async function handler(req, res) {
       } catch (e) { out.dueno.motivo = 'error_envio'; out.dueno.error = e.message; }
     }
 
-    if (!out.profesional.sent) console.error('avisar-modificacion: profesional sin aviso', JSON.stringify(out));
+    if (!out.profesional.sent && !hechoPorProfesional) console.error('avisar-modificacion: profesional sin aviso', JSON.stringify(out));
     try { await supabasePatch(`reserva_cambios?id=eq.${cambio.id}`, { aviso_resultado: out }); } catch (_) {}
     res.status(200).json({ ok: true, ...out });
   } catch (e) {
