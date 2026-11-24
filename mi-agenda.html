@@ -783,14 +783,16 @@ function hsLogo(x,logo,cx,cy,r,fondo){
 
 // Recuadro "Agenda acá": deja el espacio donde el profesional pega el sticker
 // de enlace de Instagram con su link de reservas (se copia solo al compartir).
-function hsRecuadroAgenda(x,cy,o){
-  const W=1080, w=600, h=150, X=(W-w)/2, Y=cy-h/2, r=34;
+// Va pegado justo debajo de las horas y bien arriba de la barra de mensajes
+// de la historia (los últimos ~250 px), para que el sticker se pueda tocar.
+function hsRecuadroAgenda(x,yTop,o){
+  const W=1080, w=380, h=84, X=(W-w)/2, Y=Math.min(yTop,1380), cy=Y+h/2, r=42;
   x.save();
   if(o.brillo){ x.shadowColor=o.brillo; x.shadowBlur=30; }
   if(o.fondo){ x.fillStyle=o.fondo; x.beginPath(); x.roundRect(X,Y,w,h,r); x.fill(); }
-  x.setLineDash([16,12]); x.lineWidth=5; x.strokeStyle=o.borde;
+  x.setLineDash([12,9]); x.lineWidth=4; x.strokeStyle=o.borde;
   x.beginPath(); x.roundRect(X,Y,w,h,r); x.stroke(); x.setLineDash([]); x.shadowColor='transparent';
-  hsTexto(x,'Agenda acá ↓',W/2,cy+20,o.fuente,o.texto,'center');
+  hsTexto(x,'Reserva aquí ↓',W/2,cy+13,o.fuente,o.texto,'center');
   x.restore();
 }
 // Estilo "Simple": fondo blanco, mucho aire, una sola tipografía y las horas
@@ -816,7 +818,7 @@ function dibujarSimple(x,o){
     hsTexto(x,o.cerrado?'Hoy no abrimos.':'Agenda completa.',L,780,HS_M(700,64),tinta);
     hsTexto(x,'Reserva otro día.',L,850,HS_M(500,40),suave);
   } else {
-    const cols=n>9?2:1, filas=Math.ceil(n/cols), top=690, bottom=1560;
+    const cols=n>9?2:1, filas=Math.ceil(n/cols), top=690, bottom=1300;
     const rh=Math.min(104,(bottom-top)/filas), cw=(W-L*2)/cols, fs=Math.min(64,rh*0.58);
     for(let k=0;k<n;k++){
       const c=Math.floor(k/filas), r=k%filas, X=L+c*cw, Y=top+r*rh;
@@ -825,8 +827,9 @@ function dibujarSimple(x,o){
       x.fillStyle=o.acento; x.beginPath(); x.arc(X+cw-(cols>1?40:0)-14,Y+rh/2,7,0,Math.PI*2); x.fill();
     }
     const yl=top+filas*rh; x.fillStyle=linea; x.fillRect(L,yl,W-L*2-(cols>1?40:0),2);
+    o._fin=yl;
   }
-  hsRecuadroAgenda(x,1730,{borde:tinta,texto:tinta,fuente:HS_M(700,52)});
+  hsRecuadroAgenda(x,(o._fin||880)+56,{borde:tinta,texto:tinta,fuente:HS_M(700,36)});
   hsTexto(x,'con Reservia',W/2,H-36,HS_M(500,24),suave,'center');
 }
 // Estilo 1: afiche de pared con tiras para arrancar (como los avisos de papel).
@@ -838,8 +841,8 @@ function dibujarAfiche(x,o){
   for(let i=-H;i<W+H;i+=120){ x.beginPath(); x.moveTo(i,0); x.lineTo(i+60,0); x.lineTo(i+60-H,H); x.lineTo(i-H,H); x.closePath(); x.fill(); }
   x.restore();
   // hoja de papel, un poco girada
-  x.save(); x.translate(W/2,H/2-90); x.rotate(-0.025);
-  const pw=900, ph=1420, px=-pw/2, py=-ph/2;
+  x.save(); x.translate(W/2,740); x.rotate(-0.025);
+  const pw=900, ph=1240, px=-pw/2, py=-ph/2;
   x.shadowColor='rgba(0,0,0,.35)'; x.shadowBlur=40; x.shadowOffsetY=18;
   x.fillStyle=papel; x.fillRect(px,py,pw,ph); x.shadowColor='transparent';
   // cinta adhesiva
@@ -857,7 +860,7 @@ function dibujarAfiche(x,o){
     hsTexto(x,'Reserva otro día en el link.',px+64,py+940,HS_F(700,46),'rgba(22,19,15,.65)');
   } else {
     // tiras para arrancar: una o dos filas
-    const filas=n>10?2:1, porFila=Math.ceil(n/filas), tw=(pw-80)/porFila, th=filas===2?250:360;
+    const filas=n>10?2:1, porFila=Math.ceil(n/filas), tw=(pw-80)/porFila, th=filas===2?210:340;
     const top0=py+ph-50-filas*th-(filas-1)*24;
     hsTexto(x,'Arranca la tuya ✂',px+64,top0-28,HS_F(700,44),'rgba(22,19,15,.65)');
     for(let f=0;f<filas;f++){
@@ -869,7 +872,7 @@ function dibujarAfiche(x,o){
         const xi=px+40+i*tw;
         if(i>0){ x.beginPath(); x.moveTo(xi,y0); x.lineTo(xi,y0+th); x.stroke(); }
         x.save(); x.translate(xi+tw/2,y0+th/2); x.rotate(-Math.PI/2);
-        const fs=Math.min(tw*0.62,92);
+        const fs=Math.min(tw*0.62,(th-36)/2.4,92);
         hsTexto(x,o.libres[k],0,fs*0.35,HS_F(900,fs),k%3===1?o.acento:tinta,'center');
         x.restore();
       }
@@ -877,7 +880,7 @@ function dibujarAfiche(x,o){
     }
   }
   x.restore();
-  hsRecuadroAgenda(x,1735,{borde:'#fff',texto:'#fff',fuente:HS_F(900,64)});
+  hsRecuadroAgenda(x,1400,{borde:'#fff',texto:'#fff',fuente:HS_F(900,44)});
   hsTexto(x,'con Reservia',W/2,H-30,HS_F(700,24),'rgba(255,255,255,.6)','center');
 }
 // Estilo 2: letrero luminoso de noche, horas como un tablero de turnos.
@@ -895,7 +898,7 @@ function dibujarNoche(x,o){
   if(o.cerrado||!n){
     hsTexto(x,o.cerrado?'Hoy cerramos.':'Agenda llena.',84,780,HS_F(900,110),'#fff');
   } else {
-    const cols=n>12?3:2, filas=Math.ceil(n/cols), gw=W-160, cw=gw/cols, ch=Math.min(150,(H-820-400)/filas);
+    const cols=n>12?3:2, filas=Math.ceil(n/cols), gw=W-160, cw=gw/cols, ch=Math.min(150,(1320-680)/filas); o._fin=680+filas*ch;
     for(let k=0;k<n;k++){
       const c=k%cols, r=Math.floor(k/cols), X=80+c*cw, Y=680+r*ch;
       x.strokeStyle='rgba(255,255,255,.14)'; x.lineWidth=2; x.beginPath(); x.moveTo(X,Y+ch-14); x.lineTo(X+cw-30,Y+ch-14); x.stroke();
@@ -903,7 +906,7 @@ function dibujarNoche(x,o){
       hsTexto(x,o.libres[k],X+44,Y+ch/2+22,HS_F(900,Math.min(ch*0.62,92)),'#fff');
     }
   }
-  hsRecuadroAgenda(x,1720,{borde:o.acento,texto:'#fff',fuente:HS_F(900,64),brillo:o.acento});
+  hsRecuadroAgenda(x,(o._fin||860)+40,{borde:o.acento,texto:'#fff',fuente:HS_F(900,44),brillo:o.acento});
   hsTexto(x,'con Reservia',W/2,H-30,HS_F(700,24),'rgba(255,255,255,.5)','center');
 }
 let HS_ULTIMO=null;
