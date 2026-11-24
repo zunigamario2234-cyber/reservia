@@ -25,7 +25,7 @@ try{var _n=JSON.parse(localStorage.getItem('ma_negocio')||'null');if(_n&&_n.b){d
 </script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Manrope:wght@300;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
@@ -314,7 +314,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
     <div class="modal-hdr"><span class="modal-title">Compartir horas disponibles</span><button class="xbtn" onclick="document.getElementById('m-horas').classList.remove('open')">×</button></div>
     <div class="fr" style="margin-bottom:10px">
       <div class="form-group"><label>Día</label><input type="date" id="hs-fecha" onchange="generarImagenHoras()"></div>
-      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
+      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="simple">Simple</option><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
     </div>
     <div id="hs-info" class="ayuda" style="margin-bottom:8px"></div>
     <canvas id="hs-canvas" width="1080" height="1920" style="width:100%;max-width:300px;display:block;margin:0 auto 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35)"></canvas>
@@ -764,13 +764,13 @@ async function generarImagenHoras(){
   const fecha=document.getElementById('hs-fecha').value||hoyStr();
   const estilo=document.getElementById('hs-estilo').value;
   const info=document.getElementById('hs-info'); info.textContent='Calculando horas…';
-  try{ await document.fonts.load('900 100px "Big Shoulders Display"'); await document.fonts.load('700 40px "Big Shoulders Display"'); }catch(e){}
+  try{ await Promise.all(['900 100px "Big Shoulders Display"','700 40px "Big Shoulders Display"','300 100px "Manrope"','500 40px "Manrope"','700 40px "Manrope"'].map(f=>document.fonts.load(f))); }catch(e){}
   const [{cerrado,libres},logo]=await Promise.all([horasLibres(fecha),cargarLogoHs()]);
   HS_ULTIMO={fecha,libres};
   info.textContent=cerrado?'Ese día el negocio está cerrado.':libres.length?`${libres.length} hora${libres.length===1?'':'s'} libre${libres.length===1?'':'s'}. Toca Compartir para subirla a tu historia o estado.`:'No te quedan horas libres ese día.';
   const cv=document.getElementById('hs-canvas'), x=cv.getContext('2d');
   const d=new Date(fecha+'T12:00:00'), diaTxt=HS_DIAS[d.getDay()], fechaTxt=d.getDate()+' de '+HS_MESES[d.getMonth()];
-  (estilo==='noche'?dibujarNoche:dibujarAfiche)(x,{libres,cerrado,diaTxt,fechaTxt,logo,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',link:hsCorto(linkReservaPropio()),acento:hsAcento()});
+  ({noche:dibujarNoche,afiche:dibujarAfiche}[estilo]||dibujarSimple)(x,{libres,cerrado,diaTxt,fechaTxt,logo,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',link:hsCorto(linkReservaPropio()),acento:hsAcento()});
 }
 const HS_F=(w,size)=>`${w} ${size}px "Big Shoulders Display", "Arial Narrow", Impact, sans-serif`;
 function hsTexto(x,t,X,Y,font,color,align){ x.font=font; x.fillStyle=color; x.textAlign=align||'left'; x.fillText(t,X,Y); }
@@ -779,6 +779,55 @@ function hsLogo(x,logo,cx,cy,r,fondo){
   x.save(); x.beginPath(); x.arc(cx,cy,r,0,Math.PI*2); x.fillStyle=fondo; x.fill(); x.clip();
   if(logo){ const k=Math.max(2*r/logo.width,2*r/logo.height); const w=logo.width*k,h=logo.height*k; x.drawImage(logo,cx-w/2,cy-h/2,w,h); }
   x.restore();
+}
+
+// Recuadro "Agenda acá": deja el espacio donde el profesional pega el sticker
+// de enlace de Instagram con su link de reservas (se copia solo al compartir).
+function hsRecuadroAgenda(x,cy,o){
+  const W=1080, w=600, h=150, X=(W-w)/2, Y=cy-h/2, r=34;
+  x.save();
+  if(o.brillo){ x.shadowColor=o.brillo; x.shadowBlur=30; }
+  if(o.fondo){ x.fillStyle=o.fondo; x.beginPath(); x.roundRect(X,Y,w,h,r); x.fill(); }
+  x.setLineDash([16,12]); x.lineWidth=5; x.strokeStyle=o.borde;
+  x.beginPath(); x.roundRect(X,Y,w,h,r); x.stroke(); x.setLineDash([]); x.shadowColor='transparent';
+  hsTexto(x,'Agenda acá ↓',W/2,cy+20,o.fuente,o.texto,'center');
+  x.restore();
+}
+// Estilo "Simple": fondo blanco, mucho aire, una sola tipografía y las horas
+// como una lista ordenada. El color del local aparece solo en detalles.
+const HS_M=(w,size)=>`${w} ${size}px "Manrope", "Helvetica Neue", Arial, sans-serif`;
+function dibujarSimple(x,o){
+  const W=1080,H=1920, tinta='#141414', suave='#8a8a8a', linea='#e6e6e6';
+  x.fillStyle='#ffffff'; x.fillRect(0,0,W,H);
+  const L=110;
+  // cabecera: logo pequeño y nombre del local
+  hsLogo(x,o.logo,L+34,170,34,o.acento);
+  if(!o.logo) hsTexto(x,(o.negocio||'?').trim().charAt(0).toUpperCase(),L+34,184,HS_M(700,34),'#fff','center');
+  hsTexto(x,o.negocio,L+90,162,(()=>{ let s=38; do{ x.font=HS_M(700,s); if(x.measureText(o.negocio).width<=W-L*2-90) break; s-=2; }while(s>24); return HS_M(700,s); })(),tinta);
+  hsTexto(x,'con '+o.prof,L+90,204,HS_M(500,30),suave);
+  // fecha grande
+  const dia=o.diaTxt.charAt(0).toUpperCase()+o.diaTxt.slice(1);
+  hsTexto(x,dia,L-6,430,HS_M(300,150),tinta);
+  hsTexto(x,o.fechaTxt,L,512,HS_M(500,52),tinta);
+  x.fillStyle=o.acento; x.fillRect(L,560,64,6);
+  hsTexto(x,'Horas disponibles',L,640,HS_M(500,32),suave);
+  const n=o.libres.length;
+  if(o.cerrado||!n){
+    hsTexto(x,o.cerrado?'Hoy no abrimos.':'Agenda completa.',L,780,HS_M(700,64),tinta);
+    hsTexto(x,'Reserva otro día.',L,850,HS_M(500,40),suave);
+  } else {
+    const cols=n>9?2:1, filas=Math.ceil(n/cols), top=690, bottom=1560;
+    const rh=Math.min(104,(bottom-top)/filas), cw=(W-L*2)/cols, fs=Math.min(64,rh*0.58);
+    for(let k=0;k<n;k++){
+      const c=Math.floor(k/filas), r=k%filas, X=L+c*cw, Y=top+r*rh;
+      x.fillStyle=linea; x.fillRect(X,Y,cw-(cols>1?40:0),2);
+      hsTexto(x,o.libres[k],X,Y+rh/2+fs*0.36,HS_M(500,fs),tinta);
+      x.fillStyle=o.acento; x.beginPath(); x.arc(X+cw-(cols>1?40:0)-14,Y+rh/2,7,0,Math.PI*2); x.fill();
+    }
+    const yl=top+filas*rh; x.fillStyle=linea; x.fillRect(L,yl,W-L*2-(cols>1?40:0),2);
+  }
+  hsRecuadroAgenda(x,1730,{borde:tinta,texto:tinta,fuente:HS_M(700,52)});
+  hsTexto(x,'con Reservia',W/2,H-36,HS_M(500,24),suave,'center');
 }
 // Estilo 1: afiche de pared con tiras para arrancar (como los avisos de papel).
 function dibujarAfiche(x,o){
@@ -789,8 +838,8 @@ function dibujarAfiche(x,o){
   for(let i=-H;i<W+H;i+=120){ x.beginPath(); x.moveTo(i,0); x.lineTo(i+60,0); x.lineTo(i+60-H,H); x.lineTo(i-H,H); x.closePath(); x.fill(); }
   x.restore();
   // hoja de papel, un poco girada
-  x.save(); x.translate(W/2,H/2+20); x.rotate(-0.025);
-  const pw=900, ph=1560, px=-pw/2, py=-ph/2;
+  x.save(); x.translate(W/2,H/2-90); x.rotate(-0.025);
+  const pw=900, ph=1420, px=-pw/2, py=-ph/2;
   x.shadowColor='rgba(0,0,0,.35)'; x.shadowBlur=40; x.shadowOffsetY=18;
   x.fillStyle=papel; x.fillRect(px,py,pw,ph); x.shadowColor='transparent';
   // cinta adhesiva
@@ -807,12 +856,12 @@ function dibujarAfiche(x,o){
     hsTexto(x,o.cerrado?'Hoy cerramos.':'Agenda llena.',px+64,py+860,HS_F(900,96),tinta);
     hsTexto(x,'Reserva otro día en el link.',px+64,py+940,HS_F(700,46),'rgba(22,19,15,.65)');
   } else {
-    hsTexto(x,'Arranca la tuya ✂',px+64,py+780,HS_F(700,46),'rgba(22,19,15,.65)');
     // tiras para arrancar: una o dos filas
-    const filas=n>10?2:1, porFila=Math.ceil(n/filas), tw=(pw-80)/porFila, th=filas===2?300:400;
-    const top0=py+ph-60-filas*th-(filas-1)*30;
+    const filas=n>10?2:1, porFila=Math.ceil(n/filas), tw=(pw-80)/porFila, th=filas===2?250:360;
+    const top0=py+ph-50-filas*th-(filas-1)*24;
+    hsTexto(x,'Arranca la tuya ✂',px+64,top0-28,HS_F(700,44),'rgba(22,19,15,.65)');
     for(let f=0;f<filas;f++){
-      const y0=top0+f*(th+30);
+      const y0=top0+f*(th+24);
       x.setLineDash([10,9]); x.strokeStyle='rgba(22,19,15,.45)'; x.lineWidth=3;
       x.beginPath(); x.moveTo(px+40,y0); x.lineTo(px+pw-40,y0); x.stroke();
       for(let i=0;i<porFila;i++){
@@ -828,8 +877,8 @@ function dibujarAfiche(x,o){
     }
   }
   x.restore();
-  hsTexto(x,'Reserva en '+o.link,W/2,H-74,hsAjustar(x,'Reserva en '+o.link,{w:700,size:40},W-120),'#fff','center');
-  hsTexto(x,'Agenda online con Reservia',W/2,H-28,HS_F(700,26),'rgba(255,255,255,.7)','center');
+  hsRecuadroAgenda(x,1735,{borde:'#fff',texto:'#fff',fuente:HS_F(900,64)});
+  hsTexto(x,'con Reservia',W/2,H-30,HS_F(700,24),'rgba(255,255,255,.6)','center');
 }
 // Estilo 2: letrero luminoso de noche, horas como un tablero de turnos.
 function dibujarNoche(x,o){
@@ -846,7 +895,7 @@ function dibujarNoche(x,o){
   if(o.cerrado||!n){
     hsTexto(x,o.cerrado?'Hoy cerramos.':'Agenda llena.',84,780,HS_F(900,110),'#fff');
   } else {
-    const cols=n>12?3:2, filas=Math.ceil(n/cols), gw=W-160, cw=gw/cols, ch=Math.min(150,(H-820-260)/filas);
+    const cols=n>12?3:2, filas=Math.ceil(n/cols), gw=W-160, cw=gw/cols, ch=Math.min(150,(H-820-400)/filas);
     for(let k=0;k<n;k++){
       const c=k%cols, r=Math.floor(k/cols), X=80+c*cw, Y=680+r*ch;
       x.strokeStyle='rgba(255,255,255,.14)'; x.lineWidth=2; x.beginPath(); x.moveTo(X,Y+ch-14); x.lineTo(X+cw-30,Y+ch-14); x.stroke();
@@ -854,12 +903,17 @@ function dibujarNoche(x,o){
       hsTexto(x,o.libres[k],X+44,Y+ch/2+22,HS_F(900,Math.min(ch*0.62,92)),'#fff');
     }
   }
-  hsTexto(x,'Reserva en '+o.link,W/2,H-80,hsAjustar(x,'Reserva en '+o.link,{w:700,size:40},W-120),'#fff','center');
-  hsTexto(x,'Agenda online con Reservia',W/2,H-34,HS_F(700,26),'rgba(255,255,255,.55)','center');
+  hsRecuadroAgenda(x,1720,{borde:o.acento,texto:'#fff',fuente:HS_F(900,64),brillo:o.acento});
+  hsTexto(x,'con Reservia',W/2,H-30,HS_F(700,24),'rgba(255,255,255,.5)','center');
 }
 let HS_ULTIMO=null;
 function hsBlob(){ return new Promise(r=>document.getElementById('hs-canvas').toBlob(r,'image/jpeg',0.92)); }
 async function compartirImagenHoras(){
+  // El link se copia al tiro (dentro del toque) para pegarlo en el sticker de
+  // enlace de Instagram, encima del recuadro "Agenda acá".
+  const link=linkReservaPropio();
+  try{ navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{}); }catch(e){}
+  document.getElementById('hs-info').innerHTML='Link copiado ✓ En Instagram, agrega el sticker <strong>«Enlace»</strong>, pega el link y ponlo sobre el recuadro <strong>«Agenda acá»</strong>.';
   try{
     const b=await hsBlob(); const file=new File([b],'horas-'+(HS_ULTIMO?.fecha||hoyStr())+'.jpg',{type:'image/jpeg'});
     const texto='Horas disponibles. Reserva aquí: '+linkReservaPropio();
