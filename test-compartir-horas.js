@@ -1,4 +1,4 @@
-// Mi Agenda: imagen "Compartir horas disponibles". node test-compartir-horas.js
+// Mi Agenda: imagen y video "Compartir horas disponibles". node test-compartir-horas.js
 const { chromium } = require('playwright'); const fs=require('fs');
 const res=[]; const ok=(n,c,x)=>res.push((c?'OK    ':'FALLO ')+n+(c?'':'  -> '+JSON.stringify(x)));
 const SHOT='/tmp/claude-0/-home-claude/4d67f6db-2749-5f27-9259-d200e700f3a0/scratchpad/';
@@ -45,6 +45,27 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
  fs.writeFileSync(SHOT+'horas-simple.png',Buffer.from(out.a0.split(',')[1],'base64'));
  fs.writeFileSync(SHOT+'horas-afiche.png',Buffer.from(out.a1.split(',')[1],'base64'));
  fs.writeFileSync(SHOT+'horas-noche.png',Buffer.from(out.a2.split(',')[1],'base64'));
+ // Video: se crea solo al elegir el estilo y Compartir lo envía de un toque
+ const vid=await p.evaluate(async()=>{
+   window.__shares=[]; navigator.canShare=()=>true; navigator.share=async d=>{window.__shares.push(d);};
+   document.getElementById('hs-estilo').value='video'; await generarImagenHoras();
+   const enCurso=!!HS_VID_PROMESA&&!HS_VIDEO;
+   await HS_VID_PROMESA; await new Promise(r=>setTimeout(r,300));
+   const listo=document.getElementById('hs-info').textContent;
+   await compartirImagenHoras();
+   const s1=window.__shares.length;
+   await compartirImagenHoras();   // un segundo toque vuelve a compartir el MISMO video (no lo rehace)
+   const f=window.__shares[0]&&window.__shares[0].files&&window.__shares[0].files[0];
+   // cambiar de día cancela/rehace; cerrar corta la grabación sin errores
+   document.getElementById('hs-estilo').value='video'; await generarImagenHoras(); hsCancelarVideo();
+   return {enCurso,listo,s1,s2:window.__shares.length,size:f?f.size:0,type:f?f.type:'',name:f?f.name:'',texto:window.__shares[0]&&window.__shares[0].text,video:!!HS_VIDEO};
+ });
+ ok('el video empieza a crearse solo al elegir el estilo',vid.enCurso,vid);
+ ok('avisa "Video listo"',/Video listo/.test(vid.listo),vid.listo);
+ ok('un toque en Compartir envía el video',vid.s1===1&&vid.size>1000&&/^video\/(mp4|webm)$/.test(vid.type)&&/\.(mp4|webm)$/.test(vid.name),vid);
+ ok('el segundo toque comparte de nuevo sin rehacerlo',vid.s2===2,vid);
+ ok('comparte solo el archivo (sin texto, mejor para Instagram)',vid.texto===undefined,vid);
+ ok('cerrar/cambiar corta la grabación',vid.video===false,vid);
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>x.startsWith('FALLO')).length+' fallos de '+res.length); await b.close();
 })();
