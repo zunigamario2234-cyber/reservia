@@ -25,7 +25,7 @@ try{var _n=JSON.parse(localStorage.getItem('ma_negocio')||'null');if(_n&&_n.b){d
 </script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Manrope:wght@300;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Manrope:wght@300;500;700&family=Fraunces:ital,opsz,wght@1,9..144,400;1,9..144,600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="tema.js"></script>
@@ -314,7 +314,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
     <div class="modal-hdr"><span class="modal-title">Compartir horas disponibles</span><button class="xbtn" onclick="document.getElementById('m-horas').classList.remove('open')">×</button></div>
     <div class="fr" style="margin-bottom:10px">
       <div class="form-group"><label>Día</label><input type="date" id="hs-fecha" onchange="generarImagenHoras()"></div>
-      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="simple">Simple</option><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
+      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="portada">Foto · Portada</option><option value="turnos">Foto · Turnos</option><option value="duotono">Foto · Duotono</option><option value="simple">Simple</option><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
     </div>
     <div id="hs-info" class="ayuda" style="margin-bottom:8px"></div>
     <canvas id="hs-canvas" width="1080" height="1920" style="width:100%;max-width:300px;display:block;margin:0 auto 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35)"></canvas>
@@ -727,20 +727,21 @@ async function horasLibres(fecha,opts){
   const mias=(ocup||[]).filter(r=>r.barbero_nombre===BARBERO.nombre&&(!opts.excluir||r.id!==opts.excluir));
   const choca=(a,da,b,db)=>a<b+db&&b<a+da;
   const ahora=new Date(), hoy=hoyStr(), minAhora=ahora.getHours()*60+ahora.getMinutes()+30;
-  const libres=[];
+  const libres=[], todas=[];
   for(let m=ini;m+dur<=fin;m+=paso){
     if(c1!=null&&c2!=null&&choca(m,dur,c1,c2-c1)) continue;
     if(fecha===hoy&&m<minAhora) continue;
-    if(mias.some(r=>{ const rm=HS_MIN(r.hora); return rm!=null&&choca(m,dur,rm,r.duracion_min||30); })) continue;
+    // Horas "redondas" tomadas: se muestran tachadas en los estilos con foto.
+    if(mias.some(r=>{ const rm=HS_MIN(r.hora); return rm!=null&&choca(m,dur,rm,r.duracion_min||30); })){ if(mias.some(r=>HS_MIN(r.hora)===m)) todas.push({h:HS_HM(m),libre:false}); continue; }
     if((BLOQUEOS||[]).some(b=>{ if(b.activo===false) return false;
       if(b.tipo==='dia_completo') return b.fecha===fecha;
       if(b.tipo==='puntual'&&b.fecha!==fecha) return false;
       if(b.tipo==='recurrente'&&b.dia_semana!==dow) return false;
       if(b.tipo!=='puntual'&&b.tipo!=='recurrente') return false;
       const bi=HS_MIN(b.hora_inicio), bf=HS_MIN(b.hora_fin); return bi!=null&&bf!=null&&choca(m,dur,bi,bf-bi); })) continue;
-    libres.push(HS_HM(m));
+    libres.push(HS_HM(m)); todas.push({h:HS_HM(m),libre:true});
   }
-  return {cerrado:false,libres};
+  return {cerrado:false,libres,todas};
 }
 let HS_LOGO=null;
 function cargarLogoHs(){
@@ -764,13 +765,13 @@ async function generarImagenHoras(){
   const fecha=document.getElementById('hs-fecha').value||hoyStr();
   const estilo=document.getElementById('hs-estilo').value;
   const info=document.getElementById('hs-info'); info.textContent='Calculando horas…';
-  try{ await Promise.all(['900 100px "Big Shoulders Display"','700 40px "Big Shoulders Display"','300 100px "Manrope"','500 40px "Manrope"','700 40px "Manrope"'].map(f=>document.fonts.load(f))); }catch(e){}
-  const [{cerrado,libres},logo]=await Promise.all([horasLibres(fecha),cargarLogoHs()]);
+  try{ await Promise.all(['italic 400 100px "Fraunces"','italic 600 100px "Fraunces"','900 100px "Big Shoulders Display"','700 40px "Big Shoulders Display"','300 100px "Manrope"','500 40px "Manrope"','700 40px "Manrope"'].map(f=>document.fonts.load(f))); }catch(e){}
+  const [{cerrado,libres,todas},logo,foto]=await Promise.all([horasLibres(fecha),cargarLogoHs(),cargarFotoHs()]);
   HS_ULTIMO={fecha,libres};
   info.textContent=cerrado?'Ese día el negocio está cerrado.':libres.length?`${libres.length} hora${libres.length===1?'':'s'} libre${libres.length===1?'':'s'}. Toca Compartir para subirla a tu historia o estado.`:'No te quedan horas libres ese día.';
   const cv=document.getElementById('hs-canvas'), x=cv.getContext('2d');
   const d=new Date(fecha+'T12:00:00'), diaTxt=HS_DIAS[d.getDay()], fechaTxt=d.getDate()+' de '+HS_MESES[d.getMonth()];
-  ({noche:dibujarNoche,afiche:dibujarAfiche}[estilo]||dibujarSimple)(x,{libres,cerrado,diaTxt,fechaTxt,logo,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',link:hsCorto(linkReservaPropio()),acento:hsAcento()});
+  ({noche:dibujarNoche,afiche:dibujarAfiche,portada:dibujarPortada,turnos:dibujarTurnos,duotono:dibujarDuotono}[estilo]||dibujarSimple)(x,{libres,todas:todas||[],cerrado,diaTxt,fechaTxt,logo,foto,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',link:hsCorto(linkReservaPropio()),acento:hsAcento()});
 }
 const HS_F=(w,size)=>`${w} ${size}px "Big Shoulders Display", "Arial Narrow", Impact, sans-serif`;
 function hsTexto(x,t,X,Y,font,color,align){ x.font=font; x.fillStyle=color; x.textAlign=align||'left'; x.fillText(t,X,Y); }
@@ -794,6 +795,144 @@ function hsRecuadroAgenda(x,yTop,o){
   x.beginPath(); x.roundRect(X,Y,w,h,r); x.stroke(); x.setLineDash([]); x.shadowColor='transparent';
   hsTexto(x,'Reserva aquí ↓',W/2,cy+13,o.fuente,o.texto,'center');
   x.restore();
+}
+
+// ─── Estilos con la foto del profesional de fondo ─────────────────────────
+let HS_FOTO=null;
+function cargarFotoHs(){
+  return new Promise(res=>{
+    const url=BARBERO.foto_url; if(!url||!/^(https:|data:)/.test(url)) return res(null);
+    if(HS_FOTO&&HS_FOTO.src===url) return res(HS_FOTO);
+    const im=new Image(); im.crossOrigin='anonymous';
+    im.onload=()=>{ HS_FOTO=im; res(im); }; im.onerror=()=>res(null); im.src=url;
+  });
+}
+// Foto que cubre el área (como object-fit:cover), con el foco un poco arriba
+// para que no se corte la cara.
+function hsFotoCover(x,img,X,Y,W,H,focoY){
+  const k=Math.max(W/img.width,H/img.height), w=img.width*k, h=img.height*k;
+  x.drawImage(img,X+(W-w)/2,Y+(H-h)*(focoY==null?0.3:focoY),w,h);
+}
+function hsSinFoto(x,W,H,acento){
+  const g=x.createLinearGradient(0,0,0,H); g.addColorStop(0,acento); g.addColorStop(1,'#0d0d0f'); x.fillStyle=g; x.fillRect(0,0,W,H);
+}
+// Etiqueta final: "Agenda disponible ↓". Debajo queda el espacio libre para
+// pegar el sticker de enlace (lejos de la barra de mensajes de la historia).
+function hsAgendaDisponible(x,y,color,font){
+  hsTexto(x,'Agenda disponible',540,y,font,color,'center');
+  x.save(); x.strokeStyle=color; x.lineWidth=4; x.lineCap='round'; x.lineJoin='round';
+  x.beginPath(); x.moveTo(540,y+26); x.lineTo(540,y+78); x.moveTo(520,y+58); x.lineTo(540,y+80); x.lineTo(560,y+58); x.stroke(); x.restore();
+}
+function hsLogoMarca(x,o,cx,cy,r,anillo){
+  if(anillo){ x.save(); x.beginPath(); x.arc(cx,cy,r+5,0,Math.PI*2); x.fillStyle=anillo; x.fill(); x.restore(); }
+  hsLogo(x,o.logo,cx,cy,r,o.acento);
+  if(!o.logo) hsTexto(x,(o.negocio||'?').trim().charAt(0).toUpperCase(),cx,cy+r*0.36,HS_M(700,r),'#fff','center');
+}
+const HS_SERIF=(w,size)=>`italic ${w} ${size}px "Fraunces", Georgia, serif`;
+function hsNombreProf(o){ const n=String(o.prof||'').trim(); return n.charAt(0).toUpperCase()+n.slice(1).toLowerCase(); }
+function hsHorasMostrar(o){ return (o.todas&&o.todas.length?o.todas:o.libres.map(h=>({h,libre:true}))).slice(0,16); }
+
+// Opción 1 · Portada: la foto completa, como portada de revista. El día en
+// serif cursiva y las horas como una frase grande; las tomadas, tachadas.
+function dibujarPortada(x,o){
+  const W=1080,H=1920;
+  if(o.foto) hsFotoCover(x,o.foto,0,0,W,H,0.25); else hsSinFoto(x,W,H,o.acento);
+  const g=x.createLinearGradient(0,620,0,H); g.addColorStop(0,'rgba(8,8,10,0)'); g.addColorStop(0.45,'rgba(8,8,10,.78)'); g.addColorStop(1,'rgba(8,8,10,.94)');
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  const t=x.createLinearGradient(0,0,0,300); t.addColorStop(0,'rgba(0,0,0,.45)'); t.addColorStop(1,'rgba(0,0,0,0)'); x.fillStyle=t; x.fillRect(0,0,W,300);
+  hsLogoMarca(x,o,130,150,52,'rgba(255,255,255,.9)');
+  hsTexto(x,o.negocio,200,166,HS_M(700,36),'#fff');
+  const L=90;
+  hsTexto(x,'Horas libres con '+hsNombreProf(o),L,780,HS_M(500,36),'rgba(255,255,255,.8)');
+  const dia=o.diaTxt.charAt(0).toUpperCase()+o.diaTxt.slice(1);
+  hsTexto(x,dia,L-4,940,HS_SERIF(400,170),'#fff');
+  hsTexto(x,o.fechaTxt,L,1006,HS_M(500,40),'rgba(255,255,255,.75)');
+  const horas=hsHorasMostrar(o);
+  if(o.cerrado||!o.libres.length){
+    hsTexto(x,o.cerrado?'Hoy no abrimos.':'Agenda completa por hoy.',L,1130,HS_M(700,54),'#fff');
+  } else {
+    // horas como texto corrido, con aire entre ellas
+    const fs=horas.length>10?54:64; x.font=HS_M(700,fs);
+    let X=L, Y=1130; const esp=fs*0.75, maxX=W-L;
+    horas.forEach(hh=>{
+      const w=x.measureText(hh.h).width;
+      if(X+w>maxX){ X=L; Y+=fs*1.3; }
+      hsTexto(x,hh.h,X,Y,HS_M(700,fs),hh.libre?'#fff':'rgba(255,255,255,.35)');
+      if(!hh.libre){ x.fillStyle='rgba(255,255,255,.7)'; x.fillRect(X-4,Y-fs*0.33,w+8,4); }
+      X+=w+esp;
+    });
+    o._fin=Y;
+  }
+  hsAgendaDisponible(x,Math.min((o._fin||1130)+130,1440),'#fff',HS_M(700,40));
+}
+// Opción 2 · Turnos: foto arriba y una hoja de turnos abajo, como la libreta
+// de la barbería. El logo hace de sello entre las dos partes.
+function dibujarTurnos(x,o){
+  const W=1080,H=1920, corte=760, papel='#f4f2ee', tinta='#121212';
+  x.fillStyle=papel; x.fillRect(0,0,W,H);
+  x.save(); x.beginPath(); x.rect(0,0,W,corte); x.clip();
+  if(o.foto) hsFotoCover(x,o.foto,0,0,W,corte,0.25); else hsSinFoto(x,W,corte,o.acento);
+  const g=x.createLinearGradient(0,corte-260,0,corte); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.55)'); x.fillStyle=g; x.fillRect(0,0,W,corte);
+  x.restore();
+  hsTexto(x,hsNombreProf(o),80,corte-60,HS_SERIF(600,96),'#fff');
+  hsLogoMarca(x,o,W-140,corte,70,papel);
+  const L=80;
+  const dia=o.diaTxt.charAt(0).toUpperCase()+o.diaTxt.slice(1);
+  hsTexto(x,dia+' '+o.fechaTxt.split(' ')[0],L,corte+150,HS_F(900,110),tinta);
+  hsTexto(x,o.fechaTxt.split(' ').slice(1).join(' ')+', en '+o.negocio,L,corte+205,HS_M(500,32),'#6d6a66');
+  const horas=hsHorasMostrar(o);
+  if(o.cerrado||!o.libres.length){
+    hsTexto(x,o.cerrado?'Hoy no abrimos.':'Agenda completa.',L,corte+330,HS_M(700,56),tinta);
+  } else {
+    const cols=horas.length>7?2:1, filas=Math.ceil(horas.length/cols), top=corte+260, alto=Math.min(84,(1390-top)/filas);
+    const cw=(W-L*2)/cols;
+    horas.forEach((hh,k)=>{
+      const c=Math.floor(k/filas), r=k%filas, X=L+c*cw, Y=top+r*alto;
+      x.fillStyle='#dcd8d2'; x.fillRect(X,Y+alto-6,cw-(cols>1?40:0),2);
+      const fs=Math.min(48,alto*0.62);
+      hsTexto(x,hh.h,X,Y+alto-20,HS_M(700,fs),hh.libre?tinta:'#b4b0aa');
+      const wh=x.measureText(hh.h).width;
+      hsTexto(x,hh.libre?'libre':'tomada',X+cw-(cols>1?40:0),Y+alto-22,HS_M(500,Math.max(26,fs*0.6)),hh.libre?o.acento:'#b4b0aa','right');
+      if(!hh.libre){ x.fillStyle='#b4b0aa'; x.fillRect(X-2,Y+alto-20-fs*0.32,wh+4,3); }
+    });
+    o._fin=top+filas*alto;
+  }
+  hsAgendaDisponible(x,Math.min((o._fin||corte+330)+100,1440),tinta,HS_M(700,40));
+}
+// Opción 3 · Duotono: la foto en dos tonos (negro y el color del local), las
+// horas grandes y finas a la derecha, el día en vertical a la izquierda.
+function dibujarDuotono(x,o){
+  const W=1080,H=1920;
+  if(o.foto){
+    hsFotoCover(x,o.foto,0,0,W,H,0.25);
+    try{
+      const im=x.getImageData(0,0,W,H), d=im.data, a=o.acento;
+      const R=parseInt(a.slice(1,3),16), G=parseInt(a.slice(3,5),16), B=parseInt(a.slice(5,7),16);
+      for(let i=0;i<d.length;i+=4){ const l=(0.3*d[i]+0.59*d[i+1]+0.11*d[i+2])/255, k=Math.pow(l,1.1)*0.85;
+        d[i]=10+(R-10)*k; d[i+1]=10+(G-10)*k; d[i+2]=14+(B-14)*k; }
+      x.putImageData(im,0,0);
+    }catch(e){ x.fillStyle=o.acento+'88'; x.fillRect(0,0,W,H); }
+  } else hsSinFoto(x,W,H,o.acento);
+  const g=x.createLinearGradient(W*0.35,0,W,0); g.addColorStop(0,'rgba(8,8,12,0)'); g.addColorStop(1,'rgba(8,8,12,.72)'); x.fillStyle=g; x.fillRect(0,0,W,H);
+  hsLogoMarca(x,o,W-120,140,50,'rgba(255,255,255,.95)');
+  hsTexto(x,o.negocio,W-190,152,HS_M(700,32),'#fff','right');
+  // día en vertical
+  x.save(); x.translate(120,1460); x.rotate(-Math.PI/2);
+  hsTexto(x,(o.diaTxt+' '+o.fechaTxt).toUpperCase(),0,0,HS_F(900,92),'#fff'); x.restore();
+  hsTexto(x,'con '+hsNombreProf(o),W-80,440,HS_SERIF(400,64),'#fff','right');
+  const horas=hsHorasMostrar(o);
+  if(o.cerrado||!o.libres.length){
+    hsTexto(x,o.cerrado?'Hoy no abrimos.':'Agenda completa.',W-80,640,HS_M(700,56),'#fff','right');
+  } else {
+    const n=horas.length, top=520, alto=Math.min(96,(1340-top)/n), fs=Math.min(88,alto*0.85);
+    horas.forEach((hh,k)=>{
+      const Y=top+(k+1)*alto;
+      hsTexto(x,hh.h,W-80,Y,HS_M(300,fs),hh.libre?'#fff':'rgba(255,255,255,.38)','right');
+      if(!hh.libre){ x.font=HS_M(300,fs); const w=x.measureText(hh.h).width; x.fillStyle='rgba(255,255,255,.75)'; x.fillRect(W-80-w-4,Y-fs*0.33,w+8,3); }
+    });
+    o._fin=top+n*alto;
+  }
+  hsAgendaDisponible(x,Math.min((o._fin||640)+120,1440),'#fff',HS_M(700,40));
 }
 // Estilo "Simple": fondo blanco, mucho aire, una sola tipografía y las horas
 // como una lista ordenada. El color del local aparece solo en detalles.

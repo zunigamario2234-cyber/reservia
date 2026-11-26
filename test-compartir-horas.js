@@ -27,6 +27,7 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
    const r=await horasLibres(f);
    document.getElementById('ag-fecha').value=f;
    await abrirCompartirHoras();
+   document.getElementById('hs-estilo').value='simple'; await generarImagenHoras();
    const a0=document.getElementById('hs-canvas').toDataURL('image/png');
    document.getElementById('hs-estilo').value='afiche'; await generarImagenHoras();
    const a1=document.getElementById('hs-canvas').toDataURL('image/png');
@@ -40,7 +41,7 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
  ok('el domingo sale cerrado',out.cerrado===true);
  ok('al entrar, el manifest pasa a ser el del negocio',/\/api\/manifest\?app=agenda&b=1f97f706/.test(out.man),out.man);
  ok('informa cuántas horas hay',/11 horas libres/.test(out.info),out.info);
- ok('el estilo Simple es el primero',out.estiloInicial==='simple');
+ ok('los estilos con foto van primero',out.estiloInicial==='portada');
  fs.writeFileSync(SHOT+'horas-simple.png',Buffer.from(out.a0.split(',')[1],'base64'));
  fs.writeFileSync(SHOT+'horas-afiche.png',Buffer.from(out.a1.split(',')[1],'base64'));
  fs.writeFileSync(SHOT+'horas-noche.png',Buffer.from(out.a2.split(',')[1],'base64'));
