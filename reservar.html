@@ -467,7 +467,8 @@ function cabeEnLaJornada(hMin, dur, cierre, unidades){
 // Antes se preguntaba si el bloqueo cubría el INICIO del slot, así que un
 // bloqueo de 14:00 a 15:00 no impedía un servicio de 60 min a las 13:30.
 function bloqueoChocaCon(b, hMin, dur, fecha, diaSemana){
-  if(b.tipo==='dia_completo') return b.fecha===fecha;
+  // Día completo: un día, o varios seguidos (vacaciones) si trae fecha_hasta.
+  if(b.tipo==='dia_completo') return !!b.fecha && b.fecha<=fecha && fecha<=(b.fecha_hasta||b.fecha);
   let ini=null, fin=null;
   if(b.tipo==='puntual'){
     if(b.fecha!==fecha) return false;

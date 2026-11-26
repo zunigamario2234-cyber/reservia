@@ -87,6 +87,33 @@ async function sesion(rol,signupFalla){
  // Desde la agenda: la etiqueta del bloqueo abre el editor
  const html=await p.evaluate(h=>{ S.bloqueos=[{id:'k1',barberia_id:'x',profesional_id:'b1',tipo:'dia_completo',fecha:h,motivo:'Trámite',activo:true}]; return agendaBandasHtml(h,'b1'); },hoy);
  ok('banda de bloqueo en agenda es editable',/editarBloqueo\('k1'\)/.test(html),html.slice(0,300));
+ // Varios días seguidos (vacaciones)
+ await p.evaluate(()=>{S.bloqueos=[{id:'k1',barberia_id:'x',profesional_id:'b1',tipo:'dia_completo',fecha:'2026-12-01',activo:true}];});
+ await p.evaluate(()=>editarBloqueo('k1'));
+ await p.selectOption('#blq-tipo','varios_dias');
+ const vis=await p.evaluate(()=>({hasta:document.getElementById('blq-fg-hasta').style.display!=='none',horas:document.getElementById('blq-fg-horas').style.display!=='none',lbl:document.getElementById('blq-lbl-fecha').textContent}));
+ ok('varios días muestra Desde/Hasta y oculta horas',vis.hasta&&!vis.horas&&/Desde/.test(vis.lbl),vis);
+ await p.fill('#blq-fecha','2026-12-10'); await p.fill('#blq-fecha-hasta','2026-12-05'); await p.evaluate(()=>blqResumenDias());
+ await p.evaluate(()=>guardarBloqueo()); await p.waitForTimeout(200);
+ ok('no guarda hasta antes de desde',patches.length===2,patches.length);
+ await p.fill('#blq-fecha-hasta','2026-12-20'); await p.evaluate(()=>blqResumenDias());
+ const resu=await p.evaluate(()=>document.getElementById('blq-resumen').textContent);
+ ok('resumen cuenta 11 días',/11 días/.test(resu),resu);
+ await p.evaluate(()=>guardarBloqueo()); await p.waitForTimeout(300);
+ const pv=patches[2]&&patches[2].b;
+ ok('se guarda como día completo con fecha_hasta',pv&&pv.tipo==='dia_completo'&&pv.fecha==='2026-12-10'&&pv.fecha_hasta==='2026-12-20'&&pv.hora_inicio===null,pv);
+ // Al reabrir, se reconoce como "varios días"; y la tabla lo muestra así
+ const re=await p.evaluate(()=>{S.bloqueos=[{id:'k1',barberia_id:'x',profesional_id:'b1',tipo:'dia_completo',fecha:'2026-12-10',fecha_hasta:'2026-12-20',activo:true,motivo:'Vacaciones'}]; renderBloqueos(); editarBloqueo('k1'); return {tipo:document.getElementById('blq-tipo').value,h:document.getElementById('blq-fecha-hasta').value,fila:document.getElementById('t-bloqueos').textContent};});
+ ok('reabre como varios días',re.tipo==='varios_dias'&&re.h==='2026-12-20',re);
+ ok('tabla dice Varios días y el rango',/Varios días/.test(re.fila)&&/2026-12-10 al 2026-12-20/.test(re.fila),re.fila);
+ // De vuelta a un solo día: limpia fecha_hasta
+ await p.selectOption('#blq-tipo','dia_completo'); await p.evaluate(()=>guardarBloqueo()); await p.waitForTimeout(300);
+ const pu=patches[3]&&patches[3].b;
+ ok('volver a día completo borra fecha_hasta',pu&&pu.tipo==='dia_completo'&&pu.fecha_hasta===null,pu);
+ await p.evaluate(()=>closeM('m-bloqueo'));
+ const band=await p.evaluate(()=>{const B=[{id:'k9',profesional_id:'b1',tipo:'dia_completo',fecha:'2026-12-10',fecha_hasta:'2026-12-20',activo:true,motivo:'Vacaciones'}];
+   return ['2026-12-09','2026-12-10','2026-12-15','2026-12-20','2026-12-21'].map(f=>agendaBandas(f,[],B,'b1',540,1200).some(x=>x.tipo==='bloqueo'));});
+ ok('agenda del panel bloquea solo dentro del rango',JSON.stringify(band)==='[false,true,true,true,false]',band);
  ok('sin errores de página',errs.length===0,errs);
  console.log(res.join('\n')); console.log(res.filter(x=>/^FALLO/.test(x)).length+' fallos de '+res.length); await b.close();
 })();

@@ -415,7 +415,7 @@ function rCabeEnLaJornada(hMin, dur, cierre, unidades){
 }
 
 function rBloqueoChocaCon(b, hMin, dur, fecha, diaSemana){
-  if(b.tipo==='dia_completo') return b.fecha===fecha;
+  if(b.tipo==='dia_completo') return !!b.fecha && b.fecha<=fecha && fecha<=(b.fecha_hasta||b.fecha);
   let ini=null, fin=null;
   if(b.tipo==='puntual'){
     if(b.fecha!==fecha) return false;

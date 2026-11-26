@@ -2050,10 +2050,12 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
       <select id="blq-tipo" onchange="onChangeTipoBloqueo()">
         <option value="puntual">Puntual (rango de horas, un día específico)</option>
         <option value="dia_completo">Día completo</option>
+        <option value="varios_dias">Varios días seguidos (vacaciones)</option>
         <option value="recurrente">Recurrente (mismo día cada semana)</option>
       </select>
     </div>
-    <div class="fg" id="blq-fg-fecha"><label>Fecha *</label><input id="blq-fecha" type="date"></div>
+    <div class="fr" id="blq-fg-fechas"><div class="fg" id="blq-fg-fecha"><label id="blq-lbl-fecha">Fecha *</label><input id="blq-fecha" type="date" onchange="blqResumenDias()"></div><div class="fg" id="blq-fg-hasta" style="display:none"><label>Hasta (inclusive) *</label><input id="blq-fecha-hasta" type="date" onchange="blqResumenDias()"></div></div>
+    <div id="blq-resumen" class="fc-msg" style="font-size:12px;opacity:.8;margin:-4px 0 8px;display:none"></div>
     <div class="fg" id="blq-fg-dia" style="display:none"><label>Día de la semana *</label>
       <select id="blq-dia-semana">
         <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
@@ -3248,6 +3250,7 @@ function initModal(id){
     document.getElementById('m-blq-title').textContent='Agregar bloqueo';
     document.getElementById('blq-tipo').value='puntual';
     document.getElementById('blq-fecha').value='';
+    document.getElementById('blq-fecha-hasta').value='';
     document.getElementById('blq-hora-inicio').value='';
     document.getElementById('blq-hora-fin').value='';
     document.getElementById('blq-motivo').value='';
@@ -4346,25 +4349,47 @@ async function validarCodigoNegocio(){
   renderConfig();
 }
 
+// Cantidad de días de un rango (ambas fechas incluidas).
+function blqDiasRango(d,h){ if(!d||!h) return 0; return Math.round((new Date(h+'T12:00:00')-new Date(d+'T12:00:00'))/864e5)+1; }
+function blqResumenDias(){
+  const el=document.getElementById('blq-resumen'); if(!el) return;
+  const tipo=document.getElementById('blq-tipo').value;
+  const d=document.getElementById('blq-fecha').value, h=document.getElementById('blq-fecha-hasta').value;
+  const n=blqDiasRango(d,h);
+  if(tipo!=='varios_dias'||!d||!h){ el.style.display='none'; return; }
+  el.style.display='';
+  el.textContent = n<1 ? 'La fecha "hasta" debe ser igual o posterior a "desde".' : `Bloquea ${n} día${n===1?'':'s'} completo${n===1?'':'s'}: nadie podrá reservar con este profesional en esas fechas.`;
+}
 function onChangeTipoBloqueo(){
   const tipo=document.getElementById('blq-tipo').value;
-  document.getElementById('blq-fg-fecha').style.display=(tipo==='puntual'||tipo==='dia_completo')?'':'none';
+  document.getElementById('blq-fg-fecha').style.display=(tipo==='puntual'||tipo==='dia_completo'||tipo==='varios_dias')?'':'none';
+  document.getElementById('blq-fg-hasta').style.display=tipo==='varios_dias'?'':'none';
+  document.getElementById('blq-lbl-fecha').textContent=tipo==='varios_dias'?'Desde *':'Fecha *';
+  blqResumenDias();
   document.getElementById('blq-fg-dia').style.display=tipo==='recurrente'?'':'none';
   document.getElementById('blq-fg-horas').style.display=(tipo==='puntual'||tipo==='recurrente')?'':'none';
 }
 
 async function guardarBloqueo(){
   const profId=document.getElementById('blq-profesional').value;
-  const tipo=document.getElementById('blq-tipo').value;
+  const tipoSel=document.getElementById('blq-tipo').value;
+  // "Varios días" se guarda como día completo con fecha_hasta.
+  const tipo=tipoSel==='varios_dias'?'dia_completo':tipoSel;
   if(!profId){notify('Elegí un profesional','warn');return;}
   const editId=document.getElementById('blq-id').value;
   // Al editar se limpian los campos que no usa el tipo elegido (ej. de "día completo"
   // a "recurrente" se borra la fecha), para que el bloqueo no quede con datos mezclados.
-  const payload={barberia_id:S.barberia.id,profesional_id:profId,tipo,motivo:document.getElementById('blq-motivo').value.trim()||null,fecha:null,dia_semana:null,hora_inicio:null,hora_fin:null};
+  const payload={barberia_id:S.barberia.id,profesional_id:profId,tipo,motivo:document.getElementById('blq-motivo').value.trim()||null,fecha:null,fecha_hasta:null,dia_semana:null,hora_inicio:null,hora_fin:null};
   if(tipo==='puntual'||tipo==='dia_completo'){
     const fecha=document.getElementById('blq-fecha').value;
     if(!fecha){notify('Elegí una fecha','warn');return;}
     payload.fecha=fecha;
+  }
+  if(tipoSel==='varios_dias'){
+    const hasta=document.getElementById('blq-fecha-hasta').value;
+    if(!hasta){notify('Elegí hasta qué fecha','warn');return;}
+    if(hasta<payload.fecha){notify('La fecha "hasta" debe ser igual o posterior a "desde"','warn');return;}
+    if(hasta>payload.fecha) payload.fecha_hasta=hasta;
   }
   if(tipo==='recurrente'){
     payload.dia_semana=parseInt(document.getElementById('blq-dia-semana').value);
@@ -4396,8 +4421,9 @@ function editarBloqueo(id){
   document.getElementById('blq-id').value=b.id;
   document.getElementById('m-blq-title').textContent='Editar bloqueo';
   document.getElementById('blq-profesional').value=b.profesional_id;
-  document.getElementById('blq-tipo').value=b.tipo;
+  document.getElementById('blq-tipo').value=(b.tipo==='dia_completo'&&b.fecha_hasta&&b.fecha_hasta>b.fecha)?'varios_dias':b.tipo;
   document.getElementById('blq-fecha').value=b.fecha||'';
+  document.getElementById('blq-fecha-hasta').value=b.fecha_hasta||'';
   document.getElementById('blq-dia-semana').value=String(b.dia_semana??1);
   document.getElementById('blq-hora-inicio').value=(b.hora_inicio||'').slice(0,5);
   document.getElementById('blq-hora-fin').value=(b.hora_fin||'').slice(0,5);
@@ -4414,15 +4440,16 @@ async function toggleBloqueoActivo(id,activo){
 function renderBloqueos(){
   const cont=document.getElementById('t-bloqueos');
   if(!cont)return;
-  const TIPO_LABEL={puntual:'Puntual',dia_completo:'Día completo',recurrente:'Recurrente'};
+  const TIPO_LABEL={puntual:'Puntual',dia_completo:'Día completo',recurrente:'Recurrente',varios_dias:'Varios días'};
   cont.innerHTML=S.bloqueos.map(b=>{
     const prof=S.barberos.find(p=>p.id===b.profesional_id);
     let detalle='';
     if(b.tipo==='puntual') detalle=`${b.fecha} · ${(b.hora_inicio||'').slice(0,5)}–${(b.hora_fin||'').slice(0,5)}`;
+    else if(b.tipo==='dia_completo'&&b.fecha_hasta&&b.fecha_hasta>b.fecha) detalle=`${b.fecha} al ${b.fecha_hasta} · ${blqDiasRango(b.fecha,b.fecha_hasta)} días`;
     else if(b.tipo==='dia_completo') detalle=b.fecha||'—';
     else if(b.tipo==='recurrente') detalle=`${DIAS_SEMANA[b.dia_semana]} · ${(b.hora_inicio||'').slice(0,5)}–${(b.hora_fin||'').slice(0,5)}`;
     return `<tr>
-      <td>${prof?.nombre||'—'}</td><td>${TIPO_LABEL[b.tipo]||b.tipo}</td><td>${detalle}</td><td>${b.motivo||'—'}</td>
+      <td>${prof?.nombre||'—'}</td><td>${TIPO_LABEL[(b.tipo==='dia_completo'&&b.fecha_hasta&&b.fecha_hasta>b.fecha)?'varios_dias':b.tipo]||b.tipo}</td><td>${detalle}</td><td>${b.motivo||'—'}</td>
       <td><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${b.activo?'checked':''} onchange="toggleBloqueoActivo('${b.id}',this.checked)"></label></td>
       <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" title="Editar bloqueo" onclick="editarBloqueo('${b.id}')">✏️ Editar</button> <button class="btn btn-danger btn-sm" title="Eliminar bloqueo" onclick="eliminar('bloqueos_profesional','${b.id}',loadBloqueos,renderConfig)">×</button></td>
     </tr>`;
@@ -7826,7 +7853,7 @@ function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
   (bloqueos||[]).forEach(b=>{
     if(!b.activo||b.profesional_id!==profId)return;
     const motivo=b.motivo||'Bloqueo';
-    if(b.tipo==='dia_completo'&&b.fecha===fecha) add(iniMin,finMin,'bloqueo',motivo,b.id);
+    if(b.tipo==='dia_completo'&&b.fecha&&b.fecha<=fecha&&fecha<=(b.fecha_hasta||b.fecha)) add(iniMin,finMin,'bloqueo',motivo,b.id);
     else if(b.tipo==='puntual'&&b.fecha===fecha) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo,b.id);
     else if(b.tipo==='recurrente'&&b.dia_semana===dow) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo,b.id);
   });

@@ -734,7 +734,7 @@ async function horasLibres(fecha,opts){
     // Horas "redondas" tomadas: se muestran tachadas en los estilos con foto.
     if(mias.some(r=>{ const rm=HS_MIN(r.hora); return rm!=null&&choca(m,dur,rm,r.duracion_min||30); })){ if(mias.some(r=>HS_MIN(r.hora)===m)) todas.push({h:HS_HM(m),libre:false}); continue; }
     if((BLOQUEOS||[]).some(b=>{ if(b.activo===false) return false;
-      if(b.tipo==='dia_completo') return b.fecha===fecha;
+      if(b.tipo==='dia_completo') return !!b.fecha && b.fecha<=fecha && fecha<=(b.fecha_hasta||b.fecha);
       if(b.tipo==='puntual'&&b.fecha!==fecha) return false;
       if(b.tipo==='recurrente'&&b.dia_semana!==dow) return false;
       if(b.tipo!=='puntual'&&b.tipo!=='recurrente') return false;
@@ -1501,7 +1501,7 @@ function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
   (bloqueos||[]).forEach(b=>{
     if(!b.activo||b.profesional_id!==profId)return;
     const motivo=b.motivo||'Bloqueo';
-    if(b.tipo==='dia_completo'&&b.fecha===fecha) add(iniMin,finMin,'bloqueo',motivo);
+    if(b.tipo==='dia_completo'&&b.fecha&&b.fecha<=fecha&&fecha<=(b.fecha_hasta||b.fecha)) add(iniMin,finMin,'bloqueo',motivo);
     else if(b.tipo==='puntual'&&b.fecha===fecha) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
     else if(b.tipo==='recurrente'&&b.dia_semana===dow) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
   });
