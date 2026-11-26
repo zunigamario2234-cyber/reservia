@@ -425,6 +425,7 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 .cal-banda span{margin-top:4px;padding:1px 6px;border-radius:4px;background:var(--bg3);border:0.5px solid var(--border2)}
 .cal-banda.colacion{color:var(--b-gold-texto,#d4a853)}
 .cal-banda.bloqueo{color:var(--alerta-texto,#e05050)}
+.cal-banda .blq-edit{pointer-events:auto;cursor:pointer}
 .cal-block{z-index:3}
 
 /* ═══ PANEL EN EL CELULAR (≤700px) ══════════════════════════════════════
@@ -2042,7 +2043,8 @@ body.panel-claro [style*="background:rgba(224,80,80,0.12)"]{background:var(--ale
 <!-- Bloqueo de horario -->
 <div class="overlay" id="m-bloqueo">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">Agregar bloqueo</span><button class="xbtn" onclick="closeM('m-bloqueo')">×</button></div>
+    <div class="modal-hdr"><span class="modal-title" id="m-blq-title">Agregar bloqueo</span><button class="xbtn" onclick="closeM('m-bloqueo')">×</button></div>
+    <input type="hidden" id="blq-id">
     <div class="fg"><label>Profesional *</label><select id="blq-profesional"></select></div>
     <div class="fg"><label>Tipo de bloqueo *</label>
       <select id="blq-tipo" onchange="onChangeTipoBloqueo()">
@@ -3242,6 +3244,8 @@ function initModal(id){
   if(id==='m-alianza'){document.getElementById('alz-id').value='';document.getElementById('m-alz-title').textContent='Agregar alianza';document.getElementById('alz-nombre').value='';sel('alz-nivel',[{v:'',t:'Todos'},...nivelesOrdenados().map(nv=>({v:nv.id,t:nv.nombre}))]);document.getElementById('alz-beneficio').value='';document.getElementById('alz-desc').value='';document.getElementById('alz-beneficio-reciproco').value='';document.getElementById('alz-link').value='';document.getElementById('alz-foto-preview').innerHTML='🤝';const fi=document.getElementById('alz-foto');if(fi)fi.value='';FOTO_ALZ_CROPPED_BLOB=null;}
   if(id==='m-bloqueo'){
     sel('blq-profesional',S.barberos.map(b=>({v:b.id,t:b.nombre})));
+    document.getElementById('blq-id').value='';
+    document.getElementById('m-blq-title').textContent='Agregar bloqueo';
     document.getElementById('blq-tipo').value='puntual';
     document.getElementById('blq-fecha').value='';
     document.getElementById('blq-hora-inicio').value='';
@@ -4353,7 +4357,10 @@ async function guardarBloqueo(){
   const profId=document.getElementById('blq-profesional').value;
   const tipo=document.getElementById('blq-tipo').value;
   if(!profId){notify('Elegí un profesional','warn');return;}
-  const payload={barberia_id:S.barberia.id,profesional_id:profId,tipo,motivo:document.getElementById('blq-motivo').value.trim()||null};
+  const editId=document.getElementById('blq-id').value;
+  // Al editar se limpian los campos que no usa el tipo elegido (ej. de "día completo"
+  // a "recurrente" se borra la fecha), para que el bloqueo no quede con datos mezclados.
+  const payload={barberia_id:S.barberia.id,profesional_id:profId,tipo,motivo:document.getElementById('blq-motivo').value.trim()||null,fecha:null,dia_semana:null,hora_inicio:null,hora_fin:null};
   if(tipo==='puntual'||tipo==='dia_completo'){
     const fecha=document.getElementById('blq-fecha').value;
     if(!fecha){notify('Elegí una fecha','warn');return;}
@@ -4370,10 +4377,32 @@ async function guardarBloqueo(){
   }
   const btn=document.getElementById('btn-guardar-blq');
   btn.disabled=true;btn.textContent='Guardando...';
-  const {error}=await sb.from('bloqueos_profesional').insert(payload);
+  const {error}=editId
+    ? await sb.from('bloqueos_profesional').update(payload).eq('id',editId).eq('barberia_id',S.barberia.id)
+    : await sb.from('bloqueos_profesional').insert(payload);
   if(error){notify(error.message,'err');btn.disabled=false;btn.textContent='Guardar';return;}
-  await loadBloqueos();closeM('m-bloqueo');notify('Bloqueo guardado ✓');renderConfig();
+  await loadBloqueos();closeM('m-bloqueo');notify(editId?'Bloqueo actualizado ✓':'Bloqueo guardado ✓');renderConfig();
+  if(typeof renderAgenda==='function'){try{renderAgenda();}catch(e){}}
   btn.disabled=false;btn.textContent='Guardar';
+}
+
+function editarBloqueo(id){
+  const b=S.bloqueos.find(x=>x.id===id); if(!b) return;
+  openM('m-bloqueo');
+  // Si el profesional ya no está en la lista (dado de baja), se agrega igual para no perderlo.
+  const opts=S.barberos.map(p=>({v:p.id,t:p.nombre}));
+  if(!opts.some(o=>o.v===b.profesional_id)) opts.push({v:b.profesional_id,t:'(profesional inactivo)'});
+  sel('blq-profesional',opts);
+  document.getElementById('blq-id').value=b.id;
+  document.getElementById('m-blq-title').textContent='Editar bloqueo';
+  document.getElementById('blq-profesional').value=b.profesional_id;
+  document.getElementById('blq-tipo').value=b.tipo;
+  document.getElementById('blq-fecha').value=b.fecha||'';
+  document.getElementById('blq-dia-semana').value=String(b.dia_semana??1);
+  document.getElementById('blq-hora-inicio').value=(b.hora_inicio||'').slice(0,5);
+  document.getElementById('blq-hora-fin').value=(b.hora_fin||'').slice(0,5);
+  document.getElementById('blq-motivo').value=b.motivo||'';
+  onChangeTipoBloqueo();
 }
 
 async function toggleBloqueoActivo(id,activo){
@@ -4395,7 +4424,7 @@ function renderBloqueos(){
     return `<tr>
       <td>${prof?.nombre||'—'}</td><td>${TIPO_LABEL[b.tipo]||b.tipo}</td><td>${detalle}</td><td>${b.motivo||'—'}</td>
       <td><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${b.activo?'checked':''} onchange="toggleBloqueoActivo('${b.id}',this.checked)"></label></td>
-      <td><button class="btn btn-danger btn-sm" onclick="eliminar('bloqueos_profesional','${b.id}',loadBloqueos,renderConfig)">×</button></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" title="Editar bloqueo" onclick="editarBloqueo('${b.id}')">✏️ Editar</button> <button class="btn btn-danger btn-sm" title="Eliminar bloqueo" onclick="eliminar('bloqueos_profesional','${b.id}',loadBloqueos,renderConfig)">×</button></td>
     </tr>`;
   }).join('')||'<tr><td colspan="6" class="empty">Sin bloqueos configurados</td></tr>';
 }
@@ -7781,7 +7810,7 @@ function estadoColor(estado){
 function hmAMin(h){ if(!h)return null; const [a,b]=String(h).split(':').map(Number); return a*60+(b||0); }
 function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
   const out=[];
-  const add=(ini,fin,tipo,texto)=>{ ini=Math.max(ini,iniMin); fin=Math.min(fin,finMin); if(fin>ini)out.push({ini,fin,tipo,texto}); };
+  const add=(ini,fin,tipo,texto,id)=>{ ini=Math.max(ini,iniMin); fin=Math.min(fin,finMin); if(fin>ini){ const o={ini,fin,tipo,texto}; if(id)o.id=id; out.push(o);} };
   const dow=new Date(fecha+'T12:00:00').getDay();
   const h=(horario||[]).find(x=>x.dia_semana===dow);
   if(h){
@@ -7797,16 +7826,16 @@ function agendaBandas(fecha,horario,bloqueos,profId,iniMin,finMin){
   (bloqueos||[]).forEach(b=>{
     if(!b.activo||b.profesional_id!==profId)return;
     const motivo=b.motivo||'Bloqueo';
-    if(b.tipo==='dia_completo'&&b.fecha===fecha) add(iniMin,finMin,'bloqueo',motivo);
-    else if(b.tipo==='puntual'&&b.fecha===fecha) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
-    else if(b.tipo==='recurrente'&&b.dia_semana===dow) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo);
+    if(b.tipo==='dia_completo'&&b.fecha===fecha) add(iniMin,finMin,'bloqueo',motivo,b.id);
+    else if(b.tipo==='puntual'&&b.fecha===fecha) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo,b.id);
+    else if(b.tipo==='recurrente'&&b.dia_semana===dow) add(hmAMin(b.hora_inicio),hmAMin(b.hora_fin),'bloqueo',motivo,b.id);
   });
   return out;
 }
 function agendaBandasHtml(fecha,profId){
   const _pb=(S.barberos||[]).find(b=>b.id===profId); const _hor=(_pb&&_pb.sucursal_id)?horarioDeSuc(_pb.sucursal_id):S.horario;
   return agendaBandas(fecha,_hor,S.bloqueos,profId,AG_START_HOUR*60,AG_END_HOUR*60).map(b=>
-    `<div class="cal-banda ${b.tipo}" style="top:${(b.ini-AG_START_HOUR*60)*AG_PX_MIN}px;height:${(b.fin-b.ini)*AG_PX_MIN}px" title="${String(b.texto).replace(/"/g,'&quot;')}"><span>${String(b.texto).replace(/</g,'&lt;')}</span></div>`).join('');
+    `<div class="cal-banda ${b.tipo}" style="top:${(b.ini-AG_START_HOUR*60)*AG_PX_MIN}px;height:${(b.fin-b.ini)*AG_PX_MIN}px" title="${String(b.texto).replace(/"/g,'&quot;')}${b.id?' · toca para editar':''}"><span${b.id?` class="blq-edit" onclick="event.stopPropagation();editarBloqueo('${b.id}')"`:''}>${String(b.texto).replace(/</g,'&lt;')}${b.id?' ✏️':''}</span></div>`).join('');
 }
 
 // ─── Origen de la reserva ───────────────────────────────────────────────────
