@@ -311,13 +311,13 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--acento)}
 
 <div class="overlay" id="m-horas">
   <div class="modal" style="max-width:460px">
-    <div class="modal-hdr"><span class="modal-title">Compartir horas disponibles</span><button class="xbtn" onclick="document.getElementById('m-horas').classList.remove('open')">×</button></div>
+    <div class="modal-hdr"><span class="modal-title">Compartir horas disponibles</span><button class="xbtn" onclick="hsPararAnim();document.getElementById('m-horas').classList.remove('open')">×</button></div>
     <div class="fr" style="margin-bottom:10px">
       <div class="form-group"><label>Día</label><input type="date" id="hs-fecha" onchange="generarImagenHoras()"></div>
-      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="portada">Foto · Portada</option><option value="turnos">Foto · Turnos</option><option value="duotono">Foto · Duotono</option><option value="simple">Simple</option><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
+      <div class="form-group"><label>Estilo</label><select id="hs-estilo" onchange="generarImagenHoras()"><option value="video">Video animado (5 s)</option><option value="sticker">Sticker para tu foto o video</option><option value="portada">Foto · Portada</option><option value="turnos">Foto · Turnos</option><option value="duotono">Foto · Duotono</option><option value="simple">Simple</option><option value="afiche">Afiche para arrancar</option><option value="noche">Letrero de noche</option></select></div>
     </div>
     <div id="hs-info" class="ayuda" style="margin-bottom:8px"></div>
-    <canvas id="hs-canvas" width="1080" height="1920" style="width:100%;max-width:300px;display:block;margin:0 auto 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35)"></canvas>
+    <canvas id="hs-canvas" width="1080" height="1920" style="width:100%;max-width:300px;display:block;margin:0 auto 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);background-color:#fff;background-image:linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%),linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%);background-size:24px 24px;background-position:0 0,12px 12px"></canvas>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" style="flex:1" onclick="compartirImagenHoras()">Compartir</button>
       <button class="btn btn-ghost" style="flex:1" onclick="guardarImagenHoras()">Guardar imagen</button>
@@ -768,9 +768,15 @@ async function generarImagenHoras(){
   try{ await Promise.all(['italic 400 100px "Fraunces"','italic 600 100px "Fraunces"','900 100px "Big Shoulders Display"','700 40px "Big Shoulders Display"','300 100px "Manrope"','500 40px "Manrope"','700 40px "Manrope"'].map(f=>document.fonts.load(f))); }catch(e){}
   const [{cerrado,libres,todas},logo,foto]=await Promise.all([horasLibres(fecha),cargarLogoHs(),cargarFotoHs()]);
   HS_ULTIMO={fecha,libres};
+  hsPararAnim();
   info.textContent=cerrado?'Ese día el negocio está cerrado.':libres.length?`${libres.length} hora${libres.length===1?'':'s'} libre${libres.length===1?'':'s'}. Toca Compartir para subirla a tu historia o estado.`:'No te quedan horas libres ese día.';
   const cv=document.getElementById('hs-canvas'), x=cv.getContext('2d');
   const d=new Date(fecha+'T12:00:00'), diaTxt=HS_DIAS[d.getDay()], fechaTxt=d.getDate()+' de '+HS_MESES[d.getMonth()];
+  const datosImg={libres,todas:todas||[],cerrado,diaTxt,fechaTxt,logo,foto,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',acento:hsAcento()};
+  HS_DATOS=datosImg;
+  if(estilo==='sticker'){ dibujarSticker(cv,datosImg); info.textContent=cerrado?info.textContent:'Sticker con fondo transparente. Toca Compartir: queda copiado para pegarlo encima de tu foto o video en Instagram.'; return; }
+  if(cv.width!==1080||cv.height!==1920){ cv.width=1080; cv.height=1920; }
+  if(estilo==='video'){ hsAnimar(cv,datosImg); if(!cerrado&&libres.length) info.textContent='Vista previa del video. Toca Compartir para crearlo (tarda 5 segundos).'; return; }
   ({noche:dibujarNoche,afiche:dibujarAfiche,portada:dibujarPortada,turnos:dibujarTurnos,duotono:dibujarDuotono}[estilo]||dibujarSimple)(x,{libres,todas:todas||[],cerrado,diaTxt,fechaTxt,logo,foto,negocio:NEGOCIO.nombre||NEGOCIO_NOMBRE||'',prof:BARBERO.nombre||'',link:hsCorto(linkReservaPropio()),acento:hsAcento()});
 }
 const HS_F=(w,size)=>`${w} ${size}px "Big Shoulders Display", "Arial Narrow", Impact, sans-serif`;
@@ -795,6 +801,112 @@ function hsRecuadroAgenda(x,yTop,o){
   x.beginPath(); x.roundRect(X,Y,w,h,r); x.stroke(); x.setLineDash([]); x.shadowColor='transparent';
   hsTexto(x,'Reserva aquí ↓',W/2,cy+13,o.fuente,o.texto,'center');
   x.restore();
+}
+
+
+// ─── Sticker transparente (opción para pegar sobre foto o video propio) ───
+// Imita el texto con fondo de Instagram: renglones blancos con letra negra.
+// El canvas se recorta al contenido para que en la historia se pueda escalar.
+let HS_DATOS=null;
+function dibujarSticker(cv,o){
+  const W=1000, pad=34, fsH=64, fsT=40, lineH=104;
+  const dia=o.diaTxt+' '+o.fechaTxt.split(' ')[0];
+  const horas=hsHorasMostrar(o);
+  const filas=[]; for(let i=0;i<horas.length;i+=4) filas.push(horas.slice(i,i+4));
+  const H=pad+86+20+(o.cerrado||!o.libres.length?lineH:filas.length*lineH)+30+86+pad;
+  cv.width=W; cv.height=H;
+  const x=cv.getContext('2d'); x.clearRect(0,0,W,H);
+  const caja=(t,cx,y,font,fondo,color,tachar)=>{
+    x.font=font; const w=x.measureText(t).width+56, h=parseInt(font.match(/(\d+)px/)[1])*1.45;
+    x.fillStyle=fondo; x.beginPath(); x.roundRect(cx-w/2,y-h/2,w,h,16); x.fill();
+    hsTexto(x,t,cx,y+h*0.24,font,color,'center');
+    if(tachar){ const tw=w-56; x.fillStyle=color; x.fillRect(cx-tw/2-4,y-3,tw+8,5); }
+    return w;
+  };
+  let y=pad+43;
+  caja('Horas libres el '+dia,W/2,y,HS_M(700,fsT),'#ffffff','#111');
+  y+=43+20+lineH/2;
+  if(o.cerrado||!o.libres.length){ caja(o.cerrado?'Hoy no abrimos':'Agenda completa',W/2,y,HS_M(700,fsH),'#ffffff','#111'); y+=lineH; }
+  else filas.forEach(f=>{
+    x.font=HS_M(700,fsH); const ws=f.map(hh=>x.measureText(hh.h).width+56), tot=ws.reduce((a,b)=>a+b,0)+(f.length-1)*16;
+    let X=(W-tot)/2;
+    f.forEach((hh,i)=>{ caja(hh.h,X+ws[i]/2,y,HS_M(700,fsH),hh.libre?'#ffffff':'rgba(255,255,255,.55)',hh.libre?'#111':'rgba(17,17,17,.55)',!hh.libre); X+=ws[i]+16; });
+    y+=lineH;
+  });
+  y+=30-lineH/2+43;
+  caja('Agenda disponible ↓',W/2,y,HS_M(700,fsT),o.acento,'#ffffff');
+}
+function hsBlobPng(){ return new Promise(r=>document.getElementById('hs-canvas').toBlob(r,'image/png')); }
+
+// ─── Video animado de 5 segundos ───
+// La foto con un zoom lento, el día entra, las horas aparecen una por una y
+// las tomadas se tachan; al final "Agenda disponible ↓". Se graba del canvas.
+const HS_VID_SEG=5;
+let HS_ANIM=null, HS_VIDEO=null;
+function hsPararAnim(){ if(HS_ANIM){ cancelAnimationFrame(HS_ANIM); HS_ANIM=null; } }
+function hsEase(t){ t=Math.max(0,Math.min(1,t)); return 1-Math.pow(1-t,3); }
+function dibujarVideoFrame(x,o,t){
+  const W=1080,H=1920, L=90;
+  x.clearRect(0,0,W,H);
+  x.save();
+  const z=1+0.07*(t/HS_VID_SEG); x.translate(W/2,H*0.35); x.scale(z,z); x.translate(-W/2,-H*0.35);
+  if(o.foto) hsFotoCover(x,o.foto,0,0,W,H,0.25); else hsSinFoto(x,W,H,o.acento);
+  x.restore();
+  const g=x.createLinearGradient(0,620,0,H); g.addColorStop(0,'rgba(8,8,10,0)'); g.addColorStop(0.45,'rgba(8,8,10,.78)'); g.addColorStop(1,'rgba(8,8,10,.94)');
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  const a=(ini,dur)=>hsEase((t-ini)/dur);
+  x.globalAlpha=a(0,0.6); hsLogoMarca(x,o,130,150,52,'rgba(255,255,255,.9)'); hsTexto(x,o.negocio,200,166,HS_M(700,36),'#fff');
+  const k1=a(0.3,0.7); x.globalAlpha=k1;
+  hsTexto(x,'Horas libres con '+hsNombreProf(o),L,780+(1-k1)*30,HS_M(500,36),'rgba(255,255,255,.8)');
+  const k2=a(0.5,0.8); x.globalAlpha=k2;
+  hsTexto(x,o.diaTxt.charAt(0).toUpperCase()+o.diaTxt.slice(1),L-4+(1-k2)*-60,940,HS_SERIF(400,170),'#fff');
+  hsTexto(x,o.fechaTxt,L,1006,HS_M(500,40),'rgba(255,255,255,.75)');
+  x.globalAlpha=1;
+  const horas=hsHorasMostrar(o); let fin=1130;
+  if(o.cerrado||!o.libres.length){ x.globalAlpha=a(1,0.6); hsTexto(x,o.cerrado?'Hoy no abrimos.':'Agenda completa por hoy.',L,1130,HS_M(700,54),'#fff'); x.globalAlpha=1; }
+  else {
+    const fs=horas.length>10?54:64; x.font=HS_M(700,fs);
+    let X=L, Y=1130; const esp=fs*0.75, paso=Math.min(0.22,2.2/horas.length);
+    horas.forEach((hh,i)=>{
+      const w=x.measureText(hh.h).width; if(X+w>W-L){ X=L; Y+=fs*1.3; }
+      const ini=1.1+i*paso, k=a(ini,0.35);
+      x.globalAlpha=k;
+      hsTexto(x,hh.h,X,Y+(1-k)*24,HS_M(700,fs),hh.libre?'#fff':'rgba(255,255,255,.35)');
+      if(!hh.libre){ const kt=a(ini+0.35,0.3); x.fillStyle='rgba(255,255,255,.75)'; x.fillRect(X-4,Y-fs*0.33,(w+8)*kt,4); }
+      x.globalAlpha=1; X+=w+esp;
+    });
+    fin=Y;
+  }
+  const kf=a(3.5,0.6); x.globalAlpha=kf;
+  const yf=Math.min(fin+130,1440)+Math.sin(Math.max(0,t-3.5)*5)*6*(t>3.5?1:0);
+  hsAgendaDisponible(x,yf,'#fff',HS_M(700,40));
+  x.globalAlpha=1;
+}
+function hsAnimar(cv,o){
+  hsPararAnim(); HS_VIDEO=null;
+  const x=cv.getContext('2d'), t0=performance.now();
+  const loop=now=>{ const t=((now-t0)/1000)%(HS_VID_SEG+1); dibujarVideoFrame(x,o,Math.min(t,HS_VID_SEG)); HS_ANIM=requestAnimationFrame(loop); };
+  HS_ANIM=requestAnimationFrame(loop);
+}
+function hsTipoVideo(){
+  const tipos=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm'];
+  return (window.MediaRecorder&&tipos.find(t=>MediaRecorder.isTypeSupported(t)))||null;
+}
+// Graba los 5 segundos desde el canvas. Devuelve {blob, ext}.
+function hsGrabarVideo(cv,o){
+  return new Promise((ok,no)=>{
+    const tipo=hsTipoVideo(); if(!tipo||!cv.captureStream) return no(new Error('Este teléfono no permite crear videos desde la página. Usa una imagen.'));
+    hsPararAnim();
+    const x=cv.getContext('2d'), st=cv.captureStream(30), partes=[];
+    const rec=new MediaRecorder(st,{mimeType:tipo,videoBitsPerSecond:6000000});
+    rec.ondataavailable=e=>{ if(e.data&&e.data.size) partes.push(e.data); };
+    rec.onstop=()=>{ st.getTracks().forEach(t=>t.stop()); ok({blob:new Blob(partes,{type:tipo.split(';')[0]}),ext:/mp4/.test(tipo)?'mp4':'webm'}); };
+    rec.onerror=e=>no(e.error||new Error('No se pudo grabar el video'));
+    const t0=performance.now();
+    rec.start(250);
+    const loop=now=>{ const t=(now-t0)/1000; dibujarVideoFrame(x,o,Math.min(t,HS_VID_SEG)); if(t<HS_VID_SEG+0.4) HS_ANIM=requestAnimationFrame(loop); else { HS_ANIM=null; rec.stop(); } };
+    HS_ANIM=requestAnimationFrame(loop);
+  });
 }
 
 // ─── Estilos con la foto del profesional de fondo ─────────────────────────
@@ -1056,6 +1168,28 @@ async function compartirImagenHoras(){
   const link=linkReservaPropio();
   try{ navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{}); }catch(e){}
   document.getElementById('hs-info').innerHTML='Link copiado ✓ En Instagram, agrega el sticker <strong>«Enlace»</strong>, pega el link y ponlo sobre el recuadro <strong>«Agenda acá»</strong>.';
+  const estilo=document.getElementById('hs-estilo').value, info=document.getElementById('hs-info');
+  if(estilo==='sticker'){
+    // El sticker se copia como imagen (con transparencia) para pegarlo en la historia.
+    try{
+      if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
+        await navigator.clipboard.write([new ClipboardItem({'image/png':hsBlobPng()})]);
+        info.innerHTML='Sticker copiado ✓ En Instagram abre tu historia con tu foto o video, mantén apretado y elige <strong>Pegar</strong>. Después agrega el sticker «Enlace» con tu link (también lo puedes copiar con «Guardar imagen»).';
+        return;
+      }
+    }catch(e){}
+    try{ const b=await hsBlobPng(); const f=new File([b],'sticker-horas.png',{type:'image/png'});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f]}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+    return guardarImagenHoras();
+  }
+  if(estilo==='video'){
+    try{
+      if(!HS_VIDEO){ info.textContent='Creando el video… (5 segundos)'; HS_VIDEO=await hsGrabarVideo(document.getElementById('hs-canvas'),HS_DATOS); hsAnimar(document.getElementById('hs-canvas'),HS_DATOS); HS_VIDEO_LISTO=true; info.innerHTML='Video listo ✓ Toca <strong>Compartir</strong> otra vez para subirlo a tu historia, o <strong>Guardar</strong>.'; return; }
+      const f=new File([HS_VIDEO.blob],'horas-'+(HS_ULTIMO?.fecha||hoyStr())+'.'+HS_VIDEO.ext,{type:HS_VIDEO.blob.type});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],text:'Horas disponibles. Reserva aquí: '+link}); return; }
+      return guardarImagenHoras();
+    }catch(e){ if(e&&e.name!=='AbortError') info.textContent=e.message||'No se pudo crear el video.'; return; }
+  }
   try{
     const b=await hsBlob(); const file=new File([b],'horas-'+(HS_ULTIMO?.fecha||hoyStr())+'.jpg',{type:'image/jpeg'});
     const texto='Horas disponibles. Reserva aquí: '+linkReservaPropio();
@@ -1063,9 +1197,19 @@ async function compartirImagenHoras(){
     guardarImagenHoras();
   }catch(e){ if(e&&e.name!=='AbortError') guardarImagenHoras(); }
 }
+let HS_VIDEO_LISTO=false;
 async function guardarImagenHoras(){
-  const b=await hsBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(b);
-  a.download='horas-'+(HS_ULTIMO?.fecha||hoyStr())+'.jpg'; document.body.appendChild(a); a.click(); a.remove();
+  const estilo=document.getElementById('hs-estilo').value;
+  try{ navigator.clipboard&&navigator.clipboard.writeText(linkReservaPropio()).catch(()=>{}); }catch(e){}
+  let b, nombre='horas-'+(HS_ULTIMO?.fecha||hoyStr());
+  if(estilo==='video'){
+    if(!HS_VIDEO){ const info=document.getElementById('hs-info'); info.textContent='Creando el video… (5 segundos)';
+      try{ HS_VIDEO=await hsGrabarVideo(document.getElementById('hs-canvas'),HS_DATOS); hsAnimar(document.getElementById('hs-canvas'),HS_DATOS); info.textContent='Video listo ✓'; }catch(e){ info.textContent=e.message; return; } }
+    b=HS_VIDEO.blob; nombre+='.'+HS_VIDEO.ext;
+  } else if(estilo==='sticker'){ b=await hsBlobPng(); nombre='sticker-'+nombre+'.png'; }
+  else { b=await hsBlob(); nombre+='.jpg'; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download=nombre; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 

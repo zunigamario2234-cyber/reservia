@@ -41,7 +41,7 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
  ok('el domingo sale cerrado',out.cerrado===true);
  ok('al entrar, el manifest pasa a ser el del negocio',/\/api\/manifest\?app=agenda&b=1f97f706/.test(out.man),out.man);
  ok('informa cuántas horas hay',/11 horas libres/.test(out.info),out.info);
- ok('los estilos con foto van primero',out.estiloInicial==='portada');
+ ok('el video va primero en la lista',out.estiloInicial==='video');
  fs.writeFileSync(SHOT+'horas-simple.png',Buffer.from(out.a0.split(',')[1],'base64'));
  fs.writeFileSync(SHOT+'horas-afiche.png',Buffer.from(out.a1.split(',')[1],'base64'));
  fs.writeFileSync(SHOT+'horas-noche.png',Buffer.from(out.a2.split(',')[1],'base64'));
